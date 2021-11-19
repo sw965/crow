@@ -56,29 +56,29 @@ func (slotUCB1s SlotUCB1s) TotalTrial() int {
   return result
 }
 
-func (slotUCB1s SlotUCB1s) Max() (float64, error) {
+func (slotUCB1s SlotUCB1s) Max(X float64) (float64, error) {
   totalTrial := slotUCB1s.TotalTrial()
-  result, err := slotUCB1s[0].Get(totalTrial)
+  result, err := slotUCB1s[0].Get(totalTrial, X)
 
   if err != nil {
     return 0.0, err
   }
 
   for _, ucb1 := range slotUCB1s[1:] {
-    ucb1V, err := ucb1.Get(totalTrial)
+    ucb1v, err := ucb1.Get(totalTrial, X)
     if err != nil {
       return 0.0, err
     }
 
-    if ucb1V > result {
-      result = ucb1V
+    if ucb1v > result {
+      result = ucb1v
     }
   }
   return result, nil
 }
 
-func (slotUCB1s SlotUCB1s) MaxIndices() ([]int, error) {
-  max, err := slotUCB1s.Max()
+func (slotUCB1s SlotUCB1s) MaxIndices(X float64) ([]int, error) {
+  max, err := slotUCB1s.Max(X)
   if err != nil {
     return []int{}, err
   }
@@ -86,20 +86,20 @@ func (slotUCB1s SlotUCB1s) MaxIndices() ([]int, error) {
 
   totalTrial := slotUCB1s.TotalTrial()
   for i, ucb1 := range slotUCB1s {
-    ucb1V, err := ucb1.Get(totalTrial)
+    ucb1v, err := ucb1.Get(totalTrial, X)
     if err != nil {
       return []int{}, err
     }
 
-    if ucb1V == max {
+    if ucb1v == max {
       result = append(result, i)
     }
   }
   return result, nil
 }
 
-func (slotUCB1s SlotUCB1s) MaxIndexRandomChoice(random *rand.Rand) (int, error) {
-  maxIndices, err := slotUCB1s.MaxIndices()
+func (slotUCB1s SlotUCB1s) MaxIndexRandomChoice(X float64, random *rand.Rand) (int, error) {
+  maxIndices, err := slotUCB1s.MaxIndices(X)
   if err != nil {
     return 0, err
   }
@@ -113,6 +113,7 @@ func TestCompile(t *testing.T) {
   mtRandom := rand.New(mt19937.New())
   mtRandom.Seed(time.Now().UnixNano())
 
+  X := math.Sqrt(100)
   TRIAL_NUM := 5120000
   slotUCB1s := make(SlotUCB1s, len(SLOTS))
 
@@ -122,11 +123,10 @@ func TestCompile(t *testing.T) {
     coin := slot(mtRandom)
     slotUCB1s[i].AccumReward += float64(coin)
     slotUCB1s[i].Trial += 1
-    slotUCB1s[i].X = math.Sqrt(1000)
   }
 
   for i := 0; i <TRIAL_NUM; i++ {
-    slotIndex, err := slotUCB1s.MaxIndexRandomChoice(mtRandom)
+    slotIndex, err := slotUCB1s.MaxIndexRandomChoice(X, mtRandom)
     if err != nil {
       panic(err)
     }
