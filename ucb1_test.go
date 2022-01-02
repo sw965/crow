@@ -109,7 +109,7 @@ func (slotUCB1s SlotUCB1s) MaxIndexRandomChoice(X float64, random *rand.Rand) (i
 
 var SLOTS = Slots{Slot0, Slot1, Slot2, Slot3, Slot4}
 
-func TestCompile(t *testing.T) {
+func TestUCB1(t *testing.T) {
   mtRandom := rand.New(mt19937.New())
   mtRandom.Seed(time.Now().UnixNano())
 
