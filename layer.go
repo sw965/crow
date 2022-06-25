@@ -15,13 +15,13 @@ type Affine2DLayer struct {
 func NewAffine2DLayer(h, w int, std float64, random *rand.Rand) Affine2DLayer {
   result := Affine2DLayer{}
   result.W = NewRandomArray2D(h, w, std, random)
-  result.B = NewRandomArray1D(h, std, random)
+  result.B = NewRandomArray1D(w, std, random)
   return result
 }
 
 func (affine2DLayer *Affine2DLayer) Forward(x Array2D) Array2D {
   affine2DLayer.X = x
-  return x.Matmul(affine2DLayer.W).Add1D(affine2DLayer.B)
+  return affine2DLayer.Output(x)
 }
 
 func (affine2DLayer *Affine2DLayer) Backward(dout Array2D) Array2D {
@@ -29,6 +29,22 @@ func (affine2DLayer *Affine2DLayer) Backward(dout Array2D) Array2D {
   affine2DLayer.WGrad = affine2DLayer.X.Transform().Matmul(dout)
   affine2DLayer.BGrad = dout.Transform().Sum()
   return dx
+}
+
+func (affine2DLayer *Affine2DLayer) SGDTraining(learingRate float64) {
+  for i, grads := range affine2DLayer.WGrad {
+    for j, grad := range grads {
+      affine2DLayer.W[i][j] -= (grad * learingRate)
+    }
+  }
+
+  for i, grad := range affine2DLayer.BGrad {
+    affine2DLayer.B[i] -= (grad * learingRate)
+  }
+}
+
+func (affine2DLayer *Affine2DLayer) Output(x Array2D) Array2D {
+  return x.Matmul(affine2DLayer.W).Add1D(affine2DLayer.B)
 }
 
 type Relu2DLayer struct {
