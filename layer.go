@@ -25,9 +25,9 @@ func (affine2DLayer *Affine2DLayer) Forward(x Array2D) Array2D {
 }
 
 func (affine2DLayer *Affine2DLayer) Backward(dout Array2D) Array2D {
-  dx := dout.Matmul(affine2DLayer.W.Transform())
-  affine2DLayer.WGrad = affine2DLayer.X.Transform().Matmul(dout)
-  affine2DLayer.BGrad = dout.Transform().Sum()
+  dx := dout.Matmul(affine2DLayer.W.Transpose())
+  affine2DLayer.WGrad = affine2DLayer.X.Transpose().Matmul(dout)
+  affine2DLayer.BGrad = dout.Transpose().Sum()
   return dx
 }
 

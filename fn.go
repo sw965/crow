@@ -15,3 +15,9 @@ func PolynomialUpperConfidenceBound(v, p float64, totalTrial, eachTrial int, X f
 	floatEachTrial := float64(eachTrial + 1)
 	return v + (X * p * math.Sqrt(floatTotalTrial) / floatEachTrial)
 }
+
+func OnehotBinary(index int, length int) []int {
+	result := make([]int, length)
+	result[index] = 1
+	return result
+}

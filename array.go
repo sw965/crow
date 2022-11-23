@@ -156,7 +156,7 @@ func (array2D Array2D) Add1D(array1D Array1D) Array2D {
   return result
 }
 
-func (array2D Array2D) Transform() Array2D {
+func (array2D Array2D) Transpose() Array2D {
   array2DColumn := len(array2D)
   array2DRow := len(array2D[0])
 
@@ -172,7 +172,7 @@ func (array2D Array2D) Transform() Array2D {
 }
 
 func (array2D_1 Array2D) Matmul(array2D_2 Array2D) Array2D {
-  array2D_2 = array2D_2.Transform()
+  array2D_2 = array2D_2.Transpose()
   result := make(Array2D, len(array2D_1))
   array2D_2Row := len(array2D_2)
   for i, array1D_1 := range array2D_1 {
