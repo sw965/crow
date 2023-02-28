@@ -25,7 +25,7 @@ type StateFunc[S any, A comparable] struct {
 }
 
 type NodeEqual[S any, A comparable] func(*Node[S, A], *Node[S, A]) bool
-type NewNode [S any, A comparable] func(*S, Policy[S, A]) *Node[S, A]
+type NewNode[S any, A comparable] func(*S, Policy[S, A]) *Node[S, A]
 
 type NodeFunc[S any, A comparable] struct {
 	Equal NodeEqual[S, A]
@@ -121,7 +121,7 @@ func (node *Node[S, A])SelectAndExpansion(allNodes Nodes[S, A], policy Policy[S,
 	return state, allNodes, selects, nil
 }
 
-func Run[S any, A comparable](simulation int, rootState S, policy Policy[S, A], eval Eval[S, A], X float64, r *rand.Rand, f *Func[S, A]) (Nodes[S, A], error) {
+func Run[S any, A comparable](simulation int, rootState S, policy Policy[S, A], eval *Eval[S, A], X float64, r *rand.Rand, f *Func[S, A]) (Nodes[S, A], error) {
 	rootNode := f.Node.New(&rootState, policy)
 	allNodes := Nodes[S, A]{rootNode}
 
