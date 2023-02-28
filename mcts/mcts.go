@@ -25,7 +25,7 @@ type StateFunc[S any, A comparable] struct {
 }
 
 type NodeEqual[S any, A comparable] func(*Node[S, A], *Node[S, A]) bool
-type NewNode [S any, A comparable] func(*S, Policy[S, A]) (*Node[S, A], error)
+type NewNode [S any, A comparable] func(*S, Policy[S, A]) *Node[S, A]
 
 type NodeFunc[S any, A comparable] struct {
 	Equal NodeEqual[S, A]
@@ -106,10 +106,7 @@ func (node *Node[S, A])SelectAndExpansion(allNodes Nodes[S, A], policy Policy[S,
 			if err == nil {
 				node.NextNodes = append(node.NextNodes, nextNode)
 			} else {
-				nextNode, err = f.Node.New(&state, policy)
-				if err != nil {
-					return state, Nodes[S, A]{}, Selects[S, A]{}, err
-				}
+				nextNode = f.Node.New(&state, policy)
 				allNodes = append(allNodes, nextNode)
 				node.NextNodes = append(node.NextNodes, nextNode)
 				break
@@ -125,15 +122,14 @@ func (node *Node[S, A])SelectAndExpansion(allNodes Nodes[S, A], policy Policy[S,
 }
 
 func Run[S any, A comparable](simulation int, rootState S, policy Policy[S, A], eval Eval[S, A], X float64, r *rand.Rand, f *Func[S, A]) (Nodes[S, A], error) {
-	rootNode, err := f.Node.New(&rootState, policy)
-	if err != nil {
-		return Nodes[S, A]{}, err
-	}
+	rootNode := f.Node.New(&rootState, policy)
 	allNodes := Nodes[S, A]{rootNode}
+
 	node := rootNode
-	capSize := 0
 	var leafState S
 	var selects Selects[S, A]
+	capSize := 0
+	var err error
 
 	for i := 0; i < simulation; i++ {
 		leafState, allNodes, selects, err = node.SelectAndExpansion(allNodes, policy, X, r, f, capSize + 1)
