@@ -50,7 +50,7 @@ type Nodes[S any, A comparable] []*Node[S, A]
 
 func (nodes Nodes[S, A]) Find(node *Node[S, A], equal func(*Node[S, A], *Node[S, A]) bool) (*Node[S, A], error) {
 	for _, v := range nodes {
-		if equal(node, v) {
+		if equal(v, node) {
 			return v, nil
 		}
 	}
@@ -121,24 +121,24 @@ func (node *Node[S, A])SelectAndExpansion(allNodes Nodes[S, A], policy Policy[S,
 	return state, allNodes, selects, nil
 }
 
-func Run[S any, A comparable](simulation int, rootState S, policy Policy[S, A], eval *Eval[S, A], X float64, r *rand.Rand, f *Func[S, A]) (Nodes[S, A], error) {
-	rootNode := f.Node.New(&rootState, policy)
+func Run[S any, A comparable](simulation int, rootS S, policy Policy[S, A], eval *Eval[S, A], X float64, r *rand.Rand, f *Func[S, A]) (Nodes[S, A], error) {
+	rootNode := f.Node.New(&rootS, policy)
 	allNodes := Nodes[S, A]{rootNode}
 
 	node := rootNode
-	var leafState S
+	var leafS S
 	var selects Selects[S, A]
 	capSize := 0
 	var err error
 
 	for i := 0; i < simulation; i++ {
-		leafState, allNodes, selects, err = node.SelectAndExpansion(allNodes, policy, X, r, f, capSize + 1)
+		leafS, allNodes, selects, err = node.SelectAndExpansion(allNodes, policy, X, r, f, capSize + 1)
 		if err != nil {
 			return Nodes[S, A]{}, err
 		}
 		capSize = len(selects)
 
-		leafEvalY := eval.Leaf(&leafState)
+		leafEvalY := eval.Leaf(&leafS)
 		if err != nil {
 			return Nodes[S, A]{}, err
 		}

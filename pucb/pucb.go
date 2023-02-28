@@ -21,7 +21,7 @@ func (m *Manager) AverageReward() float64 {
 
 func (m *Manager) Get(totalTrial int, X float64) float64 {
 	v := m.AverageReward()
-	return Get(v, m.P, totalTrial, m.Trial, X)
+	return Get(m.P, v, totalTrial, m.Trial, X)
 }
 
 type ManagerByKey[K comparable] map[K]*Manager
