@@ -17,25 +17,43 @@ type Eval[S any, A comparable]  struct {
 }
 
 type StatePush[S any, A comparable] func(S, A) (S, error)
-type StateEqual[S any] func(*S, *S) bool
+type EqualState[S any] func(*S, *S) bool
 type IsEndState[S any] func(*S) bool
-
-
-type StateFunc[S any, A comparable] struct {
-	Push StatePush[S, A]
-	Equal StateEqual[S]
-	IsEnd IsEndState[S]
-}
-
-type NewNode[S any, A comparable] func(*S, Policy[S, A]) *Node[S, A]
-
-type NodeFunc[S any, A comparable] struct {
-	New NewNode[S, A]
-}
+type LegalActions[S any, A comparable] func(*S) []A 
+type NodeID[S any] func(*S) int
 
 type Func[S any, A comparable] struct {
-	State StateFunc[S, A]
-	Node NodeFunc[S, A]
+	Eval Eval[S, A]
+	Policy Policy[S, A]
+	StatePush StatePush[S, A]
+	EqualState EqualState[S]
+	IsEndState IsEndState[S]
+	LegalActions LegalActions[S, A]
+	NodeID NodeID[S]
+}
+
+func (f *Func[S, A]) NewNode(state *S, policy Policy[S, A]) *Node[S, A] {
+	legalActions := f.LegalActions(state)
+	policyY := policy(state)
+	pucbByAction := pucb.ManagerByKey[A]{}
+	for _, a := range legalActions {
+		p := policyY[a]
+		pucbByAction[a] = &pucb.Manager{P:p}
+	}
+	id := f.NodeID(state)
+	return &Node[S, A]{State:*state, PUCBByAction:pucbByAction, ID:id}
+}
+
+func (f *Func[S, A]) SetNoPolicy() {
+	f.Policy = func(state *S) map[A]float64 {
+		actions := f.LegalActions(state)
+		p := 1.0 / float64(len(actions))
+		y := map[A]float64{}
+		for _, action := range actions {
+			y[action] = p
+		}
+		return y
+	}
 }
 
 type Node[S any, A comparable] struct {
@@ -47,7 +65,7 @@ type Node[S any, A comparable] struct {
 	ID int
 }
 
-func (node *Node[S, A])SelectAndExpansion(allNodes Nodes[S, A], policy Policy[S, A], X float64, r *rand.Rand, f *Func[S, A], capSize int) (S, Nodes[S, A], Selects[S, A], error) {
+func (node *Node[S, A])SelectAndExpansion(allNodes Nodes[S, A], X float64, r *rand.Rand, f *Func[S, A], capSize int) (S, Nodes[S, A], Selects[S, A], error) {
 	selects := make(Selects[S, A], 0, capSize)
 	state := node.State
 	var err error
@@ -58,13 +76,15 @@ func (node *Node[S, A])SelectAndExpansion(allNodes Nodes[S, A], policy Policy[S,
 		selects = append(selects, Select[S, A]{Node:node, Action:action})
 		node.SelectCount += 1
 
-		state, err = f.State.Push(state, action)
+		state, err = f.StatePush(state, action)
 
 		if err != nil {
-			return state, Nodes[S, A]{}, Selects[S, A]{}, err
+			var zero S
+			return zero, Nodes[S, A]{}, Selects[S, A]{}, err
 		}
 
-		if f.State.IsEnd(&state) {
+		stateP := &state
+		if f.IsEndState(stateP) {
 			break
 		}
 
@@ -74,13 +94,13 @@ func (node *Node[S, A])SelectAndExpansion(allNodes Nodes[S, A], policy Policy[S,
 		//nextNodesにもallNodesにも同じstateが存在しないなら、新しくnodeを作り、
 		//nextNodesと、allNodesに追加し、新しく作ったnodeを次のnodeとし、select処理を終了する。
 
-		nextNode, err := node.NextNodes.Find(&state, f.State.Equal)
+		nextNode, err := node.NextNodes.Find(stateP, f.EqualState)
 		if err != nil {
-			nextNode, err = allNodes.Find(&state, f.State.Equal)
+			nextNode, err = allNodes.Find(stateP, f.EqualState)
 			if err == nil {
 				node.NextNodes = append(node.NextNodes, nextNode)
 			} else {
-				nextNode = f.Node.New(&state, policy)
+				nextNode = f.NewNode(&state, f.Policy)
 				allNodes = append(allNodes, nextNode)
 				node.NextNodes = append(node.NextNodes, nextNode)
 				break
@@ -97,7 +117,7 @@ func (node *Node[S, A])SelectAndExpansion(allNodes Nodes[S, A], policy Policy[S,
 
 type Nodes[S any, A comparable] []*Node[S, A]
 
-func (nodes Nodes[S, A]) Find(state *S, equal StateEqual[S]) (*Node[S, A], error) {
+func (nodes Nodes[S, A]) Find(state *S, equal EqualState[S]) (*Node[S, A], error) {
 	for _, v := range nodes {
 		if equal(&v.State, state) {
 			return v, nil
@@ -123,8 +143,8 @@ func (ss Selects[S, A]) Backward(leafEvalY float64, eval BackwardEval[S, A]) {
 	}
 }
 
-func Run[S any, A comparable](simulation int, rootState S, policy Policy[S, A], eval *Eval[S, A], X float64, r *rand.Rand, f *Func[S, A]) (Nodes[S, A], error) {
-	rootNode := f.Node.New(&rootState, policy)
+func Run[S any, A comparable](simulation int, rootState S, X float64, r *rand.Rand, f *Func[S, A]) (Nodes[S, A], error) {
+	rootNode := f.NewNode(&rootState, f.Policy)
 	allNodes := Nodes[S, A]{rootNode}
 
 	node := rootNode
@@ -134,18 +154,18 @@ func Run[S any, A comparable](simulation int, rootState S, policy Policy[S, A], 
 	var err error
 
 	for i := 0; i < simulation; i++ {
-		leafState, allNodes, selects, err = node.SelectAndExpansion(allNodes, policy, X, r, f, capSize + 1)
+		leafState, allNodes, selects, err = node.SelectAndExpansion(allNodes, X, r, f, capSize + 1)
 		if err != nil {
 			return Nodes[S, A]{}, err
 		}
 		capSize = len(selects)
 
-		leafEvalY := eval.Leaf(&leafState)
+		leafEvalY := f.Eval.Leaf(&leafState)
 		if err != nil {
 			return Nodes[S, A]{}, err
 		}
 
-		selects.Backward(leafEvalY, eval.Backward)
+		selects.Backward(leafEvalY, f.Eval.Backward)
 		node = rootNode
 	}
 	return allNodes, nil
