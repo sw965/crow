@@ -93,7 +93,10 @@ func NewPUCBsByKey[S any, A comparable](state *S, policies Policies[S, A]) PUCBs
 
 type NodeID int
 type PlayerNumber int
-type Policies[S any, A comparable] func(*S) []map[A]float64
+
+type Policies[S any, A comparable] func(*S) PoliciesY[A]
+type PolicyY[A comparable] map[A]float64
+type PoliciesY[A comparable] []PolicyY[A]
 
 type LeafEval[S any] func(*S) float64
 type BackwardEval func(float64, NodeID, PlayerNumber) float64
@@ -138,13 +141,8 @@ func (node *Node[S, A])SelectAndExpansion(allNodes Nodes[S, A], f *Func[S, A], X
 
 	for {
 		actions := make([]A, simultaneousMove)
-		for _, pucb := range node.PUCBsByAction {
-			if len(pucb) == 0 {
-				var zero A
-				actions = append(actions, zero)
-			} else {
-				actions = append(actions, omw.RandomChoice(pucb.MaxKeys(X), r))
-			}
+		for _, pucbByAction := range node.PUCBsByAction {
+			actions = append(actions, omw.RandomChoice(pucbByAction.MaxKeys(X), r))
 		}
 
 		selects := make(Selects[S, A], simultaneousMove)
@@ -181,6 +179,8 @@ func (node *Node[S, A])SelectAndExpansion(allNodes Nodes[S, A], f *Func[S, A], X
 				nextNode = f.NewNode(&state, f.Policies)
 				allNodes = append(allNodes, nextNode)
 				node.NextNodes = append(node.NextNodes, nextNode)
+				//新しくノードを作成したら、処理を終了する
+				break
 			}
 		}
 
@@ -211,16 +211,12 @@ type Select[S any, A comparable] struct {
 type Selects[S any, A comparable] []Select[S, A]
 
 func (ss Selects[S, A]) Backward(leafEvalY float64, eval BackwardEval) {
-	var zero A
 	for i, s := range ss {
 		node := s.Node
 		action := s.Action
-		node.SelectCount = 0
-		if action == zero {
-			continue
-		}
 		node.PUCBsByAction[i][action].AccumReward += eval(leafEvalY, node.ID, PlayerNumber(i))
 		node.PUCBsByAction[i][action].Trial += 1
+		node.SelectCount = 0
 	}
 }
 
