@@ -120,10 +120,12 @@ type Func[S any, A comparable] struct {
 	Eval Eval[S]
 	Policies Policies[S, A]
 	State StateFunc[S, A]
+	GetNodeID func(*S) NodeID
 }
 
-func (f *Func[S, A]) NewNode(state *S, policies Policies[S, A]) *Node[S, A] {
-	return &Node[S, A]{State:*state, PUCBsByAction:NewPUCBsByKey(state, policies)}
+func (f *Func[S, A]) NewNode(state *S) *Node[S, A] {
+	id := f.GetNodeID(state)
+	return &Node[S, A]{State:*state, PUCBsByAction:NewPUCBsByKey(state, f.Policies), ID:id}
 }
 
 type Node[S any, A comparable] struct {
@@ -176,7 +178,7 @@ func (node *Node[S, A])SelectAndExpansion(allNodes Nodes[S, A], f *Func[S, A], X
 			if err == nil {
 				node.NextNodes = append(node.NextNodes, nextNode)
 			} else {
-				nextNode = f.NewNode(&state, f.Policies)
+				nextNode = f.NewNode(&state)
 				allNodes = append(allNodes, nextNode)
 				node.NextNodes = append(node.NextNodes, nextNode)
 				//新しくノードを作成したら、処理を終了する
@@ -229,7 +231,7 @@ func (sss Selectss[S, A]) Backward(leafEvalY float64, eval BackwardEval) {
 }
 
 func Run[S any, A comparable](simulation int, rootState S, f *Func[S, A], X float64, r *rand.Rand) (Nodes[S, A], error) {
-	rootNode := f.NewNode(&rootState, f.Policies)
+	rootNode := f.NewNode(&rootState)
 	simultaneousMove := len(rootNode.PUCBsByAction)
 	allNodes := Nodes[S, A]{rootNode}
 
