@@ -144,7 +144,7 @@ func (node *Node[S, A])SelectAndExpansion(allNodes Nodes[S, A], f *Func[S, A], X
 	for {
 		actions := make([]A, simultaneousMove)
 		for _, pucbByAction := range node.PUCBsByAction {
-			actions = append(actions, omw.RandomChoice(pucbByAction.MaxKeys(X), r))
+			actions[i] = omw.RandomChoice(pucbByAction.MaxKeys(X), r)
 		}
 
 		selects := make(Selects[S, A], simultaneousMove)
