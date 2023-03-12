@@ -28,15 +28,6 @@ func (p *PUCB) Get(totalTrial int, X float64) float64 {
 
 type PUCBByKey[K comparable] map[K]*PUCB
 
-func NewPUCBByKey[S any, A comparable](state *S, policy Policy[S, A], idx PlayerIndex) PUCBByKey[A] {
-	py := policy(state, idx)
-	y := PUCBByKey[A]{}
-	for a, p := range py {
-		y[a] = &PUCB{P:p}
-	}
-	return y
-}
-
 func (pbk PUCBByKey[K]) TotalTrial() int {
 	y := 0
 	for _, v := range pbk {
@@ -88,19 +79,23 @@ func (pbk PUCBByKey[K]) MaxTrialKeys(X float64) []K {
 
 type PUCBsByKey[K comparable] []PUCBByKey[K]
 
-func NewPUCBsByKey[S any, A comparable](state *S, policy Policy[S, A], playerNum int) PUCBsByKey[A] {
-	y := make(PUCBsByKey[A], playerNum)
-	for i := 0; i < playerNum; i++ {
-		y[i] = NewPUCBByKey(state, policy, PlayerIndex(i))
+func NewPUCBsByKey[S any, A comparable](state *S, policies Policies[S, A]) PUCBsByKey[A] {
+	psy := policies(state)
+	y := make(PUCBsByKey[A], len(psy))
+	for i, py := range psy {
+		for a, p := range py {
+			y[i][a] = &PUCB{P:p}
+		}
 	}
 	return y
 }
 
-type PlayerIndex int
-type Policy[S any, A comparable] func(*S, PlayerIndex) map[A]float64
+type NodeID int
+type PlayerNumber int
+type Policies[S any, A comparable] func(*S) []map[A]float64
 
 type LeafEval[S any] func(*S) float64
-type BackwardEval func(float64, PlayerIndex) float64
+type BackwardEval func(float64, NodeID, PlayerNumber) float64
 
 type Eval[S any]  struct {
 	Leaf LeafEval[S]
@@ -119,12 +114,12 @@ type StateFunc[S any, A comparable] struct {
 
 type Func[S any, A comparable] struct {
 	Eval Eval[S]
-	Policy Policy[S, A]
+	Policies Policies[S, A]
 	State StateFunc[S, A]
 }
 
-func (f *Func[S, A]) NewNode(state *S, policy Policy[S, A], playerNum int) *Node[S, A] {
-	return &Node[S, A]{State:*state, PUCBsByAction:NewPUCBsByKey(state, policy, playerNum)}
+func (f *Func[S, A]) NewNode(state *S, policies Policies[S, A]) *Node[S, A] {
+	return &Node[S, A]{State:*state, PUCBsByAction:NewPUCBsByKey(state, policies)}
 }
 
 type Node[S any, A comparable] struct {
@@ -132,26 +127,26 @@ type Node[S any, A comparable] struct {
 	PUCBsByAction PUCBsByKey[A]
 	NextNodes Nodes[S, A]
 	SelectCount     int
+	ID NodeID
 }
 
-func (node *Node[S, A])SelectAndExpansion(allNodes Nodes[S, A], f *Func[S, A], X float64, r *rand.Rand, playerNum, capSize int) (S, Nodes[S, A], Selectss[S, A], error) {
+func (node *Node[S, A])SelectAndExpansion(allNodes Nodes[S, A], f *Func[S, A], X float64, r *rand.Rand, simultaneousMove, capSize int) (S, Nodes[S, A], Selectss[S, A], error) {
 	selectss := make(Selectss[S, A], 0, capSize)
 	state := node.State
 	var err error
 
 	for {
-		actions := make([]A, playerNum)
+		actions := make([]A, simultaneousMove)
 		for _, pucb := range node.PUCBsByAction {
-			maxActions := pucb.MaxKeys(X)
-			if len(maxActions) == 0 {
+			if len(pucb) == 0 {
 				var zero A
 				actions = append(actions, zero)
 			} else {
-				actions = append(actions, omw.RandomChoice(maxActions, r))
+				actions = append(actions, omw.RandomChoice(pucb.MaxKeys(X), r))
 			}
 		}
 
-		selects := make(Selects[S, A], playerNum)
+		selects := make(Selects[S, A], simultaneousMove)
 		for i, action := range actions {
 			selects[i] = Select[S, A]{Node:node, Action:action}
 		}
@@ -182,10 +177,9 @@ func (node *Node[S, A])SelectAndExpansion(allNodes Nodes[S, A], f *Func[S, A], X
 			if err == nil {
 				node.NextNodes = append(node.NextNodes, nextNode)
 			} else {
-				nextNode = f.NewNode(&state, f.Policy, playerNum)
+				nextNode = f.NewNode(&state, f.Policies)
 				allNodes = append(allNodes, nextNode)
 				node.NextNodes = append(node.NextNodes, nextNode)
-				break
 			}
 		}
 
@@ -224,7 +218,7 @@ func (ss Selects[S, A]) Backward(leafEvalY float64, eval BackwardEval) {
 		if action == zero {
 			continue
 		}
-		node.PUCBsByAction[i][action].AccumReward += eval(leafEvalY, PlayerIndex(i))
+		node.PUCBsByAction[i][action].AccumReward += eval(leafEvalY, node.ID, PlayerNumber(i))
 		node.PUCBsByAction[i][action].Trial += 1
 	}
 }
@@ -237,8 +231,9 @@ func (sss Selectss[S, A]) Backward(leafEvalY float64, eval BackwardEval) {
 	}
 }
 
-func Run[S any, A comparable](simulation, playerNum int, rootState S, f *Func[S, A], X float64, r *rand.Rand) (Nodes[S, A], error) {
-	rootNode := f.NewNode(&rootState, f.Policy, playerNum)
+func Run[S any, A comparable](simulation int, rootState S, f *Func[S, A], X float64, r *rand.Rand) (Nodes[S, A], error) {
+	rootNode := f.NewNode(&rootState, f.Policies)
+	simultaneousMove := len(rootNode.PUCBsByAction)
 	allNodes := Nodes[S, A]{rootNode}
 
 	node := rootNode
@@ -248,7 +243,7 @@ func Run[S any, A comparable](simulation, playerNum int, rootState S, f *Func[S,
 	var err error
 
 	for i := 0; i < simulation; i++ {
-		leafState, allNodes, selectss, err = node.SelectAndExpansion(allNodes, f, X, r, playerNum, capSize + 1)
+		leafState, allNodes, selectss, err = node.SelectAndExpansion(allNodes, f, X, r, simultaneousMove, capSize + 1)
 		if err != nil {
 			return Nodes[S, A]{}, err
 		}
