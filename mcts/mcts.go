@@ -83,6 +83,7 @@ func NewPUCBsByKey[S any, A comparable](state *S, policies Policies[S, A]) PUCBs
 	psy := policies(state)
 	y := make(PUCBsByKey[A], len(psy))
 	for i, py := range psy {
+		y[i] = PUCBByKey[A]{}
 		for a, p := range py {
 			y[i][a] = &PUCB{P:p}
 		}
