@@ -57,7 +57,7 @@ func (mp MaPUCB[K]) MaxKeys(X float64) []K {
 	return ks
 }
 
-func (mp MaPUCB[K]) MaxTrialKeys(X float64) []K {
+func (mp MaPUCB[K]) MaxTrialKeys() []K {
 	max := omw.Max(mp.Trials()...)
 	ks := make([]K, 0, len(mp))
 	for k, v := range mp {
