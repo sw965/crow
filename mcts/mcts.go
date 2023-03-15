@@ -26,64 +26,55 @@ func (p *PUCB) Get(totalTrial int, X float64) float64 {
 	return GetPUCB(p.P, v, totalTrial, p.Trial, X)
 }
 
-type PUCBByKey[K comparable] map[K]*PUCB
+type MaPUCB[K comparable] map[K]*PUCB
 
-func (pbk PUCBByKey[K]) TotalTrial() int {
-	y := 0
-	for _, v := range pbk {
-		y += v.Trial
+func (mp MaPUCB[K]) Trials() []int {
+	y := make([]int, 0, len(mp))
+	for _, v := range mp {
+		y = append(y, v.Trial)
 	}
 	return y
 }
-func (pbk PUCBByKey[K]) Max(X float64) float64 {
-	total := pbk.TotalTrial()
-	ys := make([]float64, 0, len(pbk))
-	for _, v := range pbk {
-		y := v.Get(total, X)
-		ys = append(ys, y)
+func (mp MaPUCB[K]) Max(X float64) float64 {
+	total := omw.Sum(mp.Trials()...)
+	y := make([]float64, 0, len(mp))
+	for _, v := range mp {
+		y = append(y, v.Get(total, X))
 	}
-	return omw.Max(ys...)
+	return omw.Max(y...)
 }
 
-func (pbk PUCBByKey[K]) MaxKeys(X float64) []K {
-	max := pbk.Max(X)
-	total := pbk.TotalTrial()
-	ks := make([]K, 0, len(pbk))
-	for k, v := range pbk {
-		y := v.Get(total, X)
-		if y == max {
+func (mp MaPUCB[K]) MaxKeys(X float64) []K {
+	max := mp.Max(X)
+	total := omw.Sum(mp.Trials()...)
+	ks := make([]K, 0, len(mp))
+	for k, v := range mp {
+		a := v.Get(total, X)
+		if a == max {
 			ks = append(ks, k)
 		}
 	}
 	return ks
 }
 
-func (pbk PUCBByKey[K]) MaxTrial(X float64) int {
-	trials := make([]int, 0, len(pbk))
-	for _, v := range pbk {
-		trials = append(trials, v.Trial)
-	}
-	return omw.Max(trials...)
-}
-
-func (pbk PUCBByKey[K]) MaxTrialKeys(X float64) []K {
-	max := pbk.MaxTrial(X)
-	ks := make([]K, 0, len(pbk))
-	for k, v := range pbk {
+func (mp MaPUCB[K]) MaxTrialKeys(X float64) []K {
+	max := omw.Max(mp.Trials()...)
+	ks := make([]K, 0, len(mp))
+	for k, v := range mp {
 		if v.Trial == max {
 			ks = append(ks, k)
 		}
 	}
-	return ks
+	return ks 
 }
 
-type PUCBsByKey[K comparable] []PUCBByKey[K]
+type MaPUCBs[K comparable] []MaPUCB[K]
 
-func NewPUCBsByKey[S any, A comparable](state *S, policies Policies[S, A]) PUCBsByKey[A] {
+func NewMaPUCBs[S any, A comparable](state *S, policies Policies[S, A]) MaPUCBs[A] {
 	psy := policies(state)
-	y := make(PUCBsByKey[A], len(psy))
+	y := make(MaPUCBs[A], len(psy))
 	for i, py := range psy {
-		y[i] = PUCBByKey[A]{}
+		y[i] = MaPUCB[A]{}
 		for a, p := range py {
 			y[i][a] = &PUCB{P:p}
 		}
@@ -116,21 +107,23 @@ type StateFunc[S any, A comparable] struct {
 	IsEnd IsEndState[S]
 }
 
+type GetNodeID[S any] func(*S) NodeID
+
 type Func[S any, A comparable] struct {
 	Eval Eval[S]
 	Policies Policies[S, A]
 	State StateFunc[S, A]
-	GetNodeID func(*S) NodeID
+	GetNodeID GetNodeID[S]
 }
 
 func (f *Func[S, A]) NewNode(state *S) *Node[S, A] {
 	id := f.GetNodeID(state)
-	return &Node[S, A]{State:*state, PUCBsByAction:NewPUCBsByKey(state, f.Policies), ID:id}
+	return &Node[S, A]{State:*state, MaPUCBs:NewMaPUCBs(state, f.Policies), ID:id}
 }
 
 type Node[S any, A comparable] struct {
 	State S
-	PUCBsByAction PUCBsByKey[A]
+	MaPUCBs MaPUCBs[A]
 	NextNodes Nodes[S, A]
 	SelectCount     int
 	ID NodeID
@@ -143,8 +136,8 @@ func (node *Node[S, A])SelectAndExpansion(allNodes Nodes[S, A], f *Func[S, A], X
 
 	for {
 		actions := make([]A, simultaneousMove)
-		for i, pucbByAction := range node.PUCBsByAction {
-			actions[i] = omw.RandomChoice(pucbByAction.MaxKeys(X), r)
+		for i, mp := range node.MaPUCBs {
+			actions[i] = omw.RandomChoice(mp.MaxKeys(X), r)
 		}
 
 		selects := make(Selects[S, A], simultaneousMove)
@@ -216,8 +209,8 @@ func (ss Selects[S, A]) Backward(leafEvalY float64, eval BackwardEval) {
 	for i, s := range ss {
 		node := s.Node
 		action := s.Action
-		node.PUCBsByAction[i][action].AccumReward += eval(leafEvalY, node.ID, PlayerNumber(i))
-		node.PUCBsByAction[i][action].Trial += 1
+		node.MaPUCBs[i][action].AccumReward += eval(leafEvalY, node.ID, PlayerNumber(i))
+		node.MaPUCBs[i][action].Trial += 1
 		node.SelectCount = 0
 	}
 }
@@ -232,7 +225,7 @@ func (sss Selectss[S, A]) Backward(leafEvalY float64, eval BackwardEval) {
 
 func Run[S any, A comparable](simulation int, rootState S, f *Func[S, A], X float64, r *rand.Rand) (Nodes[S, A], error) {
 	rootNode := f.NewNode(&rootState)
-	simultaneousMove := len(rootNode.PUCBsByAction)
+	simultaneousMove := len(rootNode.MaPUCBs)
 	allNodes := Nodes[S, A]{rootNode}
 
 	node := rootNode
