@@ -66,11 +66,11 @@ func (m KUCB[K]) MaxTrialKeys() []K {
 
 type KUCBs[K comparable] []KUCB[K]
 
-func NewKUCBs[A comparable](policies Policies[A], c float64) KUCBs[A] {
-	y := make(KUCBs[A], len(policies))
-	for i, policy := range policies {
+func NewKUCBs[A comparable](policYs PolicYs[A], c float64) KUCBs[A] {
+	y := make(KUCBs[A], len(policYs))
+	for i, policY := range policYs {
 		y[i] = KUCB[A]{}
-		for a, p := range policy {
+		for a, p := range policY {
 			y[i][a] = &UCB{Func:crow.UpperConfidenceBound1(p * c)}
 		}
 	}
@@ -85,11 +85,9 @@ type BackwardEvalY float64
 type LeafEval[S any] func(*S) LeafEvalY
 type BackwardEval func(LeafEvalY, NodeID, PlayerNumber) BackwardEvalY
 
-type Policy[A comparable] map[A]float64
-type Policies[A comparable] []Policy[A]
-type GetPolicies[S any, A comparable] func(*S) Policies[A]
-
-type GetC[S any] func(*S) float64
+type PolicY[A comparable] map[A]float64
+type PolicYs[A comparable] []PolicY[A]
+type Policies[S any, A comparable] func(*S) PolicYs[A]
 
 type Eval[S any]  struct {
 	Leaf LeafEval[S]
@@ -106,19 +104,20 @@ type StateFunc[S any, A comparable] struct {
 	IsEnd IsEndState[S]
 }
 
-type GetNodeID[S any] func(*S) NodeID
+type SetNodeID[S any, A comparable] func(*Node[S, A])
 
 type Func[S any, A comparable] struct {
 	Eval Eval[S]
-	GetPolicies GetPolicies[S, A]
+	Policies Policies[S, A]
 	State StateFunc[S, A]
-	GetNodeID GetNodeID[S]
+	SetNodeID SetNodeID[S, A]
 }
 
 func (f *Func[S, A]) NewNode(state *S, c float64) *Node[S, A] {
-	policies := f.GetPolicies(state)
-	id := f.GetNodeID(state)
-	return &Node[S, A]{State:*state, KUCBs:NewKUCBs(policies, c), ID:id}
+	policYs := f.Policies(state)
+	y := &Node[S, A]{State:*state, KUCBs:NewKUCBs(policYs, c)}
+	f.SetNodeID(y)
+	return y
 }
 
 type Node[S any, A comparable] struct {
