@@ -5,6 +5,7 @@ import (
 	"math/rand"
 	"github.com/sw965/omw"
 	"github.com/sw965/crow"
+	"github.com/sw965/crow/solver"
 )
 
 type UCB struct {
@@ -94,22 +95,12 @@ type Eval[S any]  struct {
 	Backward BackwardEval
 }
 
-type StatePush[S any, A comparable] func(S, ...A) (S, error)
-type EqualState[S any] func(*S, *S) bool
-type IsEndState[S any] func(*S) bool
-
-type StateFunc[S any, A comparable] struct {
-	Push StatePush[S, A]
-	Equal EqualState[S]
-	IsEnd IsEndState[S]
-}
-
 type SetNodeID[S any, A comparable] func(*Node[S, A])
 
 type Func[S any, A comparable] struct {
 	Eval Eval[S]
 	Policies Policies[S, A]
-	State StateFunc[S, A]
+	State solver.StateFunc[S, A]
 	SetNodeID SetNodeID[S, A]
 }
 
@@ -147,7 +138,7 @@ func (node *Node[S, A])SelectAndExpansion(allNodes Nodes[S, A], f *Func[S, A], c
 
 		node.SelectCount += 1
 
-		state, err = f.State.Push(state, actions...)
+		state = f.State.Push(state, actions...)
 		if err != nil {
 			var zero S
 			return zero, Nodes[S, A]{}, Selectss[S, A]{}, err
@@ -188,7 +179,7 @@ func (node *Node[S, A])SelectAndExpansion(allNodes Nodes[S, A], f *Func[S, A], c
 
 type Nodes[S any, A comparable] []*Node[S, A]
 
-func (nodes Nodes[S, A]) Find(state *S, eq EqualState[S]) (*Node[S, A], error) {
+func (nodes Nodes[S, A]) Find(state *S, eq solver.EqualState[S]) (*Node[S, A], error) {
 	for _, v := range nodes {
 		if eq(&v.State, state) {
 			return v, nil
@@ -247,4 +238,8 @@ func Run[S any, A comparable](simulation int, rootState S, f *Func[S, A], c floa
 		selectss.Backward(y, f.Eval.Backward)
 	}
 	return allNodes, nil
+}
+
+func NewPlayer() {
+
 }
