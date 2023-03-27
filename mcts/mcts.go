@@ -1,4 +1,4 @@
-package mcts6
+package mcts
 
 import (
 	"fmt"
