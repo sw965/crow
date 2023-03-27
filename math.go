@@ -1,18 +1,8 @@
 package crow
 
 import (
-	"math"
 	"golang.org/x/exp/constraints"
 )
-
-type UCBFunc func(float64, int, int) float64
-
-func UpperConfidenceBound1(c float64) UCBFunc {
-	return func(v float64, n, a int) float64 {
-		fn := float64(n)
-		return v + (c * math.Sqrt(fn) / float64(a))
-	}
-}
 
 func NumericalGradient[X constraints.Float](xs []X, f func([]X) X) []X {
 	h := X(0.0001)
