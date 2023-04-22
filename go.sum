@@ -1,6 +1,6 @@
 github.com/seehuhn/mt19937 v1.0.0 h1:r02DuVkQXfohssWZO8L/TeAlYOah7aNNubEHB/7Vtfs=
 github.com/seehuhn/mt19937 v1.0.0/go.mod h1:RikyXajNu+1Gqxm4hOacc3ckyWRd0usF6IkE3gnEcAM=
-github.com/sw965/omw v0.0.0-20230410135627-0d7468dc2169 h1:VHOkBWGUaeme9n2GF9Jh6L0gCUyXEb74PkGjL/fs53o=
-github.com/sw965/omw v0.0.0-20230410135627-0d7468dc2169/go.mod h1:peckYrI9GvvEGcAPxTY+5WMbwRt5//F7uoPIF9gHv1w=
+github.com/sw965/omw v0.0.0-20230419111022-bce1482a100f h1:D/9zL3vv6LuXSHemdt+RR0461YgHrCin+q/7aL/ma4A=
+github.com/sw965/omw v0.0.0-20230419111022-bce1482a100f/go.mod h1:peckYrI9GvvEGcAPxTY+5WMbwRt5//F7uoPIF9gHv1w=
 golang.org/x/exp v0.0.0-20230118134722-a68e582fa157 h1:fiNkyhJPUvxbRPbCqY/D9qdjmPzfHcpK3P4bM4gioSY=
 golang.org/x/exp v0.0.0-20230118134722-a68e582fa157/go.mod h1:CxIveKay+FTh1D0yPZemJVgC/95VzuuOLq5Qi4xnoYc=
