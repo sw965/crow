@@ -56,13 +56,13 @@ func TestPUCT(t *testing.T) {
 
 	puct := crow.PUCT[[]int, int]{FunCaller:fnCaller}
 	init := []int{}
-	allNodes := puct.Run(19600, init, math.Sqrt(25.0), r)
+	allNodes := puct.Run(196000, init, math.Sqrt(25.0), r)
 	for _, coin := range ALL_COINS {
 		pucb := allNodes[0].PUCBManager[coin]
 		fmt.Println(coin, pucb.AccumReward, pucb.Trial, pucb.AverageReward())
 	}
 
-	fmt.Println(allNodes[0].ActionPrediction(math.Sqrt(2), r, 64))
+	fmt.Println(allNodes[0].ActionPrediction(r, 64))
 }
 
 type PPSState struct {
@@ -75,7 +75,7 @@ func TestDPUCT(t *testing.T) {
 	var HANDS = []string{"グー", "チョキ", "パー"}
 
 	legalActionss := func(state *PPSState) ([][]string) {
-		return [][]string{HANDS, HANDS}
+		return [][]string{HANDS, []string{"チョキ", "パー"}}
 	}
 
 	push := func(state PPSState, hands ...string) PPSState {
@@ -119,14 +119,15 @@ func TestDPUCT(t *testing.T) {
 		LeafEvals:leafEvals,
 	}
 	fnCaller.SetNoPolicies()
+	fmt.Println(fnCaller.Policies(&PPSState{}))
 
 	dpuct := crow.DPUCT[PPSState, string]{FunCaller:fnCaller}
-	allNodes := dpuct.Run(1960, PPSState{}, math.Sqrt(2), r)
+	allNodes := dpuct.Run(196000, PPSState{}, math.Sqrt(25), r)
 	for i, m := range allNodes[0].PUCBManagers {
 		for a, pucb := range m {
 			fmt.Println(i, a, pucb.AverageReward(), pucb.Trial)
 		}
 	}
 
-	fmt.Println(allNodes[0].ActionPrediction(math.Sqrt(2), r, 64))
+	fmt.Println(allNodes[0].ActionPrediction(r, 64))
 }

@@ -238,15 +238,20 @@ func (node *PUCT_Node[S, A]) Trial() int {
 	return omw.Sum(node.PUCBManager.Trials()...)
 }
 
-func (node *PUCT_Node[S, A]) ActionPrediction(c float64, r *rand.Rand, cap_ int) []A {
+func (node *PUCT_Node[S, A]) ActionPrediction(r *rand.Rand, cap_ int) []A {
 	y := make([]A, 0, cap_)
 	for {
+		if len(node.PUCBManager) == 0 {
+			break
+		}
+
+		action := omw.RandChoice(node.PUCBManager.MaxTrialKeys(), r)
+		y = append(y, action)
+
 		if len(node.NextNodes) == 0 {
 			break
 		}
 
-		action := omw.RandChoice(node.PUCBManager.MaxKeys(c), r)
-		y = append(y, action)
 		max := node.NextNodes[0].Trial()
 		nextNode := node.NextNodes[0]
 
@@ -414,28 +419,20 @@ type DPUCT_Node[S any, A comparable] struct {
 	State S
 	PUCBManagers PUCBMapManagers[A]
 	NextNodes DPUCT_Nodes[S, A]
+	Trial int
 	SelectCount     int
 }
 
-func (node *DPUCT_Node[S, A]) Trial() int {
-	maxes := make([]int, len(node.PUCBManagers))
-	for playerI, m := range node.PUCBManagers {
-		maxes[playerI] = omw.Max(m.Trials()...)
-	}
-	return omw.Max(maxes...)
-}
-
-func (node *DPUCT_Node[S, A]) ActionPrediction(c float64, r *rand.Rand, cap_ int) [][]A {
+func (node *DPUCT_Node[S, A]) ActionPrediction(r *rand.Rand, cap_ int) [][]A {
 	y := make([][]A, 0, cap_)
 	for {
-
 		if len(node.PUCBManagers) == 0 {
 			break
 		}
 
 		actions := make([]A, len(node.PUCBManagers))
 		for playerI, m := range node.PUCBManagers {
-			actions[playerI] = omw.RandChoice(m.MaxKeys(c), r)
+			actions[playerI] = omw.RandChoice(m.MaxTrialKeys(), r)
 		}
 		y = append(y, actions)
 
@@ -443,12 +440,11 @@ func (node *DPUCT_Node[S, A]) ActionPrediction(c float64, r *rand.Rand, cap_ int
 			break
 		}
 
-
-		max := node.NextNodes[0].Trial()
+		max := node.NextNodes[0].Trial
 		nextNode := node.NextNodes[0]
 
 		for _, nn := range node.NextNodes[1:] {
-			trial := nn.Trial()
+			trial := nn.Trial
 			if trial > max {
 				max = trial
 				nextNode = nn
@@ -507,6 +503,7 @@ func (s *DPUCT_Selector[S, A])SelectAndExpansion(simultaneous int, node *DPUCT_N
 
 		selects = append(selects, DPUCT_Select[S, A]{Node:node, Actions:actions})
 		node.SelectCount += 1
+		node.Trial += 1
 
 		state = f.Game.Push(state, actions...)
 		stateP := &state
