@@ -5,6 +5,7 @@ import (
 	"math/rand"
 	"github.com/sw965/omw"
 	"golang.org/x/exp/constraints"
+	"golang.org/x/exp/maps"
 )
 
 func NumericalGradient[X constraints.Float](xs []X, f func([]X) X) []X {
@@ -30,16 +31,6 @@ func PolicyUpperConfidenceBound(c, p, v float64, n, a int) float64 {
 	return v + (c * p * math.Sqrt(fn) / float64(a+1))
 }
 
-type Reward float64
-
-const (
-	WIN_REWARD = Reward(1.0)
-	LOSE_REWARD = Reward(0.0)
-	DRAW_REWARD = Reward(0.5)
-	NIL_REWARD = Reward(-128.0)
-)
-
-
 type AlternatelyMoveGamePlayer[S any, A comparable] func(*S) A
 type SimultaneousMoveGamePlayer[S any, A comparable] func(*S) []A
 
@@ -50,14 +41,24 @@ type StateAlternatelyPushFunc[S any, A comparable] func(S, A) S
 type StateSimultaneousPushFunc[S any, A comparable] func(S, ...A) S
 
 type EqualStateFunc[S any] func(*S, *S) bool
-type IsEndStateWithRewardFunc[S any] func(*S) (bool, Reward)
+type IsEndStateFunc[S any] func(*S) bool
 
 type AlternatelyMoveGameFunCaller[S any, A comparable] struct {
 	Player AlternatelyMoveGamePlayer[S, A]
 	LegalActions AlternatelyMoveGameLegalActionsFunc[S, A]
 	Push StateAlternatelyPushFunc[S, A]
 	EqualState EqualStateFunc[S]
-	IsEndWithReward IsEndStateWithRewardFunc[S]
+	IsEnd IsEndStateFunc[S]
+}
+
+func (f *AlternatelyMoveGameFunCaller[S, A]) Clone() AlternatelyMoveGameFunCaller[S, A] {
+	return AlternatelyMoveGameFunCaller[S, A]{
+		Player:f.Player,
+		LegalActions:f.LegalActions,
+		Push:f.Push,
+		EqualState:f.EqualState,
+		IsEnd:f.IsEnd,
+	}
 }
 
 func (f *AlternatelyMoveGameFunCaller[S, A]) SetRandomActionPlayer(r *rand.Rand) {
@@ -66,16 +67,39 @@ func (f *AlternatelyMoveGameFunCaller[S, A]) SetRandomActionPlayer(r *rand.Rand)
 	}
 }
 
-func (f *AlternatelyMoveGameFunCaller[S, A]) Playout(state S) Reward {
+func (f *AlternatelyMoveGameFunCaller[S, A]) SetPUCTPlayer(puct *PUCT[S, A], simulation int, c float64, random *rand.Rand, r float64) {
+	f.Player = func(state *S) A {
+		allNodes := puct.Run(simulation, *state, c, random)
+		node := allNodes[0]
+		percent := node.PUCBManager.TrialPercent()
+		max := omw.Max(maps.Values(percent)...)
+
+		n := len(percent)
+		actions := make([]A, 0, n)
+		ws := make([]float64, 0, n)
+
+		for a, p := range percent {
+			if max*r <= p {
+				actions = append(actions, a)
+				ws = append(ws, p)
+			}
+		}
+
+		idx := omw.RandIntWithWeight(ws, random)
+		return actions[idx]
+	}
+}
+
+func (f *AlternatelyMoveGameFunCaller[S, A]) Playout(state S) S {
 	for {
-		isEnd, reward := f.IsEndWithReward(&state)
+		isEnd := f.IsEnd(&state)
 		if isEnd {
-			return reward
+			break
 		}
 		action := f.Player(&state)
 		state = f.Push(state, action)
 	}
-	return NIL_REWARD
+	return state
 }
 
 type SimultaneousMoveGameFunCaller[S any, A comparable] struct {
@@ -83,7 +107,17 @@ type SimultaneousMoveGameFunCaller[S any, A comparable] struct {
 	LegalActionss SimultaneousMoveGameLegalActionssFunc[S, A]
 	Push StateSimultaneousPushFunc[S, A]
 	EqualState EqualStateFunc[S]
-	IsEndWithReward IsEndStateWithRewardFunc[S]
+	IsEnd IsEndStateFunc[S]
+}
+
+func (f *SimultaneousMoveGameFunCaller[S, A]) Clone() SimultaneousMoveGameFunCaller[S, A] {
+	return SimultaneousMoveGameFunCaller[S, A]{
+		Player:f.Player,
+		LegalActionss:f.LegalActionss,
+		Push:f.Push,
+		EqualState:f.EqualState,
+		IsEnd:f.IsEnd,
+	}
 }
 
 func (f *SimultaneousMoveGameFunCaller[S, A]) SetRandomActionPlayer(r *rand.Rand) {
@@ -97,20 +131,20 @@ func (f *SimultaneousMoveGameFunCaller[S, A]) SetRandomActionPlayer(r *rand.Rand
 	}
 }
 
-func (f *SimultaneousMoveGameFunCaller[S, A]) Playout(state S) Reward {
+func (f *SimultaneousMoveGameFunCaller[S, A]) Playout(state S) S {
 	for {
-		isEnd, reward := f.IsEndWithReward(&state)
+		isEnd := f.IsEnd(&state)
 		if isEnd {
-			return reward
+			break
 		}
 		actions := f.Player(&state)
 		state = f.Push(state, actions...)
 	}
-	return -128.0
+	return state
 }
 
 type UtilPUCB struct {
-	AccumReward Reward
+	AccumReward float64
 	Trial       int
 	P float64
 }
@@ -179,7 +213,7 @@ type PUCBMapManagers[K comparable] []PUCBMapManager[K]
 type ActionPolicY[A comparable] map[A]float64
 type ActionPolicyFunc[S any, A comparable] func(*S) ActionPolicY[A]
 
-type PUCT_LeafEvalY Reward
+type PUCT_LeafEvalY float64
 type PUCT_LeafEvalFunc[S any] func(*S) PUCT_LeafEvalY
 
 type PUCT_BackwardEvalY float64
@@ -217,14 +251,6 @@ func (f *PUCT_FunCaller[S, A]) SetNoPolicy() {
 		return y
 	}
 	f.Policy = policy
-}
-
-func (f *PUCT_FunCaller[S, A]) SetPlayoutLeafEval() {
-	var leaf PUCT_LeafEvalFunc[S]
-	leaf = func(state *S) PUCT_LeafEvalY {
-		return PUCT_LeafEvalY(f.Game.Playout(*state))
-	}
-	f.Eval.Leaf = leaf
 }
 
 type PUCT_Node[S any, A comparable] struct {
@@ -289,7 +315,7 @@ func (ss PUCT_Selects[S, A]) Backward(y PUCT_LeafEvalY, eval PUCT_BackwardEvalFu
 	for _, s := range ss {
 		node := s.Node
 		action := s.Action
-		node.PUCBManager[action].AccumReward += Reward(eval(y, &node.State))
+		node.PUCBManager[action].AccumReward += float64(eval(y, &node.State))
 		node.PUCBManager[action].Trial += 1
 		node.SelectCount = 0
 	}
@@ -306,9 +332,6 @@ func (s *PUCT_Selector[S, A]) SelectAndExpansion(node *PUCT_Node[S, A], allNodes
 	selects := make(PUCT_Selects[S, A], 0, s.Cap)
 
 	for {
-		// for a, pucb := range node.PUCBManager {
-		// 	fmt.Println(a, pucb.Get(omw.Sum(node.PUCBManager.Trials()...), len(node.PUCBManager)))
-		// }
 		action := omw.RandChoice(node.PUCBManager.MaxKeys(c), r)
 		selects = append(selects, PUCT_Select[S, A]{Node:node, Action:action})
 
@@ -317,7 +340,7 @@ func (s *PUCT_Selector[S, A]) SelectAndExpansion(node *PUCT_Node[S, A], allNodes
 		state = f.Game.Push(state, action)
 		stateP := &state
 
-		if isEnd, _ := f.Game.IsEndWithReward(stateP); isEnd {
+		if isEnd := f.Game.IsEnd(stateP); isEnd {
 			break
 		}
 
@@ -478,7 +501,7 @@ func (ss DPUCT_Selects[S, A]) Backward(ys DPUCT_LeafEvalYs) {
 		node := s.Node
 		actions := s.Actions
 		for playerI, action := range actions {
-			node.PUCBManagers[playerI][action].AccumReward += Reward(ys[playerI])
+			node.PUCBManagers[playerI][action].AccumReward += float64(ys[playerI])
 			node.PUCBManagers[playerI][action].Trial += 1
 		}
 		node.SelectCount = 0
@@ -508,7 +531,7 @@ func (s *DPUCT_Selector[S, A])SelectAndExpansion(simultaneous int, node *DPUCT_N
 		state = f.Game.Push(state, actions...)
 		stateP := &state
 
-		if isEnd, _ := f.Game.IsEndWithReward(stateP); isEnd {
+		if isEnd := f.Game.IsEnd(stateP); isEnd {
 			break
 		}
 

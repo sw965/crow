@@ -11,6 +11,7 @@ import (
 
 func TestPUCT(t *testing.T) {
 	r := omw.NewMt19937()
+	COIN_TOSS_NUM := 10
 	ALL_COINS := omw.MakeIntegerRange[[]int](0, 5, 1)
 	MAX_COIN := omw.Max(ALL_COINS...)
 
@@ -31,28 +32,32 @@ func TestPUCT(t *testing.T) {
 		return slices.Equal(*coins1, *coins2)
 	}
 
-	isEndWithReward := func(coins *[]int) (bool, crow.Reward) {
-		reward := crow.Reward(omw.Sum(*coins...))
-		n := 10
-		return len(*coins) == n, reward / crow.Reward(MAX_COIN * n)
+	isEnd := func(coins *[]int) bool {
+		return len(*coins) == COIN_TOSS_NUM
 	}
 
 	game := crow.AlternatelyMoveGameFunCaller[[]int, int]{
 		LegalActions:legalActions,
 		Push:push,
 		EqualState:equal,
-		IsEndWithReward:isEndWithReward,
+		IsEnd:isEnd,
 	}
 	game.SetRandomActionPlayer(r)
+
+	leaf := func(coins *[]int) crow.PUCT_LeafEvalY {
+		endCoins := game.Playout(*coins)
+		sum := crow.PUCT_LeafEvalY(omw.Sum(endCoins...))
+		return sum / crow.PUCT_LeafEvalY(MAX_COIN * COIN_TOSS_NUM)
+	}
 
 	backward := func(y crow.PUCT_LeafEvalY, coins *[]int) crow.PUCT_BackwardEvalY {
 		return crow.PUCT_BackwardEvalY(y)
 	}
-	eval := crow.PUCT_EvalFunCaller[[]int]{Backward:backward}
+
+	eval := crow.PUCT_EvalFunCaller[[]int]{Leaf:leaf, Backward:backward}
 
 	fnCaller := crow.PUCT_FunCaller[[]int, int]{Game:game, Eval:eval}
 	fnCaller.SetNoPolicy()
-	fnCaller.SetPlayoutLeafEval()
 
 	puct := crow.PUCT[[]int, int]{FunCaller:fnCaller}
 	init := []int{}
@@ -86,32 +91,31 @@ func TestDPUCT(t *testing.T) {
 		return *state1 == *state2
 	}
 
-	isEndWithReward := func(state *PPSState) (bool, crow.Reward) {
-		rewards := map[string]map[string]crow.Reward{
-			"グー":map[string]crow.Reward{"チョキ":1.0, "パー":0.0},
-			"チョキ":map[string]crow.Reward{"グー":0.0, "パー":1.0},
-			"パー":map[string]crow.Reward{"グー":1.0, "チョキ":0.0},
-		}
-		if state.Hand1 == state.Hand2 {
-			return true, 0.5
-		} else {
-			return true, rewards[state.Hand1][state.Hand2]
-		}
+	isEnd := func(state *PPSState) bool {
+		return state.Hand1 != "" && state.Hand2 != ""
 	}
 
 	game := crow.SimultaneousMoveGameFunCaller[PPSState, string]{
 		LegalActionss:legalActionss,
 		Push:push,
 		EqualState:equal,
-		IsEndWithReward:isEndWithReward,
+		IsEnd:isEnd,
 	}
 
 	game.SetRandomActionPlayer(r)
 
 	leafEvals := func(state *PPSState) crow.DPUCT_LeafEvalYs {
-		_, reward := isEndWithReward(state)
-		leaf := crow.DPUCT_LeafEvalY(reward)
-		return crow.DPUCT_LeafEvalYs{leaf, 1.0 - leaf}
+		if state.Hand1 == state.Hand2 {
+			return crow.DPUCT_LeafEvalYs{0.5, 0.5}
+		}
+
+		reward := map[string]map[string]float64{
+			"グー":map[string]float64{"チョキ":1.0, "パー":0.0},
+			"チョキ":map[string]float64{"グー":0.0, "パー":1.0},
+			"パー":map[string]float64{"グー":1.0, "チョキ":0.0},
+		}
+		y := crow.DPUCT_LeafEvalY(reward[state.Hand1][state.Hand2])
+		return crow.DPUCT_LeafEvalYs{y, 1.0 - y}
 	}
 
 	fnCaller := crow.DPUCT_FunCaller[PPSState, string]{
