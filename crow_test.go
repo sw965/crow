@@ -36,7 +36,7 @@ func TestPUCT(t *testing.T) {
 		return len(*coins) == COIN_TOSS_NUM
 	}
 
-	game := crow.AlternatelyMoveGameFunCaller[[]int, int]{
+	game := crow.SequentialGameFunCaller[[]int, int]{
 		LegalActions:legalActions,
 		Push:push,
 		EqualState:equal,
@@ -95,7 +95,7 @@ func TestDPUCT(t *testing.T) {
 		return state.Hand1 != "" && state.Hand2 != ""
 	}
 
-	game := crow.SimultaneousMoveGameFunCaller[PPSState, string]{
+	game := crow.SimultaneousGameFunCaller[PPSState, string]{
 		LegalActionss:legalActionss,
 		Push:push,
 		EqualState:equal,

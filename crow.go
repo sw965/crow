@@ -31,11 +31,11 @@ func PolicyUpperConfidenceBound(c, p, v float64, n, a int) float64 {
 	return v + (c * p * math.Sqrt(fn) / float64(a+1))
 }
 
-type AlternatelyMoveGamePlayer[S any, A comparable] func(*S) A
-type SimultaneousMoveGamePlayer[S any, A comparable] func(*S) []A
+type SequentialGamePlayer[S any, A comparable] func(*S) A
+type SimultaneousGamePlayer[S any, A comparable] func(*S) []A
 
-type AlternatelyMoveGameLegalActionsFunc[S any, A comparable] func(*S) []A
-type SimultaneousMoveGameLegalActionssFunc[S any, A comparable] func(*S) [][]A
+type SequentialGameLegalActionsFunc[S any, A comparable] func(*S) []A
+type SimultaneousGameLegalActionssFunc[S any, A comparable] func(*S) [][]A
 
 type StateAlternatelyPushFunc[S any, A comparable] func(S, A) S
 type StateSimultaneousPushFunc[S any, A comparable] func(S, ...A) S
@@ -43,16 +43,16 @@ type StateSimultaneousPushFunc[S any, A comparable] func(S, ...A) S
 type EqualStateFunc[S any] func(*S, *S) bool
 type IsEndStateFunc[S any] func(*S) bool
 
-type AlternatelyMoveGameFunCaller[S any, A comparable] struct {
-	Player AlternatelyMoveGamePlayer[S, A]
-	LegalActions AlternatelyMoveGameLegalActionsFunc[S, A]
+type SequentialGameFunCaller[S any, A comparable] struct {
+	Player SequentialGamePlayer[S, A]
+	LegalActions SequentialGameLegalActionsFunc[S, A]
 	Push StateAlternatelyPushFunc[S, A]
 	EqualState EqualStateFunc[S]
 	IsEnd IsEndStateFunc[S]
 }
 
-func (f *AlternatelyMoveGameFunCaller[S, A]) Clone() AlternatelyMoveGameFunCaller[S, A] {
-	return AlternatelyMoveGameFunCaller[S, A]{
+func (f *SequentialGameFunCaller[S, A]) Clone() SequentialGameFunCaller[S, A] {
+	return SequentialGameFunCaller[S, A]{
 		Player:f.Player,
 		LegalActions:f.LegalActions,
 		Push:f.Push,
@@ -61,13 +61,13 @@ func (f *AlternatelyMoveGameFunCaller[S, A]) Clone() AlternatelyMoveGameFunCalle
 	}
 }
 
-func (f *AlternatelyMoveGameFunCaller[S, A]) SetRandomActionPlayer(r *rand.Rand) {
+func (f *SequentialGameFunCaller[S, A]) SetRandomActionPlayer(r *rand.Rand) {
 	f.Player = func(state *S) A {
 		return omw.RandChoice(f.LegalActions(state), r)
 	}
 }
 
-func (f *AlternatelyMoveGameFunCaller[S, A]) SetPUCTPlayer(puct *PUCT[S, A], simulation int, c float64, random *rand.Rand, r float64) {
+func (f *SequentialGameFunCaller[S, A]) SetPUCTPlayer(puct *PUCT[S, A], simulation int, c float64, random *rand.Rand, r float64) {
 	f.Player = func(state *S) A {
 		allNodes := puct.Run(simulation, *state, c, random)
 		node := allNodes[0]
@@ -90,7 +90,7 @@ func (f *AlternatelyMoveGameFunCaller[S, A]) SetPUCTPlayer(puct *PUCT[S, A], sim
 	}
 }
 
-func (f *AlternatelyMoveGameFunCaller[S, A]) Playout(state S) S {
+func (f *SequentialGameFunCaller[S, A]) Playout(state S) S {
 	for {
 		isEnd := f.IsEnd(&state)
 		if isEnd {
@@ -102,16 +102,16 @@ func (f *AlternatelyMoveGameFunCaller[S, A]) Playout(state S) S {
 	return state
 }
 
-type SimultaneousMoveGameFunCaller[S any, A comparable] struct {
-	Player SimultaneousMoveGamePlayer[S, A]
-	LegalActionss SimultaneousMoveGameLegalActionssFunc[S, A]
+type SimultaneousGameFunCaller[S any, A comparable] struct {
+	Player SimultaneousGamePlayer[S, A]
+	LegalActionss SimultaneousGameLegalActionssFunc[S, A]
 	Push StateSimultaneousPushFunc[S, A]
 	EqualState EqualStateFunc[S]
 	IsEnd IsEndStateFunc[S]
 }
 
-func (f *SimultaneousMoveGameFunCaller[S, A]) Clone() SimultaneousMoveGameFunCaller[S, A] {
-	return SimultaneousMoveGameFunCaller[S, A]{
+func (f *SimultaneousGameFunCaller[S, A]) Clone() SimultaneousGameFunCaller[S, A] {
+	return SimultaneousGameFunCaller[S, A]{
 		Player:f.Player,
 		LegalActionss:f.LegalActionss,
 		Push:f.Push,
@@ -120,7 +120,7 @@ func (f *SimultaneousMoveGameFunCaller[S, A]) Clone() SimultaneousMoveGameFunCal
 	}
 }
 
-func (f *SimultaneousMoveGameFunCaller[S, A]) SetRandomActionPlayer(r *rand.Rand) {
+func (f *SimultaneousGameFunCaller[S, A]) SetRandomActionPlayer(r *rand.Rand) {
 	f.Player = func(state *S) []A {
 		actionss := f.LegalActionss(state)
 		y := make([]A, len(actionss))
@@ -131,7 +131,7 @@ func (f *SimultaneousMoveGameFunCaller[S, A]) SetRandomActionPlayer(r *rand.Rand
 	}
 }
 
-func (f *SimultaneousMoveGameFunCaller[S, A]) Playout(state S) S {
+func (f *SimultaneousGameFunCaller[S, A]) Playout(state S) S {
 	for {
 		isEnd := f.IsEnd(&state)
 		if isEnd {
@@ -225,7 +225,7 @@ type PUCT_EvalFunCaller[S any] struct {
 }
 
 type PUCT_FunCaller[S any, A comparable] struct {
-	Game AlternatelyMoveGameFunCaller[S, A]
+	Game SequentialGameFunCaller[S, A]
 	Policy ActionPolicyFunc[S, A]
 	Eval PUCT_EvalFunCaller[S]
 }
@@ -403,7 +403,7 @@ type DPUCT_LeafEvalYs []DPUCT_LeafEvalY
 type DPUCT_LeafEvalsFunc[S any] func(*S) DPUCT_LeafEvalYs
 
 type DPUCT_FunCaller[S any, A comparable] struct {
-	Game SimultaneousMoveGameFunCaller[S, A]
+	Game SimultaneousGameFunCaller[S, A]
 	Policies ActionPoliciesFunc[S, A]
 	LeafEvals DPUCT_LeafEvalsFunc[S]
 }
