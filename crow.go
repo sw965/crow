@@ -32,10 +32,10 @@ func PolicyUpperConfidenceBound(c, p, v float64, n, a int) float64 {
 }
 
 type SequentialGamePlayer[S any, A comparable] func(*S) A
-type SimultaneousGamePlayer[S any, A comparable] func(*S) []A
+type SimultaneousGamePlayer[S any, AS ~[]A, A comparable] func(*S) AS
 
-type SequentialGameLegalActionsFunc[S any, A comparable] func(*S) []A
-type SimultaneousGameLegalActionssFunc[S any, A comparable] func(*S) [][]A
+type SequentialGameLegalActionsFunc[S any, AS ~[]A, A comparable] func(*S) AS
+type SimultaneousGameLegalActionssFunc[S any, ASS ~[]AS, AS ~[]A, A comparable] func(*S) ASS
 
 type StateAlternatelyPushFunc[S any, A comparable] func(S, A) S
 type StateSimultaneousPushFunc[S any, A comparable] func(S, ...A) S
@@ -43,16 +43,16 @@ type StateSimultaneousPushFunc[S any, A comparable] func(S, ...A) S
 type EqualStateFunc[S any] func(*S, *S) bool
 type IsEndStateFunc[S any] func(*S) bool
 
-type SequentialGameFunCaller[S any, A comparable] struct {
+type SequentialGameFunCaller[S any, AS ~[]A, A comparable] struct {
 	Player SequentialGamePlayer[S, A]
-	LegalActions SequentialGameLegalActionsFunc[S, A]
+	LegalActions SequentialGameLegalActionsFunc[S, AS, A]
 	Push StateAlternatelyPushFunc[S, A]
 	EqualState EqualStateFunc[S]
 	IsEnd IsEndStateFunc[S]
 }
 
-func (f *SequentialGameFunCaller[S, A]) Clone() SequentialGameFunCaller[S, A] {
-	return SequentialGameFunCaller[S, A]{
+func (f *SequentialGameFunCaller[S, AS, A]) Clone() SequentialGameFunCaller[S, AS, A] {
+	return SequentialGameFunCaller[S, AS, A]{
 		Player:f.Player,
 		LegalActions:f.LegalActions,
 		Push:f.Push,
@@ -61,13 +61,13 @@ func (f *SequentialGameFunCaller[S, A]) Clone() SequentialGameFunCaller[S, A] {
 	}
 }
 
-func (f *SequentialGameFunCaller[S, A]) SetRandomActionPlayer(r *rand.Rand) {
+func (f *SequentialGameFunCaller[S, AS, A]) SetRandomActionPlayer(r *rand.Rand) {
 	f.Player = func(state *S) A {
 		return omw.RandChoice(f.LegalActions(state), r)
 	}
 }
 
-func (f *SequentialGameFunCaller[S, A]) SetPUCTPlayer(puct *PUCT[S, A], simulation int, c float64, random *rand.Rand, r float64) {
+func (f *SequentialGameFunCaller[S, AS, A]) SetPUCTPlayer(puct *PUCT[S, AS, A], simulation int, c float64, random *rand.Rand, r float64) {
 	f.Player = func(state *S) A {
 		allNodes := puct.Run(simulation, *state, c, random)
 		node := allNodes[0]
@@ -90,7 +90,7 @@ func (f *SequentialGameFunCaller[S, A]) SetPUCTPlayer(puct *PUCT[S, A], simulati
 	}
 }
 
-func (f *SequentialGameFunCaller[S, A]) Playout(state S) S {
+func (f *SequentialGameFunCaller[S, AS, A]) Playout(state S) S {
 	for {
 		isEnd := f.IsEnd(&state)
 		if isEnd {
@@ -102,16 +102,16 @@ func (f *SequentialGameFunCaller[S, A]) Playout(state S) S {
 	return state
 }
 
-type SimultaneousGameFunCaller[S any, A comparable] struct {
-	Player SimultaneousGamePlayer[S, A]
-	LegalActionss SimultaneousGameLegalActionssFunc[S, A]
+type SimultaneousGameFunCaller[S any, ASS ~[]AS, AS ~[]A, A comparable] struct {
+	Player SimultaneousGamePlayer[S, AS, A]
+	LegalActionss SimultaneousGameLegalActionssFunc[S, ASS, AS, A]
 	Push StateSimultaneousPushFunc[S, A]
 	EqualState EqualStateFunc[S]
 	IsEnd IsEndStateFunc[S]
 }
 
-func (f *SimultaneousGameFunCaller[S, A]) Clone() SimultaneousGameFunCaller[S, A] {
-	return SimultaneousGameFunCaller[S, A]{
+func (f *SimultaneousGameFunCaller[S, ASS, AS, A]) Clone() SimultaneousGameFunCaller[S, ASS, AS, A] {
+	return SimultaneousGameFunCaller[S, ASS, AS, A]{
 		Player:f.Player,
 		LegalActionss:f.LegalActionss,
 		Push:f.Push,
@@ -120,8 +120,8 @@ func (f *SimultaneousGameFunCaller[S, A]) Clone() SimultaneousGameFunCaller[S, A
 	}
 }
 
-func (f *SimultaneousGameFunCaller[S, A]) SetRandomActionPlayer(r *rand.Rand) {
-	f.Player = func(state *S) []A {
+func (f *SimultaneousGameFunCaller[S, ASS, AS, A]) SetRandomActionPlayer(r *rand.Rand) {
+	f.Player = func(state *S) AS {
 		actionss := f.LegalActionss(state)
 		y := make([]A, len(actionss))
 		for playerI, actions := range actionss {
@@ -131,7 +131,7 @@ func (f *SimultaneousGameFunCaller[S, A]) SetRandomActionPlayer(r *rand.Rand) {
 	}
 }
 
-func (f *SimultaneousGameFunCaller[S, A]) Playout(state S) S {
+func (f *SimultaneousGameFunCaller[S, ASS, AS, A]) Playout(state S) S {
 	for {
 		isEnd := f.IsEnd(&state)
 		if isEnd {
@@ -224,13 +224,13 @@ type PUCT_EvalFunCaller[S any] struct {
 	Backward PUCT_BackwardEvalFunc[S]
 }
 
-type PUCT_FunCaller[S any, A comparable] struct {
-	Game SequentialGameFunCaller[S, A]
+type PUCT_FunCaller[S any, AS ~[]A, A comparable] struct {
+	Game SequentialGameFunCaller[S, AS, A]
 	Policy ActionPolicyFunc[S, A]
 	Eval PUCT_EvalFunCaller[S]
 }
 
-func (f *PUCT_FunCaller[S, A]) NewNode(state *S) *PUCT_Node[S, A] {
+func (f *PUCT_FunCaller[S, AS, A]) NewNode(state *S) *PUCT_Node[S, A] {
 	py := f.Policy(state)
 	m := PUCBMapManager[A]{}
 	for a, p := range py {
@@ -239,7 +239,7 @@ func (f *PUCT_FunCaller[S, A]) NewNode(state *S) *PUCT_Node[S, A] {
 	return &PUCT_Node[S, A]{State:*state, PUCBManager:m}
 }
 
-func (f *PUCT_FunCaller[S, A]) SetNoPolicy() {
+func (f *PUCT_FunCaller[S, AS, A]) SetNoPolicy() {
 	var policy ActionPolicyFunc[S, A]
 	policy = func(state *S) ActionPolicY[A] {
 		legalActions := f.Game.LegalActions(state)
@@ -321,12 +321,12 @@ func (ss PUCT_Selects[S, A]) Backward(y PUCT_LeafEvalY, eval PUCT_BackwardEvalFu
 	}
 }
 
-type PUCT_Selector[S any, A comparable] struct {
-	FunCaller PUCT_FunCaller[S, A]
+type PUCT_Selector[S any, AS ~[]A, A comparable] struct {
+	FunCaller PUCT_FunCaller[S, AS, A]
 	Cap int
 }
 
-func (s *PUCT_Selector[S, A]) SelectAndExpansion(node *PUCT_Node[S, A], allNodes PUCT_Nodes[S, A], c float64, r *rand.Rand) (S, PUCT_Nodes[S, A], PUCT_Selects[S, A]) {
+func (s *PUCT_Selector[S, AS, A]) SelectAndExpansion(node *PUCT_Node[S, A], allNodes PUCT_Nodes[S, A], c float64, r *rand.Rand) (S, PUCT_Nodes[S, A], PUCT_Selects[S, A]) {
 	f := s.FunCaller
 	state := node.State
 	selects := make(PUCT_Selects[S, A], 0, s.Cap)
@@ -374,18 +374,18 @@ func (s *PUCT_Selector[S, A]) SelectAndExpansion(node *PUCT_Node[S, A], allNodes
 	return state, allNodes, selects
 }
 
-type PUCT[S any, A comparable] struct {
-	FunCaller PUCT_FunCaller[S, A]
+type PUCT[S any, AS ~[]A, A comparable] struct {
+	FunCaller PUCT_FunCaller[S, AS, A]
 }
 
-func (p *PUCT[S, A]) Run(simulation int, rootState S, c float64, r *rand.Rand) PUCT_Nodes[S, A] {
+func (p *PUCT[S, AS, A]) Run(simulation int, rootState S, c float64, r *rand.Rand) PUCT_Nodes[S, A] {
 	f := p.FunCaller
 	rootNode := f.NewNode(&rootState)
 	allNodes := PUCT_Nodes[S, A]{rootNode}
 
 	var leafState S
 	var selects PUCT_Selects[S, A]
-	selector := PUCT_Selector[S, A]{FunCaller:f, Cap:1}
+	selector := PUCT_Selector[S, AS, A]{FunCaller:f, Cap:1}
 
 	for i := 0; i < simulation; i++ {
 		leafState, allNodes, selects = selector.SelectAndExpansion(rootNode, allNodes, c, r)
@@ -402,13 +402,13 @@ type DPUCT_LeafEvalY float64
 type DPUCT_LeafEvalYs []DPUCT_LeafEvalY
 type DPUCT_LeafEvalsFunc[S any] func(*S) DPUCT_LeafEvalYs
 
-type DPUCT_FunCaller[S any, A comparable] struct {
-	Game SimultaneousGameFunCaller[S, A]
+type DPUCT_FunCaller[S any, ASS ~[]AS, AS ~[]A, A comparable] struct {
+	Game SimultaneousGameFunCaller[S, ASS, AS, A]
 	Policies ActionPoliciesFunc[S, A]
 	LeafEvals DPUCT_LeafEvalsFunc[S]
 }
 
-func (f *DPUCT_FunCaller[S, A]) NewNode(state *S) *DPUCT_Node[S, A] {
+func (f *DPUCT_FunCaller[S, ASS, AS, A]) NewNode(state *S) *DPUCT_Node[S, A] {
 	pys := f.Policies(state)
 	ms := make(PUCBMapManagers[A], len(pys))
 
@@ -422,7 +422,7 @@ func (f *DPUCT_FunCaller[S, A]) NewNode(state *S) *DPUCT_Node[S, A] {
 	return &DPUCT_Node[S, A]{State:*state, PUCBManagers:ms}
 }
 
-func (f *DPUCT_FunCaller[S, A]) SetNoPolicies() {
+func (f *DPUCT_FunCaller[S, ASS, AS, A]) SetNoPolicies() {
 	f.Policies = func(state *S) ActionPolicYs[A] {
 		legalActionss := f.Game.LegalActionss(state)
 		ys := make(ActionPolicYs[A], len(legalActionss))
@@ -489,14 +489,14 @@ func (nodes DPUCT_Nodes[S, A]) Find(state *S, eq EqualStateFunc[S]) (*DPUCT_Node
 	return &DPUCT_Node[S, A]{}, false
 }
 
-type DPUCT_Select[S any, A comparable] struct {
+type DPUCT_Select[S any, AS ~[]A,  A comparable] struct {
 	Node *DPUCT_Node[S, A]
-	Actions []A
+	Actions AS
 }
 
-type DPUCT_Selects[S any, A comparable] []DPUCT_Select[S, A]
+type DPUCT_Selects[S any, AS ~[]A, A comparable] []DPUCT_Select[S, AS, A]
 
-func (ss DPUCT_Selects[S, A]) Backward(ys DPUCT_LeafEvalYs) {
+func (ss DPUCT_Selects[S, AS, A]) Backward(ys DPUCT_LeafEvalYs) {
 	for _, s := range ss {
 		node := s.Node
 		actions := s.Actions
@@ -508,15 +508,15 @@ func (ss DPUCT_Selects[S, A]) Backward(ys DPUCT_LeafEvalYs) {
 	}
 }
 
-type DPUCT_Selector[S any, A comparable] struct {
-	FunCaller DPUCT_FunCaller[S, A]
+type DPUCT_Selector[S any, ASS ~[]AS, AS ~[]A, A comparable] struct {
+	FunCaller DPUCT_FunCaller[S, ASS, AS, A]
 	Cap int
 }
 
-func (s *DPUCT_Selector[S, A])SelectAndExpansion(simultaneous int, node *DPUCT_Node[S, A], allNodes DPUCT_Nodes[S, A], c float64, r *rand.Rand) (S, DPUCT_Nodes[S, A], DPUCT_Selects[S, A]) {
+func (s *DPUCT_Selector[S, ASS, AS, A])SelectAndExpansion(simultaneous int, node *DPUCT_Node[S, A], allNodes DPUCT_Nodes[S, A], c float64, r *rand.Rand) (S, DPUCT_Nodes[S, A], DPUCT_Selects[S, AS, A]) {
 	f := s.FunCaller
 	state := node.State
-	selects := make(DPUCT_Selects[S, A], 0, s.Cap)
+	selects := make(DPUCT_Selects[S, AS, A], 0, s.Cap)
 
 	for {
 		actions := make([]A, simultaneous)
@@ -524,7 +524,7 @@ func (s *DPUCT_Selector[S, A])SelectAndExpansion(simultaneous int, node *DPUCT_N
 			actions[playerI] = omw.RandChoice(m.MaxKeys(c), r)
 		}
 
-		selects = append(selects, DPUCT_Select[S, A]{Node:node, Actions:actions})
+		selects = append(selects, DPUCT_Select[S, AS, A]{Node:node, Actions:actions})
 		node.SelectCount += 1
 		node.Trial += 1
 
@@ -564,18 +564,18 @@ func (s *DPUCT_Selector[S, A])SelectAndExpansion(simultaneous int, node *DPUCT_N
 	return state, allNodes, selects
 }
 
-type DPUCT[S any, A comparable] struct {
-	FunCaller DPUCT_FunCaller[S, A]
+type DPUCT[S any, ASS ~[]AS, AS ~[]A, A comparable] struct {
+	FunCaller DPUCT_FunCaller[S, ASS, AS, A]
 }
 
-func (d *DPUCT[S, A]) Run(simulation int, rootState S, c float64, r *rand.Rand) DPUCT_Nodes[S, A] {
+func (d *DPUCT[S, ASS, AS, A]) Run(simulation int, rootState S, c float64, r *rand.Rand) DPUCT_Nodes[S, A] {
 	rootNode := d.FunCaller.NewNode(&rootState)
 	allNodes := DPUCT_Nodes[S, A]{rootNode}
 	simultaneous := len(rootNode.PUCBManagers)
 
 	var leafState S
-	var selects DPUCT_Selects[S, A]
-	selector := DPUCT_Selector[S, A]{FunCaller:d.FunCaller, Cap:1}
+	var selects DPUCT_Selects[S, AS, A]
+	selector := DPUCT_Selector[S, ASS, AS, A]{FunCaller:d.FunCaller, Cap:1}
 
 	for i := 0; i < simulation; i++ {
 		leafState, allNodes, selects = selector.SelectAndExpansion(simultaneous, rootNode, allNodes, c, r)

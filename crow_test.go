@@ -36,7 +36,7 @@ func TestPUCT(t *testing.T) {
 		return len(*coins) == COIN_TOSS_NUM
 	}
 
-	game := crow.SequentialGameFunCaller[[]int, int]{
+	game := crow.SequentialGameFunCaller[[]int, []int, int]{
 		LegalActions:legalActions,
 		Push:push,
 		EqualState:equal,
@@ -56,10 +56,10 @@ func TestPUCT(t *testing.T) {
 
 	eval := crow.PUCT_EvalFunCaller[[]int]{Leaf:leaf, Backward:backward}
 
-	fnCaller := crow.PUCT_FunCaller[[]int, int]{Game:game, Eval:eval}
+	fnCaller := crow.PUCT_FunCaller[[]int, []int, int]{Game:game, Eval:eval}
 	fnCaller.SetNoPolicy()
 
-	puct := crow.PUCT[[]int, int]{FunCaller:fnCaller}
+	puct := crow.PUCT[[]int, []int, int]{FunCaller:fnCaller}
 	init := []int{}
 	allNodes := puct.Run(196000, init, math.Sqrt(25.0), r)
 	for _, coin := range ALL_COINS {
@@ -95,7 +95,7 @@ func TestDPUCT(t *testing.T) {
 		return state.Hand1 != "" && state.Hand2 != ""
 	}
 
-	game := crow.SimultaneousGameFunCaller[PPSState, string]{
+	game := crow.SimultaneousGameFunCaller[PPSState, [][]string, []string, string]{
 		LegalActionss:legalActionss,
 		Push:push,
 		EqualState:equal,
@@ -118,14 +118,14 @@ func TestDPUCT(t *testing.T) {
 		return crow.DPUCT_LeafEvalYs{y, 1.0 - y}
 	}
 
-	fnCaller := crow.DPUCT_FunCaller[PPSState, string]{
+	fnCaller := crow.DPUCT_FunCaller[PPSState, [][]string, []string, string]{
 		Game:game,
 		LeafEvals:leafEvals,
 	}
 	fnCaller.SetNoPolicies()
 	fmt.Println(fnCaller.Policies(&PPSState{}))
 
-	dpuct := crow.DPUCT[PPSState, string]{FunCaller:fnCaller}
+	dpuct := crow.DPUCT[PPSState, [][]string, []string, string]{FunCaller:fnCaller}
 	allNodes := dpuct.Run(196000, PPSState{}, math.Sqrt(25), r)
 	for i, m := range allNodes[0].PUCBManagers {
 		for a, pucb := range m {
