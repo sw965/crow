@@ -143,6 +143,21 @@ func (f *SimultaneousGameFunCaller[S, ASS, AS, A]) Playout(state S) S {
 	return state
 }
 
+func (f *SimultaneousGameFunCaller[S, ASS, AS, A]) PadLegalActionss(state *S) ASS {
+	actionss := f.LegalActionss(state)
+	yss := make(ASS, len(actionss))
+	for playerI, actions := range actionss {
+		if len(actions) == 0 {
+			var zero A
+			zeros := AS{zero}
+			yss[playerI] = zeros
+		} else {
+			yss[playerI] = actionss[playerI]
+		}
+	}
+	return yss
+}
+
 type UtilPUCB struct {
 	AccumReward float64
 	Trial       int
@@ -424,7 +439,7 @@ func (f *DPUCT_FunCaller[S, ASS, AS, A]) NewNode(state *S) *DPUCT_Node[S, A] {
 
 func (f *DPUCT_FunCaller[S, ASS, AS, A]) SetNoPolicies() {
 	f.Policies = func(state *S) ActionPolicYs[A] {
-		legalActionss := f.Game.LegalActionss(state)
+		legalActionss := f.Game.PadLegalActionss(state)
 		ys := make(ActionPolicYs[A], len(legalActionss))
 		for playerI, actions := range legalActionss {
 			y := map[A]float64{}
