@@ -122,7 +122,7 @@ func (f *SimultaneousGameFunCaller[S, ASS, AS, A]) Clone() SimultaneousGameFunCa
 
 func (f *SimultaneousGameFunCaller[S, ASS, AS, A]) SetRandomActionPlayer(r *rand.Rand) {
 	f.Player = func(state *S) AS {
-		actionss := f.LegalActionss(state)
+		actionss := f.PadLegalActionss(state)
 		y := make([]A, len(actionss))
 		for playerI, actions := range actionss {
 			y[playerI] = omw.RandChoice(actions, r)
