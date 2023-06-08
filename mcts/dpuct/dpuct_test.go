@@ -1,19 +1,19 @@
 package dpuct_test
 
 import (
-	"testing"
-	"github.com/sw965/crow/dpuct"
 	"fmt"
-	"math"
 	"github.com/sw965/crow/game/simultaneous"
+	"github.com/sw965/crow/mcts/dpuct"
 	"github.com/sw965/omw"
+	"math"
+	"testing"
 )
 
 type Hand string
 
 const (
-	ROCK = "グー"
-	PAPER = "パー"
+	ROCK     = "グー"
+	PAPER    = "パー"
 	SCISSORS = "チョキ"
 )
 
@@ -36,7 +36,7 @@ func TestDPUCT(t *testing.T) {
 	}
 
 	push := func(rps RockPaperScissors, hands ...Hand) RockPaperScissors {
-		return RockPaperScissors{Hand1:hands[0], Hand2:hands[1]}
+		return RockPaperScissors{Hand1: hands[0], Hand2: hands[1]}
 	}
 
 	equal := func(rps1, rps2 *RockPaperScissors) bool {
@@ -48,10 +48,10 @@ func TestDPUCT(t *testing.T) {
 	}
 
 	game := simultaneous.Game[RockPaperScissors, Handss, Hands, Hand]{
-		LegalActionss:legalActionss,
-		Push:push,
-		Equal:equal,
-		IsEnd:isEnd,
+		LegalActionss: legalActionss,
+		Push:          push,
+		Equal:         equal,
+		IsEnd:         isEnd,
 	}
 
 	game.SetRandomActionPlayer(r)
@@ -62,9 +62,9 @@ func TestDPUCT(t *testing.T) {
 		}
 
 		reward := map[Hand]map[Hand]dpuct.LeafEvalY{
-			ROCK:map[Hand]dpuct.LeafEvalY{SCISSORS:1.0, PAPER:0.0},
-			SCISSORS:map[Hand]dpuct.LeafEvalY{ROCK:0.0, PAPER:1.0},
-			PAPER:map[Hand]dpuct.LeafEvalY{ROCK:1.0, SCISSORS:0.0},
+			ROCK:     map[Hand]dpuct.LeafEvalY{SCISSORS: 1.0, PAPER: 0.0},
+			SCISSORS: map[Hand]dpuct.LeafEvalY{ROCK: 0.0, PAPER: 1.0},
+			PAPER:    map[Hand]dpuct.LeafEvalY{ROCK: 1.0, SCISSORS: 0.0},
 		}
 
 		y := reward[rps.Hand1][rps.Hand2]
@@ -72,8 +72,8 @@ func TestDPUCT(t *testing.T) {
 	}
 
 	mcts := dpuct.MCTS[RockPaperScissors, Handss, Hands, Hand]{
-		Game:game,
-		LeafEvals:leafEvals,
+		Game:      game,
+		LeafEvals: leafEvals,
 	}
 	mcts.SetNoPolicies()
 

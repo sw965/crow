@@ -101,26 +101,3 @@ type ActionPolicyFunc[S any, A comparable] func(*S) ActionPolicY[A]
 
 type ActionPolicYs[A comparable] []ActionPolicY[A]
 type ActionPoliciesFunc[S any, A comparable] func(*S) ActionPolicYs[A]
-
-// func (g *Game[S, AS, A]) SetPUCTPlayer(puct *PUCT[S, AS, A], simulation int, c float64, random *rand.Rand, r float64) {
-// 	g.Player = func(state *S) A {
-// 		allNodes := puct.Run(simulation, *state, c, random)
-// 		node := allNodes[0]
-// 		percent := node.PUCBManager.TrialPercent()
-// 		max := omw.Max(maps.Values(percent)...)
-
-// 		n := len(percent)
-// 		actions := make([]A, 0, n)
-// 		ws := make([]float64, 0, n)
-
-// 		for a, p := range percent {
-// 			if max*r <= p {
-// 				actions = append(actions, a)
-// 				ws = append(ws, p)
-// 			}
-// 		}
-
-// 		idx := omw.RandIntWithWeight(ws, random)
-// 		return actions[idx]
-// 	}
-// }

@@ -78,16 +78,6 @@ type Select[S any, AS ~[]A,  A comparable] struct {
 
 type Selects[S any, AS ~[]A, A comparable] []Select[S, AS, A]
 
-func (ss Selects[S, AS, A]) Backward(y LeafEvalY, eval BackwardEvalFunc[S]) {
-	for _, s := range ss {
-		node := s.Node
-		action := s.Action
-		node.PUCBManager[action].AccumReward += float64(eval(y, &node.State))
-		node.PUCBManager[action].Trial += 1
-		node.SelectCount = 0
-	}
-}
-
 type MCTS[S any, AS ~[]A, A comparable] struct {
 	Game sequential.Game[S, AS, A]
 	Policy crow.ActionPolicyFunc[S, A]
@@ -117,11 +107,12 @@ func (mcts *MCTS[S, AS, A]) SetNoPolicy() {
 	mcts.Policy = f
 }
 
-func (mcts *MCTS[S, AS, A]) SelectAndExpansion(node *Node[S, AS, A], allNodes Nodes[S, AS, A], c float64, r *rand.Rand, cap_ int) (S, Nodes[S, AS, A], Selects[S, AS, A]) {
+func (mcts *MCTS[S, AS, A]) SelectExpansionBackward(node *Node[S, AS, A], allNodes Nodes[S, AS, A], c float64, r *rand.Rand, cap_ int) (Nodes[S, AS, A], int) {
 	state := node.State
 	selects := make(Selects[S, AS, A], 0, cap_)
 
 	for {
+		//select
 		action := omw.RandChoice(node.PUCBManager.MaxKeys(c), r)
 		selects = append(selects, Select[S, AS, A]{Node:node, Action:action})
 
@@ -146,6 +137,7 @@ func (mcts *MCTS[S, AS, A]) SelectAndExpansion(node *Node[S, AS, A], allNodes No
 			if ok {
 				node.NextNodes = append(node.NextNodes, nextNode)
 			} else {
+				//expansion
 				nextNode = mcts.NewNode(stateP)
 				allNodes = append(allNodes, nextNode)
 				node.NextNodes = append(node.NextNodes, nextNode)
@@ -159,25 +151,30 @@ func (mcts *MCTS[S, AS, A]) SelectAndExpansion(node *Node[S, AS, A], allNodes No
 		}
 		node = nextNode
 	}
-	return state, allNodes, selects
+
+	//backward
+	y := mcts.Eval.Leaf(&state)
+	for _, s := range selects {
+		n := s.Node
+		a := s.Action
+		n.PUCBManager[a].AccumReward += float64(mcts.Eval.Backward(y, &n.State))
+		n.PUCBManager[a].Trial += 1
+		n.SelectCount = 0
+	}
+	return allNodes, len(selects)
 }
 
 func (mcts *MCTS[S, AS, A]) Run(simulation int, rootState S, c float64, r *rand.Rand) Nodes[S, AS, A] {
 	rootNode := mcts.NewNode(&rootState)
 	allNodes := Nodes[S, AS, A]{rootNode}
-
-	var leafState S
-	var selects Selects[S, AS, A]
-
+	selectNum := 0
 	for i := 0; i < simulation; i++ {
-		leafState, allNodes, selects = mcts.SelectAndExpansion(rootNode, allNodes, c, r, len(selects) + 1)
-		y := mcts.Eval.Leaf(&leafState)
-		selects.Backward(y, mcts.Eval.Backward)
+		allNodes, selectNum = mcts.SelectExpansionBackward(rootNode, allNodes, c, r, selectNum + 1)
 	}
 	return allNodes
 }
 
-func NewMCTSPlayer[S any, AS ~[]A, A comparable](mcts *MCTS[S, AS, A], simulation int, c float64, random *rand.Rand, r float64) sequential.Player[S, A] {
+func NewPlayer[S any, AS ~[]A, A comparable](mcts *MCTS[S, AS, A], simulation int, c float64, random *rand.Rand, r float64) sequential.Player[S, A] {
 	player := func(state *S) A {
 		allNodes := mcts.Run(simulation, *state, c, random)
 		rootNode := allNodes[0]

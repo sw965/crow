@@ -1,10 +1,10 @@
 package dpuct
 
 import (
-	"math/rand"
 	"github.com/sw965/crow"
 	"github.com/sw965/crow/game/simultaneous"
 	"github.com/sw965/omw"
+	"math/rand"
 )
 
 type LeafEvalY float64
@@ -12,11 +12,11 @@ type LeafEvalYs []LeafEvalY
 type LeafEvalsFunc[S any] func(*S) LeafEvalYs
 
 type Node[S any, ASS ~[]AS, AS ~[]A, A comparable] struct {
-	State S
+	State        S
 	PUCBManagers crow.PUCBMapManagers[AS, A]
-	NextNodes Nodes[S, ASS, AS, A]
-	Trial int
-	SelectCount     int
+	NextNodes    Nodes[S, ASS, AS, A]
+	Trial        int
+	SelectCount  int
 }
 
 func (node *Node[S, ASS, AS, A]) ActionPrediction(r *rand.Rand, cap_ int) ASS {
@@ -39,11 +39,11 @@ func (node *Node[S, ASS, AS, A]) ActionPrediction(r *rand.Rand, cap_ int) ASS {
 		max := node.NextNodes[0].Trial
 		nextNode := node.NextNodes[0]
 
-		for _, node_ := range node.NextNodes[1:] {
-			trial := node_.Trial
+		for _, n := range node.NextNodes[1:] {
+			trial := n.Trial
 			if trial > max {
 				max = trial
-				nextNode = node_
+				nextNode = n
 			}
 		}
 		node = nextNode
@@ -62,28 +62,16 @@ func (nodes Nodes[S, ASS, AS, A]) Find(state *S, eq simultaneous.EqualFunc[S]) (
 	return &Node[S, ASS, AS, A]{}, false
 }
 
-type Select[S any, ASS ~[]AS, AS ~[]A,  A comparable] struct {
-	Node *Node[S, ASS, AS, A]
+type Select[S any, ASS ~[]AS, AS ~[]A, A comparable] struct {
+	Node    *Node[S, ASS, AS, A]
 	Actions AS
 }
 
 type Selects[S any, ASS ~[]AS, AS ~[]A, A comparable] []Select[S, ASS, AS, A]
 
-func (ss Selects[S, ASS, AS, A]) Backward(ys LeafEvalYs) {
-	for _, s := range ss {
-		node := s.Node
-		actions := s.Actions
-		for playerI, a := range actions {
-			node.PUCBManagers[playerI][a].AccumReward += float64(ys[playerI])
-			node.PUCBManagers[playerI][a].Trial += 1
-		}
-		node.SelectCount = 0
-	}
-}
-
 type MCTS[S any, ASS ~[]AS, AS ~[]A, A comparable] struct {
-	Game simultaneous.Game[S, ASS, AS, A]
-	Policies crow.ActionPoliciesFunc[S, A]
+	Game      simultaneous.Game[S, ASS, AS, A]
+	Policies  crow.ActionPoliciesFunc[S, A]
 	LeafEvals LeafEvalsFunc[S]
 }
 
@@ -111,24 +99,25 @@ func (mcts *MCTS[S, ASS, AS, A]) NewNode(state *S) *Node[S, ASS, AS, A] {
 	for playerI, py := range pys {
 		m := crow.PUCBMapManager[AS, A]{}
 		for a, p := range py {
-			m[a] = &crow.UtilPUCB{P:p}
+			m[a] = &crow.UtilPUCB{P: p}
 		}
 		ms[playerI] = m
 	}
-	return &Node[S, ASS, AS, A]{State:*state, PUCBManagers:ms}
+	return &Node[S, ASS, AS, A]{State: *state, PUCBManagers: ms}
 }
 
-func (mcts *MCTS[S, ASS, AS, A])SelectAndExpansion(simultaneous int, node *Node[S, ASS, AS, A], allNodes Nodes[S, ASS, AS, A], c float64, r *rand.Rand, cap_ int) (S, Nodes[S, ASS, AS, A], Selects[S, ASS, AS, A]) {
+func (mcts *MCTS[S, ASS, AS, A]) SelectExpansionBackward(simultaneous int, node *Node[S, ASS, AS, A], allNodes Nodes[S, ASS, AS, A], c float64, r *rand.Rand, cap_ int) (Nodes[S, ASS, AS, A], int) {
 	state := node.State
 	selects := make(Selects[S, ASS, AS, A], 0, cap_)
 
 	for {
 		actions := make(AS, simultaneous)
 		for playerI, m := range node.PUCBManagers {
+			//select
 			actions[playerI] = omw.RandChoice(m.MaxKeys(c), r)
 		}
 
-		selects = append(selects, Select[S, ASS, AS, A]{Node:node, Actions:actions})
+		selects = append(selects, Select[S, ASS, AS, A]{Node: node, Actions: actions})
 		node.SelectCount += 1
 		node.Trial += 1
 
@@ -151,6 +140,7 @@ func (mcts *MCTS[S, ASS, AS, A])SelectAndExpansion(simultaneous int, node *Node[
 			if ok {
 				node.NextNodes = append(node.NextNodes, nextNode)
 			} else {
+				//expansion
 				nextNode = mcts.NewNode(stateP)
 				allNodes = append(allNodes, nextNode)
 				node.NextNodes = append(node.NextNodes, nextNode)
@@ -164,21 +154,28 @@ func (mcts *MCTS[S, ASS, AS, A])SelectAndExpansion(simultaneous int, node *Node[
 		}
 		node = nextNode
 	}
-	return state, allNodes, selects
+
+	//backward
+	ys := mcts.LeafEvals(&state)
+	for _, s := range selects {
+		n := s.Node
+		as := s.Actions
+		for playerI, a := range as {
+			n.PUCBManagers[playerI][a].AccumReward += float64(ys[playerI])
+			n.PUCBManagers[playerI][a].Trial += 1
+		}
+		node.SelectCount = 0
+	}
+	return allNodes, len(selects)
 }
 
 func (mcts *MCTS[S, ASS, AS, A]) Run(simulation int, rootState S, c float64, r *rand.Rand) Nodes[S, ASS, AS, A] {
 	rootNode := mcts.NewNode(&rootState)
 	allNodes := Nodes[S, ASS, AS, A]{rootNode}
 	simultaneous := len(rootNode.PUCBManagers)
-
-	var leafState S
-	var selects Selects[S, ASS, AS, A]
-
+	selectNum := 0
 	for i := 0; i < simulation; i++ {
-		leafState, allNodes, selects = mcts.SelectAndExpansion(simultaneous, rootNode, allNodes, c, r, len(selects) + 1)
-		ys := mcts.LeafEvals(&leafState)
-		selects.Backward(ys)
+		allNodes, selectNum = mcts.SelectExpansionBackward(simultaneous, rootNode, allNodes, c, r, selectNum+1)
 	}
 	return allNodes
 }
