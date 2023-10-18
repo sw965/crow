@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"github.com/sw965/crow/game/simultaneous"
 	"github.com/sw965/crow/mcts/dpuct"
-	"github.com/sw965/omw"
+	omwrand "github.com/sw965/omw/rand"
 	"math"
 	"testing"
 )
@@ -29,7 +29,7 @@ type RockPaperScissors struct {
 }
 
 func TestDPUCT(t *testing.T) {
-	r := omw.NewMt19937()
+	r := omwrand.NewMt19937()
 
 	legalActionss := func(rps *RockPaperScissors) Handss {
 		return Handss{HANDS, Hands{SCISSORS}}
@@ -77,7 +77,7 @@ func TestDPUCT(t *testing.T) {
 	}
 	mcts.SetNoPolicies()
 
-	fmt.Println(mcts.Policies(&RockPaperScissors{}))
+	fmt.Println(mcts.ActionPolicies(&RockPaperScissors{}))
 
 	allNodes := mcts.Run(196000, RockPaperScissors{}, math.Sqrt(25), r)
 	for i, m := range allNodes[0].PUCBManagers {

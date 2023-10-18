@@ -3,7 +3,7 @@ package dpuct
 import (
 	"github.com/sw965/crow"
 	"github.com/sw965/crow/game/simultaneous"
-	"github.com/sw965/omw"
+	omwrand "github.com/sw965/omw/rand"
 	"math/rand"
 )
 
@@ -13,7 +13,7 @@ type LeafEvalsFunc[S any] func(*S) LeafEvalYs
 
 type Node[S any, ASS ~[]AS, AS ~[]A, A comparable] struct {
 	State        S
-	PUCBManagers crow.PUCBMapManagers[AS, A]
+	PUCBManagers crow.PUCBManagers[AS, A]
 	NextNodes    Nodes[S, ASS, AS, A]
 	Trial        int
 	SelectCount  int
@@ -28,7 +28,7 @@ func (node *Node[S, ASS, AS, A]) ActionPrediction(r *rand.Rand, cap_ int) ASS {
 
 		actions := make([]A, len(node.PUCBManagers))
 		for playerI, m := range node.PUCBManagers {
-			actions[playerI] = omw.RandChoice(m.MaxTrialKeys(), r)
+			actions[playerI] = omwrand.Choice(m.MaxTrialKeys(), r)
 		}
 		y = append(y, actions)
 
@@ -69,9 +69,21 @@ type Select[S any, ASS ~[]AS, AS ~[]A, A comparable] struct {
 
 type Selects[S any, ASS ~[]AS, AS ~[]A, A comparable] []Select[S, ASS, AS, A]
 
+func (ss Selects[S, ASS, AS, A]) Backward(ys LeafEvalYs) {
+	for _, s := range ss {
+		node := s.Node
+		actions := s.Actions
+		for playerI, action := range actions {
+			node.PUCBManagers[playerI][action].AccumReward += float64(ys[playerI])
+			node.PUCBManagers[playerI][action].Trial += 1
+		}
+		node.SelectCount = 0
+	}
+}
+
 type MCTS[S any, ASS ~[]AS, AS ~[]A, A comparable] struct {
 	Game      simultaneous.Game[S, ASS, AS, A]
-	Policies  crow.ActionPoliciesFunc[S, A]
+	ActionPolicies  crow.ActionPoliciesFunc[S, A]
 	LeafEvals LeafEvalsFunc[S]
 }
 
@@ -89,17 +101,16 @@ func (mcts *MCTS[S, ASS, AS, A]) SetNoPolicies() {
 		}
 		return ys
 	}
-	mcts.Policies = f
+	mcts.ActionPolicies = f
 }
 
 func (mcts *MCTS[S, ASS, AS, A]) NewNode(state *S) *Node[S, ASS, AS, A] {
-	pys := mcts.Policies(state)
-	ms := make(crow.PUCBMapManagers[AS, A], len(pys))
-
-	for playerI, py := range pys {
-		m := crow.PUCBMapManager[AS, A]{}
-		for a, p := range py {
-			m[a] = &crow.UtilPUCB{P: p}
+	apys := mcts.ActionPolicies(state)
+	ms := make(crow.PUCBManagers[AS, A], len(apys))
+	for playerI, apy := range apys {
+		m := crow.PUCBManager[AS, A]{}
+		for a, p := range apy {
+			m[a] = &crow.PUCBCalculator{P: p}
 		}
 		ms[playerI] = m
 	}
@@ -114,7 +125,7 @@ func (mcts *MCTS[S, ASS, AS, A]) SelectExpansionBackward(simultaneous int, node 
 		actions := make(AS, simultaneous)
 		for playerI, m := range node.PUCBManagers {
 			//select
-			actions[playerI] = omw.RandChoice(m.MaxKeys(c), r)
+			actions[playerI] = omwrand.Choice(m.MaxKeys(c), r)
 		}
 
 		selects = append(selects, Select[S, ASS, AS, A]{Node: node, Actions: actions})
@@ -155,17 +166,8 @@ func (mcts *MCTS[S, ASS, AS, A]) SelectExpansionBackward(simultaneous int, node 
 		node = nextNode
 	}
 
-	//backward
 	ys := mcts.LeafEvals(&state)
-	for _, s := range selects {
-		n := s.Node
-		as := s.Actions
-		for playerI, a := range as {
-			n.PUCBManagers[playerI][a].AccumReward += float64(ys[playerI])
-			n.PUCBManagers[playerI][a].Trial += 1
-		}
-		node.SelectCount = 0
-	}
+	selects.Backward(ys)
 	return allNodes, len(selects)
 }
 

@@ -29,31 +29,31 @@ func PolicyUpperConfidenceBound(c, p, v float64, n, a int) float64 {
 	return v + (c * p * math.Sqrt(fn) / float64(a+1))
 }
 
-type UtilPUCB struct {
+type PUCBCalculator struct {
 	AccumReward float64
 	Trial       int
 	P float64
 }
 
-func (p *UtilPUCB) AverageReward() float64 {
+func (p *PUCBCalculator) AverageReward() float64 {
 	return float64(p.AccumReward) / float64(p.Trial+1)
 }
 
-func (p *UtilPUCB) Get(totalTrial int, c float64) float64 {
+func (p *PUCBCalculator) Get(totalTrial int, c float64) float64 {
 	v := p.AverageReward()
 	return PolicyUpperConfidenceBound(c, p.P, v, totalTrial, p.Trial)
 }
 
-type PUCBMapManager[KS ~[]K, K comparable] map[K]*UtilPUCB
+type PUCBManager[KS ~[]K, K comparable] map[K]*PUCBCalculator
 
-func (m PUCBMapManager[KS, K]) Trials() []int {
+func (m PUCBManager[KS, K]) Trials() []int {
 	y := make([]int, 0, len(m))
 	for _, v := range m {
 		y = append(y, v.Trial)
 	}
 	return y
 }
-func (m PUCBMapManager[KS, K]) Max(c float64) float64 {
+func (m PUCBManager[KS, K]) Max(c float64) float64 {
 	total := omw.Sum(m.Trials()...)
 	y := make([]float64, 0, len(m))
 	for _, v := range m {
@@ -62,7 +62,7 @@ func (m PUCBMapManager[KS, K]) Max(c float64) float64 {
 	return omw.Max(y...)
 }
 
-func (m PUCBMapManager[KS, K]) MaxKeys(c float64) KS {
+func (m PUCBManager[KS, K]) MaxKeys(c float64) KS {
 	max := m.Max(c)
 	total := omw.Sum(m.Trials()...)
 	ks := make([]K, 0, len(m))
@@ -74,7 +74,7 @@ func (m PUCBMapManager[KS, K]) MaxKeys(c float64) KS {
 	return ks
 }
 
-func (m PUCBMapManager[KS, K]) MaxTrialKeys() KS {
+func (m PUCBManager[KS, K]) MaxTrialKeys() KS {
 	max := omw.Max(m.Trials()...)
 	ks := make([]K, 0, len(m))
 	for k, v := range m {
@@ -85,7 +85,7 @@ func (m PUCBMapManager[KS, K]) MaxTrialKeys() KS {
 	return ks
 }
 
-func (m PUCBMapManager[KS, K]) TrialPercents() map[K]float64 {
+func (m PUCBManager[KS, K]) TrialPercents() map[K]float64 {
 	total := omw.Sum(m.Trials()...)
 	y := map[K]float64{}
 	for k, v := range m {
@@ -94,7 +94,7 @@ func (m PUCBMapManager[KS, K]) TrialPercents() map[K]float64 {
 	return y
 }
 
-type PUCBMapManagers[KS ~[]K, K comparable] []PUCBMapManager[KS, K]
+type PUCBManagers[KS ~[]K, K comparable] []PUCBManager[KS, K]
 
 type ActionPolicY[A comparable] map[A]float64
 type ActionPolicyFunc[S any, A comparable] func(*S) ActionPolicY[A]

@@ -2,7 +2,7 @@ package simultaneous
 
 import (
 	"math/rand"
-	"github.com/sw965/omw"
+	omwrand "github.com/sw965/omw/rand"
 )
 
 type Player[S any, AS ~[]A, A comparable] func(*S) AS
@@ -31,16 +31,16 @@ func (g *Game[S, ASS, AS, A]) Clone() Game[S, ASS, AS, A] {
 
 func (g *Game[S, ASS, AS, A]) PadLegalActionss(state *S) ASS {
 	actionss := g.LegalActionss(state)
-	yss := make(ASS, len(actionss))
+	ass := make(ASS, len(actionss))
 	for playerI, actions := range actionss {
 		if len(actions) == 0 {
 			var zero A
-			yss[playerI] = AS{zero}
+			ass[playerI] = AS{zero}
 		} else {
-			yss[playerI] = actionss[playerI]
+			ass[playerI] = actionss[playerI]
 		}
 	}
-	return yss
+	return ass
 }
 
 func (g *Game[S, ASS, AS, A]) SetRandomActionPlayer(r *rand.Rand) {
@@ -48,7 +48,7 @@ func (g *Game[S, ASS, AS, A]) SetRandomActionPlayer(r *rand.Rand) {
 		actionss := g.PadLegalActionss(state)
 		y := make([]A, len(actionss))
 		for playerI, actions := range actionss {
-			y[playerI] = omw.RandChoice(actions, r)
+			y[playerI] = omwrand.Choice(actions, r)
 		}
 		return y
 	}
