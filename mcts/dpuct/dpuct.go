@@ -26,7 +26,7 @@ func (node *Node[S, ASS, AS, A]) ActionPrediction(r *rand.Rand, cap_ int) ASS {
 			break
 		}
 
-		actions := make([]A, len(node.PUCBManagers))
+		actions := make(AS, len(node.PUCBManagers))
 		for playerI, m := range node.PUCBManagers {
 			actions[playerI] = omwrand.Choice(m.MaxTrialKeys(), r)
 		}
