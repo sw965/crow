@@ -104,7 +104,7 @@ func (mcts *MCTS[S, AS, A]) NewNode(state *S) *Node[S, AS, A] {
 	return &Node[S, AS, A]{State:*state, PUCBManager:m}
 }
 
-func (mcts *MCTS[S, AS, A]) SetNoPolicy() {
+func (mcts *MCTS[S, AS, A]) SetActionNoPolicy() {
 	var f crow.ActionPolicyFunc[S, A]
 	f = func(state *S) crow.ActionPolicY[A] {
 		actions := mcts.Game.LegalActions(state)

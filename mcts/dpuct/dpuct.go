@@ -87,9 +87,9 @@ type MCTS[S any, ASS ~[]AS, AS ~[]A, A comparable] struct {
 	LeafEvals LeafEvalsFunc[S]
 }
 
-func (mcts *MCTS[S, ASS, AS, A]) SetNoPolicies() {
+func (mcts *MCTS[S, ASS, AS, A]) SetActionNoPolicies(noAction A) {
 	f := func(state *S) crow.ActionPolicYs[A] {
-		actionss := mcts.Game.PadLegalActionss(state)
+		actionss := mcts.Game.PadLegalActionss(state, noAction)
 		ys := make(crow.ActionPolicYs[A], len(actionss))
 		for playerI, as := range actionss {
 			y := map[A]float64{}

@@ -47,3 +47,17 @@ func (g *Game[S, AS, A]) Playout(state S) S {
 	}
 	return state
 }
+
+func (g *Game[S, AS, A]) PlayoutWithActions(state S, cap_ int) (S, AS) {
+	actions := make(AS, 0, cap_)
+	for {
+		isEnd := g.IsEnd(&state)
+		if isEnd {
+			break
+		}
+		action := g.Player(&state)
+		state = g.Push(state, action)
+		actions = append(actions, action)
+	}
+	return state, actions
+}

@@ -29,13 +29,12 @@ func (g *Game[S, ASS, AS, A]) Clone() Game[S, ASS, AS, A] {
 	}
 }
 
-func (g *Game[S, ASS, AS, A]) PadLegalActionss(state *S) ASS {
+func (g *Game[S, ASS, AS, A]) PadLegalActionss(state *S, noAction A) ASS {
 	actionss := g.LegalActionss(state)
 	ass := make(ASS, len(actionss))
 	for playerI, actions := range actionss {
 		if len(actions) == 0 {
-			var zero A
-			ass[playerI] = AS{zero}
+			ass[playerI] = AS{noAction}
 		} else {
 			ass[playerI] = actionss[playerI]
 		}
@@ -43,9 +42,9 @@ func (g *Game[S, ASS, AS, A]) PadLegalActionss(state *S) ASS {
 	return ass
 }
 
-func (g *Game[S, ASS, AS, A]) SetRandomActionPlayer(r *rand.Rand) {
+func (g *Game[S, ASS, AS, A]) SetRandomActionPlayer(r *rand.Rand, noAction A) {
 	g.Player = func(state *S) AS {
-		actionss := g.PadLegalActionss(state)
+		actionss := g.PadLegalActionss(state, noAction)
 		y := make([]A, len(actionss))
 		for playerI, actions := range actionss {
 			y[playerI] = omwrand.Choice(actions, r)
@@ -64,4 +63,18 @@ func (g *Game[S, ASS, AS, A]) Playout(state S) S {
 		state = g.Push(state, actions...)
 	}
 	return state
+}
+
+func (g *Game[S, ASS, AS, A]) PlayoutWithActionss(state S, cap_ int) (S, ASS) {
+	actionss := make(ASS, 0, cap_)
+	for {
+		isEnd := g.IsEnd(&state)
+		if isEnd {
+			break
+		}
+		actions := g.Player(&state)
+		state = g.Push(state, actions...)
+		actionss = append(actionss, actions)
+	}
+	return state, actionss
 }

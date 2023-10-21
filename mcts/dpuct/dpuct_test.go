@@ -54,7 +54,7 @@ func TestDPUCT(t *testing.T) {
 		IsEnd:         isEnd,
 	}
 
-	game.SetRandomActionPlayer(r)
+	game.SetRandomActionPlayer(r, "")
 
 	leafEvals := func(rps *RockPaperScissors) dpuct.LeafEvalYs {
 		if rps.Hand1 == rps.Hand2 {
@@ -75,7 +75,7 @@ func TestDPUCT(t *testing.T) {
 		Game:      game,
 		LeafEvals: leafEvals,
 	}
-	mcts.SetNoPolicies()
+	mcts.SetActionNoPolicies("")
 
 	fmt.Println(mcts.ActionPolicies(&RockPaperScissors{}))
 
