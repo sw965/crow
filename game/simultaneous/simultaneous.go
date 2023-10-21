@@ -65,16 +65,24 @@ func (g *Game[S, ASS, AS, A]) Playout(state S) S {
 	return state
 }
 
-func (g *Game[S, ASS, AS, A]) PlayoutWithActionss(state S, cap_ int) (S, ASS) {
-	actionss := make(ASS, 0, cap_)
+func (g *Game[S, ASS, AS, A]) PlayoutWithHistory(state S, cap_ int) (S, PlayoutHistory[S, AS, A]) {
+	history := make(PlayoutHistory[S, AS, A], 0, cap_)
 	for {
 		isEnd := g.IsEnd(&state)
 		if isEnd {
 			break
 		}
 		actions := g.Player(&state)
+		ele := ElementOfPlayoutHistory[S, AS, A]{State:state, Actions:actions}
+		history = append(history, ele)
 		state = g.Push(state, actions...)
-		actionss = append(actionss, actions)
 	}
-	return state, actionss
+	return state, history
 }
+
+type ElementOfPlayoutHistory[S any, AS ~[]A, A comparable] struct {
+	State S
+	Actions AS
+}
+
+type PlayoutHistory[S any, AS ~[]A, A comparable] []ElementOfPlayoutHistory[S, AS, A]
