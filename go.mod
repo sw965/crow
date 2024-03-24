@@ -3,7 +3,7 @@ module github.com/sw965/crow
 go 1.19
 
 require (
-	github.com/sw965/omw v0.0.0-20231017131540-8de43404a01c
+	github.com/sw965/omw v0.0.0-20240324204312-7d73f8dd6dda
 	golang.org/x/exp v0.0.0-20230118134722-a68e582fa157
 )
 
