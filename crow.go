@@ -6,7 +6,7 @@ import (
 	"github.com/sw965/omw"
 )
 
-func NumericalGradient[X constraints.Float](xs []X, f func([]X) X) []X {
+func NumericalGradient[XS ~[]X, X constraints.Float](xs XS, f func(XS) X) XS {
 	h := X(0.0001)
 	n := len(xs)
 	grad := make([]X, n)
