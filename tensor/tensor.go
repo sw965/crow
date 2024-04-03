@@ -3,6 +3,7 @@ package tensor
 import (
     "fmt"
     omwmath "github.com/sw965/omw/math"
+    "math"
     "math/rand"
 )
 
@@ -12,6 +13,31 @@ func NewD1Random(r int, min, max float64, random *rand.Rand) D1 {
     y := make(D1, r)
     for i := range y {
         y[i] = random.Float64()*(max-min) + min
+    }
+    return y
+}
+
+func NewD1He(n int, r *rand.Rand) D1 {
+	std := math.Sqrt(2.0 / float64(n))
+	y := make(D1, n)
+	for i := range y {
+        y[i] = r.NormFloat64() * std
+	}
+	return y
+}
+
+func (d1 D1) MulScalar(scalar float64) D1 {
+    y := make(D1, len(d1))
+    for i := range y {
+        y[i] = d1[i] * scalar
+    }
+    return y
+}
+
+func (d1 D1) DivScalar(scalar float64) D1 {
+    y := make(D1, len(d1))
+    for i := range y {
+        y[i] = d1[i] / scalar
     }
     return y
 }
@@ -119,25 +145,69 @@ func NewD2Random(r, c int, min, max float64, random *rand.Rand) D2 {
     return y
 }
 
+func NewD2He(r, c int, random *rand.Rand) D2 {
+    y := make(D2, r)
+    for i := range y {
+        y[i] = NewD1He(c, random)
+    }
+    return y
+}
+
 func (d2 D2) Shape() D2Shape {
     return D2Shape{Row:len(d2), Col:len(d2[0])}
 }
 
-func (d2 D2) Add1DByRow(d1 D1) (D2, error) {
-    y := NewD2Zeros(len(d2), len(d1))
+func (d2 D2) MulScalar(scalar float64) D2 {
+    y := NewD2Zeros(len(d2), len(d2[0]))
+    for i := range d2 {
+        for j := range d2[i] {
+            y[i][j] = d2[i][j] * scalar
+        }
+    }
+    return y
+}
 
-    for i := range y {
-        row := y[i]
-        if len(row) != len(d1) {
-            errMsg := fmt.Sprintf(
-                "tensor.D2 の %d 行目の列数 の長さ (%d) と tensor.D1 の長さ (%d) が一致しないため、1次元ベクトルを2次元テンソルの各行に加算することができません。",
-                i+1, len(row), len(d1),
-            )
+func (d2 D2) DivScalar(scalar float64) D2 {
+    y := NewD2Zeros(len(d2), len(d2[0]))
+    for i := range d2 {
+        for j := range d2[i] {
+            y[i][j] = d2[i][j] / scalar
+        }
+    }
+    return y
+}
+
+func (d2 D2) Add(other D2) (D2, error) {
+    if len(d2) != len(other) {
+        return D2{}, fmt.Errorf("tensor.D2の行数が一致しないため、加算できません。")
+    }
+
+    y := NewD2Zeros(len(d2), len(d2[0]))
+    for i := range d2 {
+        if len(d2[i]) != len(other[i]) {
+            errMsg := fmt.Sprintf("tensor.D2の 第%d行目 の列数が一致しないため、加算できません。", i+1)
             return D2{}, fmt.Errorf(errMsg)
         }
+        for j := range d2[i] {
+            y[i][j] = d2[i][j] + other[i][j]
+        }
+    }
+    return y, nil
+}
 
-        for j := range y[i] {
-            y[i][j] = d1[j]
+func (d2 D2) Sub(other D2) (D2, error) {
+    if len(d2) != len(other) {
+        return D2{}, fmt.Errorf("tensor.D2の行数が一致しないため、減算できません。")
+    }
+
+    y := NewD2Zeros(len(d2), len(d2[0]))
+    for i := range d2 {
+        if len(d2[i]) != len(other[i]) {
+            errMsg := fmt.Sprintf("tensor.D2の 第%d行目 の列数が一致しないため、減算できません。", i+1)
+            return D2{}, fmt.Errorf(errMsg)
+        }
+        for j := range d2[i] {
+            y[i][j] = d2[i][j] - other[i][j]
         }
     }
     return y, nil
@@ -145,13 +215,13 @@ func (d2 D2) Add1DByRow(d1 D1) (D2, error) {
 
 func (d2 D2) Mul(other D2) (D2, error) {
     if len(d2) != len(other) {
-        return D2{}, fmt.Errorf("tensor.D2の行数が一致しないため、掛け算できません。")
+        return D2{}, fmt.Errorf("tensor.D2の行数が一致しないため、乗算できません。")
     }
 
     y := NewD2Zeros(len(d2), len(d2[0]))
     for i := range d2 {
         if len(d2[i]) != len(other[i]) {
-            errMsg := fmt.Sprintf("tensor.D2の 第%d行目 の列数が一致しないため、掛け算できません。", i+1)
+            errMsg := fmt.Sprintf("tensor.D2の 第%d行目 の列数が一致しないため、乗算できません。", i+1)
             return D2{}, fmt.Errorf(errMsg)
         }
         for j := range d2[i] {
@@ -161,22 +231,22 @@ func (d2 D2) Mul(other D2) (D2, error) {
     return y, nil
 }
 
-func (d2 D2) SumByRow() D1 {
-    y := make(D1, len(d2))
-    for i := range y {
-        y[i] = omwmath.Sum(d2[i]...)
+func (d2 D2) Div(other D2) (D2, error) {
+    if len(d2) != len(other) {
+        return D2{}, fmt.Errorf("tensor.D2の行数が一致しないため、除算できません。")
     }
-    return y
-}
 
-func (d2 D2) SumByCol() D1 {
-    y := make(D1, len(d2))
+    y := NewD2Zeros(len(d2), len(d2[0]))
     for i := range d2 {
+        if len(d2[i]) != len(other[i]) {
+            errMsg := fmt.Sprintf("tensor.D2の 第%d行目 の列数が一致しないため、除算できません。", i+1)
+            return D2{}, fmt.Errorf(errMsg)
+        }
         for j := range d2[i] {
-            y[j] += d2[i][j]
+            y[i][j] = d2[i][j] * other[i][j]
         }
     }
-    return y
+    return y, nil
 }
 
 func (d2 D2) Transpose() D2 {
