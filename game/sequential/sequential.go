@@ -2,7 +2,8 @@ package sequential
 
 import (
 	"math/rand"
-	omwrand "github.com/sw965/omw/rand"
+
+	"github.com/sw965/omw"
 )
 
 type Player[S any, A comparable] func(*S) A
@@ -32,7 +33,7 @@ func (g *Game[S, AS, A]) Clone() Game[S, AS, A] {
 func (g *Game[S, AS, A]) SetRandomActionPlayer(r *rand.Rand) {
 	g.Player = func(state *S) A {
 		actions := g.LegalActions(state)
-		return omwrand.Choice(actions, r)
+		return omw.RandChoice(actions, r)
 	}
 }
 

@@ -2,7 +2,7 @@ package simultaneous
 
 import (
 	"math/rand"
-	omwrand "github.com/sw965/omw/rand"
+	"github.com/sw965/omw"
 )
 
 type Player[S any, AS ~[]A, A comparable] func(*S) AS
@@ -47,7 +47,7 @@ func (g *Game[S, ASS, AS, A]) SetRandomActionPlayer(r *rand.Rand, noAction A) {
 		actionss := g.PadLegalActionss(state, noAction)
 		y := make([]A, len(actionss))
 		for playerI, actions := range actionss {
-			y[playerI] = omwrand.Choice(actions, r)
+			y[playerI] = omw.RandChoice(actions, r)
 		}
 		return y
 	}

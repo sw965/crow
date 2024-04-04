@@ -3,8 +3,7 @@ package puct
 import (
 	"math/rand"
 	"github.com/sw965/crow"
-	omwmath "github.com/sw965/omw/math"
-	omwrand "github.com/sw965/omw/rand"
+	"github.com/sw965/omw"
 	"github.com/sw965/crow/game/sequential"
 	"golang.org/x/exp/maps"
 )

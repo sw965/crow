@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"github.com/sw965/crow/game/simultaneous"
 	"github.com/sw965/crow/mcts/dpuct"
-	omwrand "github.com/sw965/omw/rand"
+	"github.com/sw965/omw"
 	"math"
 	"testing"
 )
@@ -29,7 +29,7 @@ type RockPaperScissors struct {
 }
 
 func TestDPUCT(t *testing.T) {
-	r := omwrand.NewMt19937()
+	r := omw.NewMt19937()
 
 	legalActionss := func(rps *RockPaperScissors) Handss {
 		return Handss{HANDS, Hands{SCISSORS}}

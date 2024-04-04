@@ -4,10 +4,38 @@ import (
 	"math/rand"
 	"github.com/sw965/crow/tensor"
 	"github.com/sw965/crow/mlfuncs"
+	"github.com/sw965/omw"
 )
+
+type Forward func(tensor.D1, Backwards) (tensor.D1, Backwards, error)
+type Forwards []Forward
+
+func (fs Forwards) Run(x tensor.D1) (tensor.D1, Backwards, error) {
+	bs := make(Backwards, 0, len(fs))
+	var err error
+	for _, f := range fs {
+		x, bs, err = f(x, bs)
+		if err != nil {
+			return tensor.D1{}, Backwards{}, err
+		}
+	}
+	return x, bs, err
+}
 
 type Backward func(tensor.D1) (tensor.D1, error)
 type Backwards []Backward
+
+func (bs Backwards) Run(chain tensor.D1) (tensor.D1, error) {
+	var err error
+	bs = omw.Reverse(bs)
+	for _, b := range bs {
+		chain, err = b(chain)
+		if err != nil {
+			return tensor.D1{}, err
+		}
+	}
+	return chain, nil
+}
 
 type D1Affine struct {
 	W tensor.D2
@@ -16,13 +44,14 @@ type D1Affine struct {
 	Db tensor.D1
 	WRow int
 	WCol int
-	Sample int
 }
 
 func NewD1Affine(r, c int, min, max float64, random *rand.Rand) D1Affine {
 	return D1Affine{
 		W:tensor.NewD2Random(r, c, min, max, random),
 		B:make(tensor.D1, c),
+		Dw:tensor.NewD2Zeros(r, c),
+		Db:make(tensor.D1, c),
 		WRow:r,
 		WCol:c,
 	}
@@ -59,18 +88,16 @@ func (affine *D1Affine) Forward(x tensor.D1, backwards Backwards) (tensor.D1, Ba
 		if err != nil {
 			return tensor.D1{}, err
 		}
-
-		affine.Sample += 1
 		return dx[0], nil
 	}
 	backwards = append(backwards, backward)
 	return y, backwards, err
 }
 
-func (affine *D1Affine) SGD(lr float64) error {
-	sample := float64(affine.Sample)
-	dw := affine.Dw.DivScalar(sample)
-	db := affine.Db.DivScalar(sample)
+func (affine *D1Affine) SGD(lr float64, sample int) error {
+	s := float64(sample)
+	dw := affine.Dw.DivScalar(s)
+	db := affine.Db.DivScalar(s)
 
 	var err error
 	affine.W, err = affine.W.Sub(dw.MulScalar(lr))
@@ -85,7 +112,6 @@ func (affine *D1Affine) SGD(lr float64) error {
 
 	affine.Dw = tensor.NewD2Zeros(affine.WRow, affine.WCol)
 	affine.Db = make(tensor.D1, affine.WCol)
-	affine.Sample = 0
 	return nil
 }
 
@@ -197,16 +223,12 @@ func (prrelu *D1PRReLU) Forward(x tensor.D1, backwards Backwards) (tensor.D1, Ba
 	return y, backwards, err
 }
 
-func (prrelu *D1PRReLU) SGD(lr float64) error {
+func (prrelu *D1PRReLU) SGD(lr float64, batchSize int) error {
 	var err error
-	dAlpha := prrelu.Dalpha.DivScalar(float64(prrelu.Sample))
+	dAlpha := prrelu.Dalpha.DivScalar(float64(batchSize))
 	prrelu.Alpha, err = prrelu.Alpha.Sub(dAlpha.MulScalar(lr))
-	if err != nil {
-		return err
-	}
 	prrelu.Dalpha = make(tensor.D1, prrelu.Len)
-	prrelu.Sample = 0
-	return nil
+	return err
 }
 
 func D1TanhForward(x tensor.D1, backwards Backwards) (tensor.D1, Backwards, error) {
@@ -233,6 +255,6 @@ func (mse *D1MeanSquaredError) Forward(y, t tensor.D1) float64 {
 	return mlfuncs.D1MeanSquaredError(y, t)
 }
 
-func (mse *D1MeanSquaredError) Backward() tensor.D1 {
+func (mse *D1MeanSquaredError) Backward(chain tensor.D1) tensor.D1 {
 	return mlfuncs.D1MeanSquaredErrorDerivative(mse.Y, mse.T)
 }

@@ -3,7 +3,7 @@ package dpuct
 import (
 	"github.com/sw965/crow"
 	"github.com/sw965/crow/game/simultaneous"
-	omwrand "github.com/sw965/omw/rand"
+	"github.com/sw965/omw"
 	"math/rand"
 )
 
@@ -28,7 +28,7 @@ func (node *Node[S, ASS, AS, A]) ActionPrediction(r *rand.Rand, cap_ int) ASS {
 
 		actions := make(AS, len(node.PUCBManagers))
 		for playerI, m := range node.PUCBManagers {
-			actions[playerI] = omwrand.Choice(m.MaxTrialKeys(), r)
+			actions[playerI] = omw.RandChoice(m.MaxTrialKeys(), r)
 		}
 		y = append(y, actions)
 
