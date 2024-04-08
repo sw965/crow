@@ -1,6 +1,7 @@
 package tensor
 
 import (
+    "math"
     "fmt"
     "github.com/sw965/omw"
 )
@@ -90,6 +91,32 @@ func (d1 D1) Div(other D1) (D1, error) {
 func (d1 D1) DotProduct(other D1) (float64, error) {
     mul, err := d1.Mul(other)
     return omw.Sum(mul...), err
+}
+
+func (d1 D1) Dev() D1 {
+    m := omw.Mean(d1...)
+    return d1.SubScalar(m)
+}
+
+func (d1 D1) Var() float64 {
+    n := len(d1)
+    sum := 0.0
+    dev := d1.Dev()
+    for i := range d1 {
+        di := dev[i]
+        sum += di * di
+    }
+    return sum / float64(n)
+}
+
+func (d1 D1) Std() float64 {
+    return math.Sqrt(d1.Var())
+}
+
+func (d1 D1) Standardize() D1 {
+    dev := d1.Dev()
+    std := d1.Std()
+    return dev.DivScalar(std)
 }
 
 type D2 []D1
