@@ -1,40 +1,5 @@
 package layer
 
-import (
-	"fmt"
-
-	"github.com/sw965/crow/tensor"
-	"github.com/sw965/crow/mlfuncs"
-	"github.com/sw965/omw"
-)
-
-type VarKey int
-
-const (
-	KEY_W VarKey = iota
-	KEY_B
-	KEY_ALPHA
-)
-
-type ScalarVarMap map[VarKey]float64
-
-type ScalarTrainVarManager struct {
-	Param ScalarVarMap
-	Grad ScalarVarMap
-}
-
-func (v *ScalarTrainVarManager) AddGrad(dParam float64) {
-	v.Grad += dParam
-}
-
-func (v *ScalarTrainVarManager) DivGrad(n float64) {
-	for key, _ := range v.Grad {
-		v.Grad[key] /= n
-	} 
-}
-
-type ScalarTrainVarManagers []*ScalarTrainVarManager
-
 type D1VarMap map[VarKey]tensor.D1
 
 type D1TrainVarManager struct {
@@ -59,41 +24,6 @@ func (v *D1TrainVarManager) DivGrad(n float64) {
 		}
 	}
 }
-
-type D1TrainVarManagers []*D1TrainVarManager
-
-type D2VarMap map[VarKey]tensor.D1
-
-type D2TrainVarManager struct {
-	Param D2VarMap
-	Grad D2VarMap
-}
-
-func (v *D2TrainVarManager) AddGrad(dParam tensor.D2) {
-	for key, _ := range v.Grad {
-		grad := v.Grad[k]
-		for i := range gradk {
-			dParami := dParam[i]
-			gradi := grad[i]
-			for j := range gradki {
-				gradi[j] = dParami[j]
-			}
-		}
-	}
-}
-
-func (v *D2TrainVarManager) DivGrad(n float64) {
-	for key, _ := range pg.Gr {
-		grad := v.Grad[key]
-		for i := range grad {
-			for j := range grad[i] {
-				grad[i][j] /= n
-			}
-		}
-	}
-}
-
-type D2TrainVarManagers []*D2TrainVarManager
 
 type D1Forward func(tensor.D1, D1Backwards) (tensor.D1, D1Backwards, error)
 type D1Forwards []D1Forward
@@ -125,7 +55,7 @@ func (bs D1Backwards) Run(chain tensor.D1) (tensor.D1, error) {
 	return chain, nil
 }
 
-func NewAffineForward(d2v *D2TrainVarManager, d1v D1TrainVarManager) Forward {
+func NewD1AffineForward(d2v *D2TrainVarManager, d1v D1TrainVarManager) Forward {
 	return func(x tensor.D1, backwards Backwards) (tensor.D1, Backwards, error) {
 		w := d2v.Param[KEY_W]
 		b := d1v.Param[KEY_B]
@@ -161,7 +91,7 @@ func NewAffineForward(d2v *D2TrainVarManager, d1v D1TrainVarManager) Forward {
 	}
 }
 
-func ReLUForward(x tensor.D1, backwards Backwards) (tensor.D1, Backwards, error) {
+func D1ReLUForward(x tensor.D1, backwards Backwards) (tensor.D1, Backwards, error) {
 	y := mlfuncs.ReLU(x)
 	var backward Backward
 	backward = func(chain tensor.D1) (tensor.D1, error) {
@@ -174,7 +104,7 @@ func ReLUForward(x tensor.D1, backwards Backwards) (tensor.D1, Backwards, error)
 	return y, backwards, nil
 }
 
-func NewPReLUForward(sv *ScalarTrainVarManager) D1Forward {
+func NewD1PReLUForward(sv *ScalarTrainVarManager) D1Forward {
 	return func(x tensor.D1, backwards D1Backwards) (tensor.D1, D1Backwards, error) {
 		alpha := sv.Param[KEY_ALPHA]
 		y := mlfuncs.PReLU(x, alpha)
@@ -195,7 +125,7 @@ func NewPReLUForward(sv *ScalarTrainVarManager) D1Forward {
 	}
 }
 
-func SigmoidForward(x tensor.D1, backwards Backwards) (tensor.D1, Backwards, error) {
+func D1SigmoidForward(x tensor.D1, backwards Backwards) (tensor.D1, Backwards, error) {
 	y := mlfuncs.Sigmoid(x)
 	var backward Backward
 	backward = func(chain tensor.D1) (tensor.D1, error) {
@@ -208,7 +138,7 @@ func SigmoidForward(x tensor.D1, backwards Backwards) (tensor.D1, Backwards, err
 	return y, backwards, nil
 }
 
-func TanhForward(x tensor.D1, backwards Backwards) (tensor.D1, Backwards, error) {
+func D1TanhForward(x tensor.D1, backwards Backwards) (tensor.D1, Backwards, error) {
 	y := mlfuncs.Tanh(x)
 	var backward Backward
 	backward = func(chain tensor.D1) (tensor.D1, error) {
@@ -221,7 +151,7 @@ func TanhForward(x tensor.D1, backwards Backwards) (tensor.D1, Backwards, error)
 	return y, backwards, nil
 }
 
-func MeanSquaredErrorForward(y, t tensor.D1, backwards Backwards) (float64, Backwards, error) {
+func D1MeanSquaredErrorForward(y, t tensor.D1, backwards Backwards) (float64, Backwards, error) {
 	z, err := mlfuncs.MeanSquaredError(y, t)
 	var backward Backward
 	backward = func(chain tensor.D1) (tensor.D1, error) {

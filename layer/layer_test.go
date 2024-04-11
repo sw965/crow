@@ -139,7 +139,7 @@ func (model *TestModel) SWA(old *TestModel, wScale float64) (TestModel, error) {
 
 func TestMnist(t *testing.T) {
 	r := omw.NewMt19937()
-	model := NewTestModel(1024, 512, r)
+	model := NewTestModel(128, 32, r)
 	mnistPath := omw.SW965_PATH + "mnist_json/"
 	trainImg, err := omw.LoadJSON[tensor.D2](mnistPath + "train_img" + omw.JSON_EXTENSION)
 	if err != nil {
