@@ -2,37 +2,55 @@ package optimizer
 
 import (
 	"github.com/sw965/crow/tensor"
-	"github.com/sw965/crow/layer"
 )
 
-type Momentum struct {
+type D1Momentum struct {
+	Momentum float64
+	Velocity tensor.D1
+}
+
+func (opt *D1Momentum) Train(w, grad tensor.D1, lr float64) {
+	for i := range w {
+		opt.Velocity[i] =  (opt.Momentum * opt.Velocity[i]) - (lr * grad[i])
+		w[i] += opt.Velocity[i]
+	}
+}
+
+type D2Momentum struct {
 	Momentum float64
 	Velocity tensor.D2
 }
 
-func NewMomentum(row, col int) Momentum {
-	momentum := 0.9
-	return Momentum{Momentum:momentum, Velocity:tensor.NewD2Zeros(row, col)}
-}
-
-func(opt *Momentum) Update(pg *layer.ParameterGradientPairManager, lr float64) {
-	w := pg.Pa
-	for key := range pg.Pa {
-		w := pg.Pa[key]
-		grad := pg.Pa[key]
-		for i := range w {
-			for j := range w[i] {
-				opt.Velocity[i][j] = (grad[i][j] * lr) - (opt.Momentum * opt.Velocity[i][j])
-				w[i][j] += opt.Velocity[i][j]
-			}
+func(opt *D2Momentum) Train(w, grad tensor.D2, lr float64) {
+	for i := range w {
+		vi := opt.Velocity[i]
+		wi := w[i]
+		gradi := grad[i]
+		for j := range wi {
+			vi[j] = (opt.Momentum * vi[j]) - (lr * gradi[j])
+			wi[j] += vi[j]
 		}
 	}
 }
 
-type Momentums []Momentum
+type D3Momentum struct {
+    Momentum float64
+    Velocity tensor.D3
+}
 
-for (opts Momentums) Update(pgs layer.ParameterGradientPairManagers, lr float64) {
-	for i := range opts {
-		opts[i].Update(pgs[i], lr)
-	}
+func (opt *D3Momentum) Train(w, grad tensor.D3, lr float64) {
+    for i := range w {
+        vi := opt.Velocity[i]
+        wi := w[i]
+        gradi := grad[i]
+        for j := range wi {
+            vij := vi[j]
+            wij := wi[j]
+            gradij := gradi[j]
+            for k := range wij {
+                vij[k] = (opt.Momentum * vij[k]) - (lr * gradij[k])
+                wij[k] += vij[k]
+            }
+        }
+    }
 }
