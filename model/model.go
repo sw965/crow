@@ -28,14 +28,14 @@ func (model *D1) Predict(x tensor.D1) (tensor.D1, layer.D1Backwards, error) {
 	return y, backwards, err
 }
 
-func (model *D1) YAndLoss(x, t tensor.D1) (tensor.D1, float64, layer.D1BackwardPropagator, error) {
+func (model *D1) YAndLoss(x, t tensor.D1) (tensor.D1, float64, *layer.D1BackPropagator, error) {
 	y, backwards, err := model.Predict(x)
-	loss, lastBackward, err := model.LossForward(y, t)
+	loss, lossBackward, err := model.LossForward(y, t)
 	loss += model.PerLayerScalarVar.L2Regularization()
 	loss += model.PerLayerD1Var.L2Regularization()
 	loss += model.PerLayerD2Var.L2Regularization()
-	propagator := layer.NewD1BackwardPropagator(lastBackward, backwards)
-	return y, loss, propagator, err
+	bp := layer.D1BackPropagator{Backwards:backwards, LossBackward:lossBackward}
+	return y, loss, &bp, err
 }
 
 func (model *D1) Accuracy(x, t tensor.D1) (float64, error) {
@@ -69,14 +69,14 @@ func (model *D1) Accuracy(x, t tensor.D1) (float64, error) {
 }
 
 func (model *D1) UpdateGrad(x, t tensor.D1) error {
-	_, _, backPropagator, err := model.YAndLoss(x, t)
+	_, _, bp, err := model.YAndLoss(x, t)
 	if err != nil {
 		return err
 	}
-	_, err = backPropagator()
-	model.PerLayerScalarVar.AddL2RegularizationGrad()
-	model.PerLayerD1Var.AddL2RegularizationGrad()
-	model.PerLayerD2Var.AddL2RegularizationGrad()
+	_, err = bp.Run()
+	//model.PerLayerScalarVar.AddL2RegularizationGrad()
+	//model.PerLayerD1Var.AddL2RegularizationGrad()
+	//model.PerLayerD2Var.AddL2RegularizationGrad()
 	return err
 }
 

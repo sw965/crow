@@ -2,39 +2,72 @@ package layer_test
 
 import (
 	"testing"
+	"fmt"
 	"github.com/sw965/omw"
 	"github.com/sw965/crow/tensor"
 	"github.com/sw965/crow/layer"
+	"github.com/sw965/crow/mlfuncs"
 )
 
-func TestPReLUForward(t *testing.T) {
-	r := omw.NewMt19937()
-	h := 0.001
-	for i := 0; i < 128; i++ {
-		x := tensor.NewD1He(10, r)
-		alpha := r.Float64()
-		dAlpha := 0.0
-		forwards := layer.NewD1PReLUForward(*alpha, *dAlpha)
-		backwards := layer.D1Backwards{}
-		_, backwards, err := forwards(x, backwards)
-		_, err := backwards[0](tensor.D1{1.0})
+func TestAffineForward(test *testing.T) {
+	random := omw.NewMt19937()
+	r := 10
+	c := 5
 
-		tmp := alpha
+	x := tensor.NewD1RandomUniform(r, -1.0, 1.0, random)
+	w := tensor.NewD2He(r, c, random)
+	b := tensor.NewD1RandomUniform(c, -1.0, 1.0, random)
+	gradW := tensor.NewD2ZerosLike(w)
+	gradB := make(tensor.D1, len(b))
+	t := tensor.NewD1RandomUniform(c, -1.0, 1.0, random)
 
-		alpha += h
-		y1, _, err := forwards(x, backwards)
+	loss := func(w tensor.D2, b tensor.D1) float64 {
+		dot, err := tensor.D2{x}.DotProduct(w)
 		if err != nil {
 			panic(err)
 		}
-
-		alpha -= h
-		y2, _, err := forwards(x, backwards)
+		y, err := tensor.D1Add(dot[0], b)
 		if err != nil {
 			panic(err)
 		}
-		alpha = tmp
+		l, err := mlfuncs.D1MeanSquaredError(y, t)
+		if err != nil {
+			panic(err)
+		}
+		return l
+	}
 
-		numericalGrad := (y1 - y2) / (2*h)
-		fmt.Println(numericalGrad, )
+	lossW := func(w tensor.D2) float64 { return loss(w, b) }
+	lossB := func(b tensor.D1) float64 { return loss(w, b) }
+	numGradW := mlfuncs.D2NumericalDifferentiation(w, lossW)
+	numGradB := mlfuncs.D1NumericalDifferentiation(b, lossB)
+
+	forwards := layer.D1Forwards{
+		layer.NewD1AffineForward(w, b, gradW, gradB),
+	}
+	y, backwards, err := forwards.Run(x)
+	if err != nil {
+		panic(err)
+	}
+	lossForward := layer.NewD1MeanSquaredErrorForward()
+	_, lossBackward, err := lossForward(y, t)
+	if err != nil {
+		panic(err)
+	}
+	
+	bp := layer.D1BackPropagator{Backwards:backwards, LossBackward:lossBackward}
+	_, err = bp.Run()
+	if err != nil {
+		panic(err)
+	}
+
+	for i := range numGradW {
+		for j := range numGradW[i] {
+			fmt.Println(numGradW[i][j], gradW[i][j])
+		}
+	}
+
+	for i := range numGradB {
+		fmt.Println(numGradB[i], gradB[i])
 	}
 }

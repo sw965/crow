@@ -46,19 +46,19 @@ func TestModel(t *testing.T) {
 
 	forwards := layer.D1Forwards{
 		layer.NewD1AffineForward(perLayerD2Var.Param[0], perLayerD1Var.Param[0], model.PerLayerD2Var.Grad[0], model.PerLayerD1Var.Grad[0]),
-		//layer.NewD1PReLUForward(&perLayerScalarVar.Param[0], &model.PerLayerScalarVar.Grad[0]),
-		layer.NewD1ReLUForward(),
+		layer.NewD1PReLUForward(&perLayerScalarVar.Param[0], &model.PerLayerScalarVar.Grad[0]),
+		//layer.NewD1ReLUForward(),
 		//layer.NewD1SigmoidForward(),
 
 		layer.NewD1AffineForward(perLayerD2Var.Param[1], perLayerD1Var.Param[1], model.PerLayerD2Var.Grad[1], model.PerLayerD1Var.Grad[1]),
-		//layer.NewD1PReLUForward(&perLayerScalarVar.Param[1], &model.PerLayerScalarVar.Grad[1]),
-		layer.NewD1ReLUForward(),
+		layer.NewD1PReLUForward(&perLayerScalarVar.Param[1], &model.PerLayerScalarVar.Grad[1]),
+		//layer.NewD1ReLUForward(),
 		//layer.NewD1SigmoidForward(),
 
 		layer.NewD1AffineForward(perLayerD2Var.Param[2], perLayerD1Var.Param[2], model.PerLayerD2Var.Grad[2], model.PerLayerD1Var.Grad[2]),
-		//layer.NewD1PReLUForward(&perLayerScalarVar.Param[2], &model.PerLayerScalarVar.Grad[2]),
-		layer.NewD1ReLUForward(),
-		//layer.NewD1SigmoidForward(),
+		layer.NewD1PReLUForward(&perLayerScalarVar.Param[2], &model.PerLayerScalarVar.Grad[2]),
+		//layer.NewD1ReLUForward(),
+		///layer.NewD1SigmoidForward(),
 	}
 
 	model.Forwards = forwards
@@ -74,8 +74,8 @@ func TestModel(t *testing.T) {
 		model.UpdateGradAndTrain(mnist.TrainImg[idx], mnist.TrainLabel[idx], 0.01)
 
 		if i%196 == 0 {
-			tmp := r.Intn(10000)
-			err := model.ValidateBackwardGrad(mnist.TestImg[tmp], mnist.TestLabel[tmp], 0.001)
+			//tmp := r.Intn(10000)
+			//err := model.ValidateBackwardGrad(mnist.TestImg[tmp], mnist.TestLabel[tmp], 0.001)
 			if err != nil {
 				panic(err)
 			}

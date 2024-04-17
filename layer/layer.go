@@ -1,7 +1,6 @@
 package layer
 
 import (
-	//"fmt"
 	"github.com/sw965/omw"
 	"github.com/sw965/crow/mlfuncs"
 	"github.com/sw965/crow/tensor"
@@ -19,27 +18,31 @@ func (fs D1Forwards) Run(x tensor.D1) (tensor.D1, D1Backwards, error) {
 			return tensor.D1{}, D1Backwards{}, err
 		}
 	}
-	return x, bs, err
+	y := x
+	return y, bs, nil
 }
 
 type D1Backward func(tensor.D1) (tensor.D1, error)
 type D1Backwards []D1Backward
 
-func NewD1BackwardPropagator(lastBackward D1LossBackward, backwards D1Backwards) D1BackwardPropagator {
-	return func() (tensor.D1, error) {
-		chain, err := lastBackward()
+type D1BackPropagator struct {
+	Backwards D1Backwards
+	LossBackward D1LossBackward
+}
+
+func (bp *D1BackPropagator) Run() (tensor.D1, error) {
+	chain, err := bp.LossBackward()
+	if err != nil {
+		return tensor.D1{}, err
+	}
+	bs := omw.Reverse(bp.Backwards)
+	for _, b := range bs {
+		chain, err = b(chain)
 		if err != nil {
 			return tensor.D1{}, err
 		}
-		backwards = omw.Reverse(backwards)
-		for _, b := range backwards {
-			chain, err = b(chain)
-			if err != nil {
-				return tensor.D1{}, err
-			}
-		}
-		return chain, nil
 	}
+	return chain, nil
 }
 
 type D1BackwardPropagator func() (tensor.D1, error)
@@ -65,19 +68,11 @@ func NewD1AffineForward(w tensor.D2, b tensor.D1, gradW tensor.D2, gradB tensor.
 			if err != nil {
 				return tensor.D1{}, err
 			}
-
-			for i := range dw {
-				dwi := dw[i]
-				for j := range dw[i] {
-					gradW[i][j] = dwi[j]
-				}
-			}
+			gradW.Copy(dw)
 
 			// ∂L/∂b
 			db := chain
-			for i := range db {
-				gradB[i] = db[i]
-			}
+			gradB.Copy(chain)
 			return dx[0], err
 		}
 		backwards = append(backwards, backward)
@@ -121,12 +116,12 @@ func NewD1PReLUForward(alpha, gradAlpha *float64) D1Forward {
 		backward = func(chain tensor.D1) (tensor.D1, error) {
 			dydx, dydVectorizedAlpha := mlfuncs.D1PReLUDerivative(x, *alpha)
 
-			// alphaはスカラーであるが、計算しやすいように、f(alpha, alpha, alpha, ...) のように疑似的に多変数関数として、連鎖律を適用する。
-			// ∂L/∂alpha
+			// ∂L/∂dVectorizedAlpha
 			dVectorizedAlpha, err := tensor.D1Mul(dydVectorizedAlpha, chain)
 			if err != nil {
 				return tensor.D1{}, err
 			}
+			// ∂L/∂alpha
 			*gradAlpha = omw.Sum(dVectorizedAlpha...)
 
 			// ∂L/∂x

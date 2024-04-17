@@ -17,6 +17,12 @@ func (d3 D3) Zeros() {
 	}
 }
 
+func (d3 D3) Copy(other D3) {
+	for i := range d3 {
+		d3[i].Copy(other[i])
+	}
+}
+
 func (d3 D3) Clone() D3 {
 	y := make(D3, len(d3))
 	for i := range y {

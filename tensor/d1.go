@@ -37,6 +37,12 @@ func NewD1He(n int, r *rand.Rand) D1 {
     return y
 }
 
+func (d1 D1) Copy(other D1) {
+    for i := range d1 {
+        d1[i] = other[i]
+    }
+}
+
 func (d1 D1) Zeros() {
     for i := range d1 {
         d1[i] = 0

@@ -24,19 +24,16 @@ func TestD1PReLUDerivative(test *testing.T) {
 		return l
 	}
 
-	numGrad := mlfuncs.ScalarNumericalDifferentiation(alpha, loss)
-	_, splitedGradAlpha := mlfuncs.D1PReLUDerivative(x, alpha)
+	numGradAlpha := mlfuncs.ScalarNumericalDifferentiation(alpha, loss)
+	_, dydVectorizedGradAlpha := mlfuncs.D1PReLUDerivative(x, alpha)
 	chain, err := mlfuncs.D1MeanSquaredErrorDerivative(mlfuncs.D1LReLU(x, alpha), t)
 	if err != nil {
 		panic(err)
 	}
 
-	ga := omw.Sum(gradAlpha...)
-	da := omw.Sum(chain...) * ga
-
-	gradAlpha, err = tensor.D1Mul(gradAlpha, chain)
+ 	vectorizedGradAlpha, err := tensor.D1Mul(dydVectorizedGradAlpha, chain)
 	if err != nil {
 		panic(err)
 	}
-	fmt.Println(numGrad, omw.Sum(gradAlpha...), da)
+	fmt.Println(numGradAlpha, omw.Sum(vectorizedGradAlpha...))
 }

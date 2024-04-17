@@ -54,6 +54,12 @@ func (d2 D2) Zeros() {
     }
 }
 
+func (d2 D2) Copy(other D2) {
+    for i := range d2 {
+        d2[i].Copy(other[i])
+    }
+}
+
 func (d2 D2) Clone() D2 {
     y := make(D2, len(d2))
     for i := range y {
