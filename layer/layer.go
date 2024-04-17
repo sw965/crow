@@ -45,8 +45,6 @@ func (bp *D1BackPropagator) Run() (tensor.D1, error) {
 	return chain, nil
 }
 
-type D1BackwardPropagator func() (tensor.D1, error)
-
 func NewD1AffineForward(w tensor.D2, b tensor.D1, gradW tensor.D2, gradB tensor.D1) D1Forward {
 	return func(x tensor.D1, backwards D1Backwards) (tensor.D1, D1Backwards, error) {
 		dot, err := tensor.D2{x}.DotProduct(w)
@@ -72,7 +70,7 @@ func NewD1AffineForward(w tensor.D2, b tensor.D1, gradW tensor.D2, gradB tensor.
 
 			// ∂L/∂b
 			db := chain
-			gradB.Copy(chain)
+			gradB.Copy(db)
 			return dx[0], err
 		}
 		backwards = append(backwards, backward)
@@ -111,7 +109,7 @@ func NewD1LReLUForward(alpha float64) D1Forward {
 
 func NewD1PReLUForward(alpha, gradAlpha *float64) D1Forward {
 	return func(x tensor.D1, backwards D1Backwards) (tensor.D1, D1Backwards, error) {
-		y := mlfuncs.D1LReLU(x, *alpha)
+		y := mlfuncs.D1PReLU(x, *alpha)
 		var backward D1Backward
 		backward = func(chain tensor.D1) (tensor.D1, error) {
 			dydx, dydVectorizedAlpha := mlfuncs.D1PReLUDerivative(x, *alpha)

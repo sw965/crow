@@ -3,6 +3,7 @@ package layer_test
 import (
 	"testing"
 	"fmt"
+	"math"
 	"github.com/sw965/omw"
 	"github.com/sw965/crow/tensor"
 	"github.com/sw965/crow/layer"
@@ -21,7 +22,7 @@ func TestAffineForward(test *testing.T) {
 	gradB := make(tensor.D1, len(b))
 	t := tensor.NewD1RandomUniform(c, -1.0, 1.0, random)
 
-	loss := func(w tensor.D2, b tensor.D1) float64 {
+	loss := func(x tensor.D1, w tensor.D2, b tensor.D1) float64 {
 		dot, err := tensor.D2{x}.DotProduct(w)
 		if err != nil {
 			panic(err)
@@ -37,8 +38,10 @@ func TestAffineForward(test *testing.T) {
 		return l
 	}
 
-	lossW := func(w tensor.D2) float64 { return loss(w, b) }
-	lossB := func(b tensor.D1) float64 { return loss(w, b) }
+	lossX := func(x tensor.D1) float64 { return loss(x, w, b) }
+	lossW := func(w tensor.D2) float64 { return loss(x, w, b) }
+	lossB := func(b tensor.D1) float64 { return loss(x, w, b) }
+	numGradX := mlfuncs.D1NumericalDifferentiation(x, lossX)
 	numGradW := mlfuncs.D2NumericalDifferentiation(w, lossW)
 	numGradB := mlfuncs.D1NumericalDifferentiation(b, lossB)
 
@@ -56,18 +59,36 @@ func TestAffineForward(test *testing.T) {
 	}
 	
 	bp := layer.D1BackPropagator{Backwards:backwards, LossBackward:lossBackward}
-	_, err = bp.Run()
+	gradX, err := bp.Run()
 	if err != nil {
 		panic(err)
 	}
 
-	for i := range numGradW {
-		for j := range numGradW[i] {
-			fmt.Println(numGradW[i][j], gradW[i][j])
+	maxDiffNumGradX := 0.0
+	for i := range numGradX {
+		diff := math.Abs(numGradX[i] - gradX[i])
+		if diff > maxDiffNumGradX {
+			maxDiffNumGradX = diff
 		}
 	}
 
-	for i := range numGradB {
-		fmt.Println(numGradB[i], gradB[i])
+	maxDiffNumGradW := 0.0
+	for i := range numGradW {
+		for j := range numGradW[i] {
+			diff := math.Abs(numGradW[i][j] - gradW[i][j])
+			if diff > maxDiffNumGradW {
+				maxDiffNumGradW = diff
+			}
+		}
 	}
+
+	maxDiffNumGradB := 0.0
+	for i := range numGradB {
+		diff := math.Abs(numGradB[i] - gradB[i])
+		if diff > maxDiffNumGradB {
+			maxDiffNumGradB = diff
+		}
+	}
+
+	fmt.Println(maxDiffNumGradX, maxDiffNumGradW, maxDiffNumGradB)
 }

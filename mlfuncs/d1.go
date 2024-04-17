@@ -71,12 +71,16 @@ func D1LReLUDerivative(x tensor.D1, alpha float64) tensor.D1 {
 	for i := range x {
 		xi := x[i]
 		if xi > 0 {
-			grad[i] = xi
+			grad[i] = 1
 		} else {
 			grad[i] = alpha
 		}
 	}
 	return grad
+}
+
+func D1PReLU(x tensor.D1, alpha float64) tensor.D1 {
+	return D1LReLU(x, alpha)
 }
 
 func D1PReLUDerivative(x tensor.D1, alpha float64) (tensor.D1, tensor.D1) {
