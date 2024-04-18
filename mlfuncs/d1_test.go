@@ -77,3 +77,9 @@ func TestD1L2RegularizationDerivative(test *testing.T) {
 	maxDiffErr := omw.Max(diffErr...)
 	fmt.Println("maxDiffErr =", maxDiffErr)
 }
+
+func TestD1ClipL2Norm(t *testing.T) {
+	grad := tensor.D1{11, 20, 8}
+	result := mlfuncs.D1ClipL2Norm(grad, 10)
+	fmt.Println(result)
+}

@@ -18,7 +18,7 @@ func TestModel(t *testing.T) {
 	hidden2Size := 64
 	outputSize := 10
 
-	isTrain := true
+	//isTrain := true
 	perLayerD1Var := model.PerLayerD1Var{
 		Param:tensor.D1{0.01, 0.01, 0.01},
 	}
@@ -55,32 +55,36 @@ func TestModel(t *testing.T) {
 		layer.NewD1AffineForward(perLayerD3Var.Param[2], perLayerD2Var.Param[2], perLayerD3Var.GetGrad()[2], perLayerD2Var.GetGrad()[2]),
 		layer.NewD1PReLUForward(&perLayerD1Var.Param[2], &perLayerD1Var.GetGrad()[2]),
 		//layer.NewD1DropoutForward(0.1, &isTrain, r),
+		//layer.NewD1TanhForward(),
 	}
+
 	model.Forwards = forwards
 	model.LossForward = layer.NewD1MeanSquaredErrorForward()
+	model.L2RegularizationD1Param = 0.01
+	model.L2RegularizationD3Param = 0.01
 
 	mnist, err := dataset.LoadMnist()
 	if err != nil {
 		panic(err)
 	}
 
-	oldParamD1 := perLayerD1Var.Param.Clone()
-	oldParamD2 := perLayerD2Var.Param.Clone()
-	oldParamD3 := perLayerD3Var.Param.Clone()
+	// oldParamD1 := perLayerD1Var.Param.Clone()
+	// oldParamD2 := perLayerD2Var.Param.Clone()
+	// oldParamD3 := perLayerD3Var.Param.Clone()
 
 	trainNum := 256000
 	for i := 0; i < trainNum; i++ {
 		idx := r.Intn(60000)
 		model.UpdateGradAndTrain(mnist.TrainImg[idx], mnist.TrainLabel[idx], 0.01)
 
-		if i%8 == 0 {
-			model.SWA(0.5, oldParamD1, oldParamD2, oldParamD3)
-			oldParamD1 = perLayerD1Var.Param.Clone()
-			oldParamD2 = perLayerD2Var.Param.Clone()
-			oldParamD3 = perLayerD3Var.Param.Clone()
-		}
+		// if i%8 == 0 {
+		// 	model.SWA(0.5, oldParamD1, oldParamD2, oldParamD3)
+		// 	oldParamD1 = perLayerD1Var.Param.Clone()
+		// 	oldParamD2 = perLayerD2Var.Param.Clone()
+		// 	oldParamD3 = perLayerD3Var.Param.Clone()
+		// }
 
-		// if i%1960 == 0 {
+		// if i%19600 == 0 {
 		// 	tmp := r.Intn(10000)
 		// 	model.ValidateBackwardGrad(mnist.TestImg[tmp], mnist.TestLabel[tmp])
 		// }
@@ -89,7 +93,7 @@ func TestModel(t *testing.T) {
 			testSize := 128
 			lossSum := 0.0
 			a := 0.0
-			isTrain = false
+			//isTrain = false
 			for j := 0; j < testSize; j++ {
 				idx := r.Intn(10000)
 				_, loss, _, err := model.YAndLoss(mnist.TestImg[idx], mnist.TestLabel[idx])
@@ -105,7 +109,7 @@ func TestModel(t *testing.T) {
 			}
 			fmt.Println("i = ", i, "lossSum = ", lossSum)
 			fmt.Println("a = ", float64(a) / float64(testSize))
-			isTrain = true
+			//isTrain = true
 		}
 	}
 }
