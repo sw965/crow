@@ -217,6 +217,22 @@ func (d2 D2) DotProduct(other D2) (D2, error) {
 	return y, nil
 }
 
+func (d2 D2) MapFunc(f func(float64)float64) D2 {
+    y := make(D2, len(d2))
+    for i := range d2 {
+        y[i] = d2[i].MapFunc(f)
+    }
+    return y
+}
+
+func (d2 D2) Max() D1 {
+    max := make(D1, len(d2))
+    for i := range d2 {
+        max[i] = d2[i].Max()
+    }
+    return max
+}
+
 func D2AddScalar(d2 D2, scalar float64) D2 {
     y := d2.Clone()
     y.AddScalar(scalar)

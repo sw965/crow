@@ -107,6 +107,22 @@ func (d3 D3) Div(other D3) error {
 	return nil
 }
 
+func (d3 D3) MapFunc(f func(float64)float64) D3 {
+	y := make(D3, len(d3))
+	for i := range d3 {
+		y[i] = d3[i].MapFunc(f)
+	}
+	return y
+}
+
+func (d3 D3) Max() D2 {
+	max := make(D2, len(d3))
+	for i := range d3 {
+		max[i] = d3[i].Max()
+	}
+	return max
+}
+
 func D3Add(d3, other D3) (D3, error) {
 	y := d3.Clone()
 	err := y.Add(other)
@@ -117,6 +133,12 @@ func D3Sub(d3, other D3) (D3, error) {
 	y := d3.Clone()
 	err := y.Sub(other)
 	return y, err
+}
+
+func D3MulScalar(d3 D3, scalar float64) D3 {
+	y := d3.Clone()
+	y.MulScalar(scalar)
+	return y
 }
 
 func D3Mul(d3, other D3) (D3, error) {

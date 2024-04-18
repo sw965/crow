@@ -3,6 +3,7 @@ package mlfuncs
 import (
 	"fmt"
 	"math"
+	"math/rand"
 
 	"github.com/sw965/omw"
 	"github.com/sw965/crow/tensor"
@@ -99,6 +100,29 @@ func D1PReLUDerivative(x tensor.D1, alpha float64) (tensor.D1, tensor.D1) {
 	return gradX, vectorizedGradAlpha
 }
 
+func D1Dropout(x tensor.D1, p float64, isTrain bool, r *rand.Rand) (tensor.D1, tensor.D1) {
+	n := len(x)
+	y := make(tensor.D1, n)
+	mask := make(tensor.D1, n)
+	if isTrain {
+		for i := range y {
+			if p > r.Float64() {
+				y[i] = 0
+			} else {
+				y[i] = x[i]
+				mask[i] = 1
+			}
+		}
+	} else {
+		q := 1.0 - p
+		for i := range y {
+			y[i] = q * x[i]
+			mask[i] = 1
+		}
+	}
+	return y, mask
+}
+
 func D1MeanSquaredError(y, t tensor.D1) (float64, error) {
 	if len(y) != len(t) {
 		return 0.0, fmt.Errorf("len(y) != len(t) であるため、MeanSquaredErrorを計算できません。")
@@ -126,25 +150,21 @@ func D1MeanSquaredErrorDerivative(y, t tensor.D1) (tensor.D1, error) {
     return grad, nil
 }
 
-func D1L2Regularization(lambda float64) func(tensor.D1) float64 {
-	return func(w tensor.D1) float64 {
-		sum := 0.0
-		for i := range w {
-			wi := w[i]
-			sum += wi * wi
-		}
-		return 0.5 * sum
+func D1L2Regularization(w tensor.D1, lambda float64) float64 {
+	sum := 0.0
+	for i := range w {
+		wi := w[i]
+		sum += wi * wi
 	}
+	return 0.5 * lambda * sum
 }
 
-func D1L2RegularizationDerivative(lambda float64) func(tensor.D1) tensor.D1 {
-	return func(w tensor.D1) tensor.D1 {
-		grad := make(tensor.D1, len(w))
-		for i := range grad {
-			grad[i] = lambda * w[i]
-		}
-		return grad
+func D1L2RegularizationDerivative(w tensor.D1, lambda float64) tensor.D1 {
+	grad := make(tensor.D1, len(w))
+	for i := range grad {
+		grad[i] = lambda * w[i]
 	}
+	return grad
 }
 
 func D1NumericalDifferentiation(x tensor.D1, f func(tensor.D1)float64) tensor.D1 {

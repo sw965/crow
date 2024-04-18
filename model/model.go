@@ -9,19 +9,20 @@ import (
 )
 
 type D1 struct {
-	PerLayerD1Var PerLayerD1Var
-	PerLayerD2Var PerLayerD2Var
-	PerLayerD3Var PerLayerD3Var
+	perLayerD1Var PerLayerD1Var
+	perLayerD2Var PerLayerD2Var
+	perLayerD3Var PerLayerD3Var
 
 	Forwards layer.D1Forwards
 	LossForward layer.D1LossForward
+
+	L2RegularizationD1Param float64
+	L2RegularizationD2Param float64
+	L2RegularizationD3Param float64
 }
 
-func (model *D1) Init(lossForward layer.D1LossForward) {
-	model.PerLayerD1Var.Init()
-	model.PerLayerD2Var.Init()
-	model.PerLayerD3Var.Init()
-	model.LossForward = lossForward
+func NewD1(perLayerD1Var *PerLayerD1Var, perLayerD2Var *PerLayerD2Var, perLayerD3Var *PerLayerD3Var) D1 {
+	return D1{perLayerD1Var:*perLayerD1Var, perLayerD2Var:*perLayerD2Var, perLayerD3Var:*perLayerD3Var}
 }
 
 func (model *D1) Predict(x tensor.D1) (tensor.D1, layer.D1Backwards, error) {
@@ -32,10 +33,10 @@ func (model *D1) Predict(x tensor.D1) (tensor.D1, layer.D1Backwards, error) {
 func (model *D1) YAndLoss(x, t tensor.D1) (tensor.D1, float64, *layer.D1BackPropagator, error) {
 	y, backwards, err := model.Predict(x)
 	loss, lossBackward, err := model.LossForward(y, t)
-	// loss += model.PerLayerD1Var.L2Regularization()
-	// loss += model.PerLayerD2Var.L2Regularization()
-	// loss += model.PerLayerD3Var.L2Regularization()
-	bp := layer.D1BackPropagator{Backwards:backwards, LossBackward:lossBackward}
+	loss += model.perLayerD1Var.L2Regularization(model.L2RegularizationD1Param)
+	loss += model.perLayerD2Var.L2Regularization(model.L2RegularizationD2Param)
+	loss += model.perLayerD3Var.L2Regularization(model.L2RegularizationD3Param)
+	bp := layer.NewD1BackPropagator(backwards, lossBackward)
 	return y, loss, &bp, err
 }
 
@@ -49,6 +50,7 @@ func (model *D1) Accuracy(x, t tensor.D1) (float64, error) {
 	maxYIdx := 0
 	for i, yi := range y[1:] {
 		if yi > maxY {
+			maxY = yi
 			maxYIdx = (i+1)
 		}
 	}
@@ -58,6 +60,7 @@ func (model *D1) Accuracy(x, t tensor.D1) (float64, error) {
 
 	for i, ti := range t[1:] {
 		if ti > maxT {
+			maxT = ti
 			maxTIdx = (i+1)
 		}
 	}
@@ -69,22 +72,45 @@ func (model *D1) Accuracy(x, t tensor.D1) (float64, error) {
 	}
 }
 
+func (model *D1) SWA(ratio float64, oldParamD1 tensor.D1, oldParamD2 tensor.D2, oldParamD3 tensor.D3) error {
+	model.perLayerD1Var.Param.MulScalar(ratio)
+	model.perLayerD2Var.Param.MulScalar(ratio)
+	model.perLayerD3Var.Param.MulScalar(ratio)
+
+	oldRatio := 1.0 - ratio
+	scaledOldParamD1 := tensor.D1MulScalar(oldParamD1, oldRatio)
+	scaledOldParamD2 := tensor.D2MulScalar(oldParamD2, oldRatio)
+	scaledOldParamD3 := tensor.D3MulScalar(oldParamD3, oldRatio)
+
+	err := model.perLayerD1Var.Param.Add(scaledOldParamD1)
+	if err != nil {
+		panic(err)
+	}
+
+	err = model.perLayerD2Var.Param.Add(scaledOldParamD2)
+	if err != nil {
+		panic(err)
+	}
+
+	return model.perLayerD3Var.Param.Add(scaledOldParamD3)
+}
+
 func (model *D1) UpdateGrad(x, t tensor.D1) error {
 	_, _, bp, err := model.YAndLoss(x, t)
 	if err != nil {
 		return err
 	}
 	_, err = bp.Run()
-	// model.PerLayerD1Var.AddL2RegularizationGrad()
-	// model.PerLayerD2Var.AddL2RegularizationGrad()
-	model.PerLayerD3Var.AddL2RegularizationGrad()
+	model.perLayerD1Var.AddL2RegularizationGrad(model.L2RegularizationD1Param)
+	model.perLayerD2Var.AddL2RegularizationGrad(model.L2RegularizationD2Param)
+	model.perLayerD3Var.AddL2RegularizationGrad(model.L2RegularizationD3Param)
 	return err
 }
 
 func (model *D1) Train(lr float64) {
-	model.PerLayerD1Var.Train(lr)
-	model.PerLayerD2Var.Train(lr)
-	model.PerLayerD3Var.Train(lr)
+	model.perLayerD1Var.Train(lr)
+	model.perLayerD2Var.Train(lr)
+	model.perLayerD3Var.Train(lr)
 }
 
 func (model *D1) UpdateGradAndTrain(x, t tensor.D1, lr float64) {
@@ -92,7 +118,7 @@ func (model *D1) UpdateGradAndTrain(x, t tensor.D1, lr float64) {
 	model.Train(lr)
 }
 
-func (model *D1) ValidateBackwardGrad(x, t tensor.D1) {
+func (model *D1) ValidateBackwardGrad(x, t tensor.D1) error {
 	lossD1 := func(_ tensor.D1) float64 {
 		_, loss, _, err := model.YAndLoss(x, t)
 		if err != nil {
@@ -117,39 +143,31 @@ func (model *D1) ValidateBackwardGrad(x, t tensor.D1) {
 		return loss
 	} 
 
-	numGradD1 := mlfuncs.D1NumericalDifferentiation(model.PerLayerD1Var.Param, lossD1)
-	numGradD2 := mlfuncs.D2NumericalDifferentiation(model.PerLayerD2Var.Param, lossD2)
-	numGradD3 := mlfuncs.D3NumericalDifferentiation(model.PerLayerD3Var.Param, lossD3)
+	numGradD1 := mlfuncs.D1NumericalDifferentiation(model.perLayerD1Var.Param, lossD1)
+	numGradD2 := mlfuncs.D2NumericalDifferentiation(model.perLayerD2Var.Param, lossD2)
+	numGradD3 := mlfuncs.D3NumericalDifferentiation(model.perLayerD3Var.Param, lossD3)
 	model.UpdateGrad(x, t)
 
-	maxDiffD1 := 0.0
-	for i := range numGradD1 {
-		diff := math.Abs(model.PerLayerD1Var.Grad[i] - numGradD1[i])
-		if diff > maxDiffD1 {
-			maxDiffD1 = diff
-		}
+	diffErrD1, err := tensor.D1Sub(model.perLayerD1Var.grad, numGradD1)
+	if err != nil {
+		return err
 	}
+	maxDiffErrD1 := diffErrD1.MapFunc(math.Abs).Max()
 
-	maxDiffD2 := 0.0
-	for i := range numGradD2 {
-		for j := range numGradD2[i] {
-			diff := math.Abs(model.PerLayerD2Var.Grad[i][j] - numGradD2[i][j])
-			if diff > maxDiffD1 {
-				maxDiffD2 = diff
-			}
-		}
+	diffErrD2, err := tensor.D2Sub(model.perLayerD2Var.grad, numGradD2)
+	if err != nil {
+		return err
 	}
+	maxDiffErrD2 := diffErrD2.MapFunc(math.Abs).Max().Max()
 
-	maxDiffD3 := 0.0
-	for i := range numGradD3 {
-		for j := range numGradD3[i] {
-			for k := range numGradD3[i][j] {
-				diff := math.Abs(model.PerLayerD3Var.Grad[i][j][k] - numGradD3[i][j][k])
-				if diff > maxDiffD3 {
-					maxDiffD3 = diff
-				}
-			}
-		}
+	diffErrD3, err := tensor.D3Sub(model.perLayerD3Var.grad, numGradD3)
+	if err != nil {
+		return err
 	}
-	fmt.Println(maxDiffD1, maxDiffD2, maxDiffD3)
+	maxDiffErrD3 := diffErrD3.MapFunc(math.Abs).Max().Max().Max()
+
+	fmt.Println("maxDiffErrD1 =", maxDiffErrD1)
+	fmt.Println("maxDiffErrD2 =", maxDiffErrD2)
+	fmt.Println("maxDiffErrD3 =", maxDiffErrD3)
+	return nil
 }

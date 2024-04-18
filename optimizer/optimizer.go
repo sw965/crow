@@ -4,43 +4,59 @@ import (
 	"github.com/sw965/crow/tensor"
 )
 
+const (
+	DEFAULT_MOMENTUM = 0.9
+)
+
 type D1Momentum struct {
-	Momentum float64
-	Velocity tensor.D1
+	momentum float64
+	velocity tensor.D1
+}
+
+func NewD1Momentum(velocity tensor.D1) D1Momentum {
+	return D1Momentum{momentum:DEFAULT_MOMENTUM, velocity:velocity}
 }
 
 func (opt *D1Momentum) Train(w, grad tensor.D1, lr float64) {
 	for i := range w {
-		opt.Velocity[i] =  (opt.Momentum * opt.Velocity[i]) - (lr * grad[i])
-		w[i] += opt.Velocity[i]
+		opt.velocity[i] =  (opt.momentum * opt.velocity[i]) - (lr * grad[i])
+		w[i] += opt.velocity[i]
 	}
 }
 
 type D2Momentum struct {
-	Momentum float64
-	Velocity tensor.D2
+	momentum float64
+	velocity tensor.D2
+}
+
+func NewD2Momentum(velocity tensor.D2) D2Momentum {
+	return D2Momentum{momentum:DEFAULT_MOMENTUM, velocity:velocity}
 }
 
 func(opt *D2Momentum) Train(w, grad tensor.D2, lr float64) {
 	for i := range w {
-		vi := opt.Velocity[i]
+		vi := opt.velocity[i]
 		wi := w[i]
 		gradi := grad[i]
 		for j := range wi {
-			vi[j] = (opt.Momentum * vi[j]) - (lr * gradi[j])
+			vi[j] = (opt.momentum * vi[j]) - (lr * gradi[j])
 			wi[j] += vi[j]
 		}
 	}
 }
 
 type D3Momentum struct {
-    Momentum float64
-    Velocity tensor.D3
+    momentum float64
+    velocity tensor.D3
+}
+
+func NewD3Momentum(velocity tensor.D3) D3Momentum {
+	return D3Momentum{momentum:DEFAULT_MOMENTUM, velocity:velocity}
 }
 
 func (opt *D3Momentum) Train(w, grad tensor.D3, lr float64) {
     for i := range w {
-        vi := opt.Velocity[i]
+        vi := opt.velocity[i]
         wi := w[i]
         gradi := grad[i]
         for j := range wi {
@@ -48,7 +64,7 @@ func (opt *D3Momentum) Train(w, grad tensor.D3, lr float64) {
             wij := wi[j]
             gradij := gradi[j]
             for k := range wij {
-                vij[k] = (opt.Momentum * vij[k]) - (lr * gradij[k])
+                vij[k] = (opt.momentum * vij[k]) - (lr * gradij[k])
                 wij[k] += vij[k]
             }
         }

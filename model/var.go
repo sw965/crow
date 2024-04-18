@@ -8,78 +8,87 @@ import (
 
 type PerLayerD1Var struct {
 	Param tensor.D1
-	Grad tensor.D1
-	L2Lambda float64
-	Optimizer optimizer.D1Momentum
+	grad tensor.D1
+	optimizer optimizer.D1Momentum
+}
+
+func (v *PerLayerD1Var) GetGrad() tensor.D1 {
+	return v.grad
 }
 
 func (v *PerLayerD1Var) Init() {
-	v.Grad = make(tensor.D1, len(v.Param))
+	v.grad = make(tensor.D1, len(v.Param))
 	velocity := make(tensor.D1, len(v.Param))
-	v.Optimizer = optimizer.D1Momentum{Velocity:velocity}
+	v.optimizer = optimizer.NewD1Momentum(velocity)
 }
 
-func (v *PerLayerD1Var) L2Regularization() float64 {
-	return mlfuncs.D1L2Regularization(v.L2Lambda)(v.Param)
+func (v *PerLayerD1Var) L2Regularization(lambda float64) float64 {
+	return mlfuncs.D1L2Regularization(v.Param, lambda)
 }
 
-func (v *PerLayerD1Var) AddL2RegularizationGrad() {
-	grad := mlfuncs.D1L2RegularizationDerivative(v.L2Lambda)(v.Param)
-	v.Grad.Add(grad)
+func (v *PerLayerD1Var) AddL2RegularizationGrad(lambda float64) {
+	l2Grad := mlfuncs.D1L2RegularizationDerivative(v.Param, lambda)
+	v.grad.Add(l2Grad)
 }
 
 func (v *PerLayerD1Var) Train(lr float64) {
-	v.Optimizer.Train(v.Param, v.Grad, lr)
+	v.optimizer.Train(v.Param, v.grad, lr)
 }
 
 type PerLayerD2Var struct {
 	Param tensor.D2
-	Grad tensor.D2
-	L2Lambda float64
-	Optimizer optimizer.D2Momentum
+	grad tensor.D2
+	optimizer optimizer.D2Momentum
+}
+
+func (v *PerLayerD2Var) GetGrad() tensor.D2 {
+	return v.grad
 }
 
 func (v *PerLayerD2Var) Init() {
-	v.Grad = tensor.NewD2ZerosLike(v.Param)
+	v.grad = tensor.NewD2ZerosLike(v.Param)
 	velocity := tensor.NewD2ZerosLike(v.Param)
-	v.Optimizer = optimizer.D2Momentum{Velocity:velocity}
+	v.optimizer = optimizer.NewD2Momentum(velocity)
 }
 
-func (v *PerLayerD2Var) L2Regularization() float64 {
-	return mlfuncs.D2L2Regularization(v.L2Lambda)(v.Param)
+func (v *PerLayerD2Var) L2Regularization(lambda float64) float64 {
+	return mlfuncs.D2L2Regularization(v.Param, lambda)
 }
 
-func (v *PerLayerD2Var) AddL2RegularizationGrad() {
-	grad := mlfuncs.D2L2RegularizationDerivative(v.L2Lambda)(v.Param)
-	v.Grad.Add(grad)
+func (v *PerLayerD2Var) AddL2RegularizationGrad(lambda float64) {
+	l2Grad := mlfuncs.D2L2RegularizationDerivative(v.Param, lambda)
+	v.grad.Add(l2Grad)
 }
 
 func (v *PerLayerD2Var) Train(lr float64) {
-	v.Optimizer.Train(v.Param, v.Grad, lr)
+	v.optimizer.Train(v.Param, v.grad, lr)
 }
 
 type PerLayerD3Var struct {
 	Param tensor.D3
-	Grad tensor.D3
-	L2Lambda float64
-	Optimizer optimizer.D3Momentum
+	grad tensor.D3
+	optimizer optimizer.D3Momentum
+}
+
+func (v *PerLayerD3Var) GetGrad() tensor.D3 {
+	return v.grad
 }
 
 func (v *PerLayerD3Var) Init() {
-	v.Grad = tensor.NewD3ZerosLike(v.Param)
+	v.grad = tensor.NewD3ZerosLike(v.Param)
 	velocity := tensor.NewD3ZerosLike(v.Param)
-	v.Optimizer = optimizer.D3Momentum{Velocity:velocity}
+	v.optimizer = optimizer.NewD3Momentum(velocity)
 }
 
-func (v *PerLayerD3Var) L2Regularization() float64 {
-	return mlfuncs.D3L2Regularization(v.L2Lambda)(v.Param)
+func (v *PerLayerD3Var) L2Regularization(lambda float64) float64 {
+	return mlfuncs.D3L2Regularization(v.Param, lambda)
 }
 
-func (v *PerLayerD3Var) AddL2RegularizationGrad() {
-	grad := mlfuncs.D3L2RegularizationDerivative(v.L2Lambda)(v.Param)
-	v.Grad.Add(grad)
+func (v *PerLayerD3Var) AddL2RegularizationGrad(lambda float64) {
+	l2Grad := mlfuncs.D3L2RegularizationDerivative(v.Param, lambda)
+	v.grad.Add(l2Grad)
 }
 
 func (v *PerLayerD3Var) Train(lr float64) {
-	v.Optimizer.Train(v.Param, v.Grad, lr)
+	v.optimizer.Train(v.Param, v.grad, lr)
 }

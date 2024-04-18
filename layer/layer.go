@@ -1,6 +1,7 @@
 package layer
 
 import (
+	"math/rand"
 	"github.com/sw965/omw"
 	"github.com/sw965/crow/mlfuncs"
 	"github.com/sw965/crow/tensor"
@@ -26,16 +27,20 @@ type D1Backward func(tensor.D1) (tensor.D1, error)
 type D1Backwards []D1Backward
 
 type D1BackPropagator struct {
-	Backwards D1Backwards
-	LossBackward D1LossBackward
+	backwards D1Backwards
+	lossBackward D1LossBackward
+}
+
+func NewD1BackPropagator(backwards D1Backwards, lossBackward D1LossBackward) D1BackPropagator {
+	return D1BackPropagator{backwards:backwards, lossBackward:lossBackward}
 }
 
 func (bp *D1BackPropagator) Run() (tensor.D1, error) {
-	chain, err := bp.LossBackward()
+	chain, err := bp.lossBackward()
 	if err != nil {
 		return tensor.D1{}, err
 	}
-	bs := omw.Reverse(bp.Backwards)
+	bs := omw.Reverse(bp.backwards)
 	for _, b := range bs {
 		chain, err = b(chain)
 		if err != nil {
@@ -154,6 +159,19 @@ func NewD1TanhForward() D1Forward {
 			dydx := mlfuncs.D1TanhGrad(y)
 			// ∂L/∂x
 			dx, err := tensor.D1Mul(dydx, chain)
+			return dx, err
+		}
+		backwards = append(backwards, backward)
+		return y, backwards, nil
+	}
+}
+
+func NewD1DropoutForward(p float64, isTrain *bool, r *rand.Rand) D1Forward {
+	return func(x tensor.D1, backwards D1Backwards) (tensor.D1, D1Backwards, error) {
+		y, mask := mlfuncs.D1Dropout(x, p, *isTrain, r)
+		var backward D1Backward
+		backward = func(chain tensor.D1) (tensor.D1, error) {
+			dx, err := tensor.D1Mul(mask, chain)
 			return dx, err
 		}
 		backwards = append(backwards, backward)

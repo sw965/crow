@@ -11,6 +11,10 @@ import (
 
 type D1 []float64
 
+func NewD1Zeros(n int) D1 {
+    return make(D1, n)
+}
+
 func NewD1Ones(n int) D1 {
 	y := make(D1, n)
 	for i := range y {
@@ -35,6 +39,10 @@ func NewD1He(n int, r *rand.Rand) D1 {
         y[i] = r.NormFloat64() * std
     }
     return y
+}
+
+func (d1 D1) Clone() D1 {
+    return slices.Clone(d1)
 }
 
 func (d1 D1) Copy(other D1) {
@@ -120,6 +128,14 @@ func (d1 D1) Div(other D1) error {
 func (d1 D1) DotProduct(other D1) (float64, error) {
     mul, err := D1Mul(d1, other)
     return omw.Sum(mul...), err
+}
+
+func (d1 D1) MapFunc(f func(float64)float64) D1 {
+    return omw.MapFunc[D1](d1, f)
+}
+
+func (d1 D1) Max() float64 {
+    return omw.Max(d1...)
 }
 
 func D1AddScalar(d1 D1, other float64) D1 {
