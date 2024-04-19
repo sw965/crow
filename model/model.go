@@ -6,23 +6,83 @@ import (
 	"github.com/sw965/crow/layer"
 	"github.com/sw965/crow/tensor"
 	"github.com/sw965/crow/mlfuncs"
+	"github.com/sw965/crow/optimizer"
 )
 
+type D1Var struct {
+	Param tensor.D1
+	grad tensor.D1
+	optimizer optimizer.D1Momentum
+}
+
+func (v *D1Var) GetGrad() tensor.D1 {
+	return v.grad
+}
+
+func (v *D1Var) Init() {
+	v.grad = make(tensor.D1, len(v.Param))
+	velocity := make(tensor.D1, len(v.Param))
+	v.optimizer = optimizer.NewD1Momentum(velocity)
+}
+
+func (v *D1Var) Train(lr float64) {
+	v.optimizer.Train(v.Param, v.grad, lr)
+}
+
+type D2Var struct {
+	Param tensor.D2
+	grad tensor.D2
+	optimizer optimizer.D2Momentum
+}
+
+func (v *D2Var) GetGrad() tensor.D2 {
+	return v.grad
+}
+
+func (v *D2Var) Init() {
+	v.grad = tensor.NewD2ZerosLike(v.Param)
+	velocity := tensor.NewD2ZerosLike(v.Param)
+	v.optimizer = optimizer.NewD2Momentum(velocity)
+}
+
+func (v *D2Var) Train(lr float64) {
+	v.optimizer.Train(v.Param, v.grad, lr)
+}
+
+type D3Var struct {
+	Param tensor.D3
+	grad tensor.D3
+	optimizer optimizer.D3Momentum
+}
+
+func (v *D3Var) GetGrad() tensor.D3 {
+	return v.grad
+}
+
+func (v *D3Var) Init() {
+	v.grad = tensor.NewD3ZerosLike(v.Param)
+	velocity := tensor.NewD3ZerosLike(v.Param)
+	v.optimizer = optimizer.NewD3Momentum(velocity)
+}
+
+func (v *D3Var) Train(lr float64) {
+	v.optimizer.Train(v.Param, v.grad, lr)
+}
+
 type D1 struct {
-	perLayerD1Var PerLayerD1Var
-	perLayerD2Var PerLayerD2Var
-	perLayerD3Var PerLayerD3Var
+	d1Var D1Var
+	d2Var D2Var
+	d3Var D3Var
 
 	Forwards layer.D1Forwards
 	LossForward layer.D1LossForward
 
-	L2RegularizationD1Param float64
-	L2RegularizationD2Param float64
-	L2RegularizationD3Param float64
+	ParamLoss func(tensor.D1, tensor.D2, tensor.D3) float64
+	ParamLossDerivative func(tensor.D1, tensor.D2, tensor.D3) (tensor.D1, tensor.D2, tensor.D3)
 }
 
-func NewD1(perLayerD1Var *PerLayerD1Var, perLayerD2Var *PerLayerD2Var, perLayerD3Var *PerLayerD3Var) D1 {
-	return D1{perLayerD1Var:*perLayerD1Var, perLayerD2Var:*perLayerD2Var, perLayerD3Var:*perLayerD3Var}
+func NewD1(d1Var *D1Var, d2Var *D2Var, d3Var *D3Var) D1 {
+	return D1{d1Var:*d1Var, d2Var:*d2Var, d3Var:*d3Var}
 }
 
 func (model *D1) Predict(x tensor.D1) (tensor.D1, layer.D1Backwards, error) {
@@ -33,9 +93,7 @@ func (model *D1) Predict(x tensor.D1) (tensor.D1, layer.D1Backwards, error) {
 func (model *D1) YAndLoss(x, t tensor.D1) (tensor.D1, float64, *layer.D1BackPropagator, error) {
 	y, backwards, err := model.Predict(x)
 	loss, lossBackward, err := model.LossForward(y, t)
-	loss += model.perLayerD1Var.L2Regularization(model.L2RegularizationD1Param)
-	loss += model.perLayerD2Var.L2Regularization(model.L2RegularizationD2Param)
-	loss += model.perLayerD3Var.L2Regularization(model.L2RegularizationD3Param)
+	loss += model.ParamLoss(model.d1Var.Param, model.d2Var.Param, model.d3Var.Param)
 	bp := layer.NewD1BackPropagator(backwards, lossBackward)
 	return y, loss, &bp, err
 }
@@ -72,53 +130,131 @@ func (model *D1) Accuracy(x, t tensor.D1) (float64, error) {
 	}
 }
 
-func (model *D1) SWA(ratio float64, oldParamD1 tensor.D1, oldParamD2 tensor.D2, oldParamD3 tensor.D3) error {
-	model.perLayerD1Var.Param.MulScalar(ratio)
-	model.perLayerD2Var.Param.MulScalar(ratio)
-	model.perLayerD3Var.Param.MulScalar(ratio)
+func (model *D1) SWA(scale float64, oldParamD1 tensor.D1, oldParamD2 tensor.D2, oldParamD3 tensor.D3) error {
+	model.d1Var.Param.MulScalar(scale)
+	model.d2Var.Param.MulScalar(scale)
+	model.d3Var.Param.MulScalar(scale)
 
-	oldRatio := 1.0 - ratio
-	scaledOldParamD1 := tensor.D1MulScalar(oldParamD1, oldRatio)
-	scaledOldParamD2 := tensor.D2MulScalar(oldParamD2, oldRatio)
-	scaledOldParamD3 := tensor.D3MulScalar(oldParamD3, oldRatio)
+	oldScale := 1.0 - scale
+	scaledOldParamD1 := tensor.D1MulScalar(oldParamD1, oldScale)
+	scaledOldParamD2 := tensor.D2MulScalar(oldParamD2, oldScale)
+	scaledOldParamD3 := tensor.D3MulScalar(oldParamD3, oldScale)
 
-	err := model.perLayerD1Var.Param.Add(scaledOldParamD1)
+	err := model.d1Var.Param.Add(scaledOldParamD1)
 	if err != nil {
 		panic(err)
 	}
 
-	err = model.perLayerD2Var.Param.Add(scaledOldParamD2)
+	err = model.d2Var.Param.Add(scaledOldParamD2)
 	if err != nil {
 		panic(err)
 	}
 
-	return model.perLayerD3Var.Param.Add(scaledOldParamD3)
+	return model.d3Var.Param.Add(scaledOldParamD3)
 }
 
-func (model *D1) UpdateGrad(x, t tensor.D1) error {
+func (model *D1) L2NormGrad() float64 {
+	sqSum := 0.0
+	for i := range model.d1Var.grad {
+		gradi := model.d1Var.grad[i]
+		sqSum += (gradi * gradi)
+	}
+
+	for i := range model.d2Var.grad {
+		gradi := model.d2Var.grad[i]
+		for j := range gradi {
+			gradij := gradi[j]
+			sqSum += (gradij * gradij)
+		}
+	}
+
+	for i := range model.d3Var.grad {
+		gradi := model.d3Var.grad[i]
+		for j := range gradi {
+			gradij := gradi[j]
+			for k := range gradij {
+				gradijk := gradij[k]
+				sqSum += (gradijk * gradijk)
+			}
+		}
+	}
+	return math.Sqrt(sqSum)
+}
+
+func (model *D1) UpdateGrad(x, t tensor.D1, threshold float64) error {
 	_, _, bp, err := model.YAndLoss(x, t)
 	if err != nil {
 		return err
 	}
 	_, err = bp.Run()
-	model.perLayerD1Var.AddL2RegularizationGrad(model.L2RegularizationD1Param)
-	model.perLayerD2Var.AddL2RegularizationGrad(model.L2RegularizationD2Param)
-	model.perLayerD3Var.AddL2RegularizationGrad(model.L2RegularizationD3Param)
+	gradD1, gradD2, gradD3 := model.ParamLossDerivative(
+		model.d1Var.Param, model.d2Var.Param, model.d3Var.Param,
+	)
+
+	err = model.d1Var.grad.Add(gradD1)
+	if err != nil {
+		return err
+	}
+
+	err = model.d2Var.grad.Add(gradD2)
+	if err != nil {
+		return err
+	}
+
+	err = model.d3Var.grad.Add(gradD3)
+	if err != nil {
+		return err
+	}
+
+	if threshold > 0.0 {
+		sum := 0.0
+		for i := range model.d1Var.grad {
+			gradi := model.d1Var.grad[i]
+			sum += (gradi * gradi)
+		}
+
+		for i := range model.d2Var.grad {
+			gradi := model.d2Var.grad[i]
+			for j := range gradi {
+				gradij := gradi[j]
+				sum += (gradij * gradij)
+			}
+		}
+
+		for i := range model.d3Var.grad {
+			gradi := model.d3Var.grad[i]
+			for j := range gradi {
+				gradij := gradi[j]
+				for k := range gradij {
+					gradijk := gradij[k]
+					sum += (gradijk * gradijk)
+				}
+			}
+		}
+
+		l2Norm := math.Sqrt(sum)
+		scale := threshold / l2Norm
+		if scale < 1.0 {
+			model.d1Var.grad.MulScalar(scale)
+			model.d2Var.grad.MulScalar(scale)
+			model.d3Var.grad.MulScalar(scale)
+		}
+	}
 	return err
 }
 
 func (model *D1) Train(lr float64) {
-	model.perLayerD1Var.Train(lr)
-	model.perLayerD2Var.Train(lr)
-	model.perLayerD3Var.Train(lr)
+	model.d1Var.Train(lr)
+	model.d2Var.Train(lr)
+	model.d3Var.Train(lr)
 }
 
-func (model *D1) UpdateGradAndTrain(x, t tensor.D1, lr float64) {
-	model.UpdateGrad(x, t)
+func (model *D1) UpdateGradAndTrain(x, t tensor.D1, lr, threshold float64) {
+	model.UpdateGrad(x, t, threshold)
 	model.Train(lr)
 }
 
-func (model *D1) ValidateBackwardGrad(x, t tensor.D1) error {
+func (model *D1) ValidateBackwardGrad(x, t tensor.D1, threshold float64) error {
 	lossD1 := func(_ tensor.D1) float64 {
 		_, loss, _, err := model.YAndLoss(x, t)
 		if err != nil {
@@ -143,24 +279,24 @@ func (model *D1) ValidateBackwardGrad(x, t tensor.D1) error {
 		return loss
 	} 
 
-	numGradD1 := mlfuncs.D1NumericalDifferentiation(model.perLayerD1Var.Param, lossD1)
-	numGradD2 := mlfuncs.D2NumericalDifferentiation(model.perLayerD2Var.Param, lossD2)
-	numGradD3 := mlfuncs.D3NumericalDifferentiation(model.perLayerD3Var.Param, lossD3)
-	model.UpdateGrad(x, t)
+	numGradD1 := mlfuncs.D1NumericalDifferentiation(model.d1Var.Param, lossD1)
+	numGradD2 := mlfuncs.D2NumericalDifferentiation(model.d2Var.Param, lossD2)
+	numGradD3 := mlfuncs.D3NumericalDifferentiation(model.d3Var.Param, lossD3)
+	model.UpdateGrad(x, t, threshold)
 
-	diffErrD1, err := tensor.D1Sub(model.perLayerD1Var.grad, numGradD1)
+	diffErrD1, err := tensor.D1Sub(model.d1Var.grad, numGradD1)
 	if err != nil {
 		return err
 	}
 	maxDiffErrD1 := diffErrD1.MapFunc(math.Abs).Max()
 
-	diffErrD2, err := tensor.D2Sub(model.perLayerD2Var.grad, numGradD2)
+	diffErrD2, err := tensor.D2Sub(model.d2Var.grad, numGradD2)
 	if err != nil {
 		return err
 	}
 	maxDiffErrD2 := diffErrD2.MapFunc(math.Abs).Max().Max()
 
-	diffErrD3, err := tensor.D3Sub(model.perLayerD3Var.grad, numGradD3)
+	diffErrD3, err := tensor.D3Sub(model.d3Var.grad, numGradD3)
 	if err != nil {
 		return err
 	}

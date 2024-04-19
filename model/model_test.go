@@ -9,79 +9,90 @@ import (
 	"github.com/sw965/crow/layer"
 	"github.com/sw965/omw"
 	"github.com/sw965/crow/tensor"
+	"github.com/sw965/crow/mlfuncs"
 )
 
 func TestModel(t *testing.T) {
 	r := omw.NewMt19937()
-	inputSize := 784
+	xSize := 784
 	hidden1Size := 196
 	hidden2Size := 64
-	outputSize := 10
+	ySize := 10
 
-	//isTrain := true
-	perLayerD1Var := model.PerLayerD1Var{
-		Param:tensor.D1{0.01, 0.01, 0.01},
+	isTrain := []bool{true}
+	d1Var := model.D1Var{
+		Param:tensor.D1{0.1, 0.1, 0.1},
 	}
-	perLayerD1Var.Init()
+	d1Var.Init()
 
-	perLayerD2Var := model.PerLayerD2Var{
+	d2Var := model.D2Var{
 		Param:tensor.D2{
 			make(tensor.D1, hidden1Size),
 			make(tensor.D1, hidden2Size),
-			make(tensor.D1, outputSize),
+			make(tensor.D1, ySize),
 		},
 	}
-	perLayerD2Var.Init()
+	d2Var.Init()
 
-	perLayerD3Var:= model.PerLayerD3Var{
+	d3Var := model.D3Var{
 		Param:tensor.D3{
-			tensor.NewD2He(inputSize, hidden1Size, r),
+			tensor.NewD2He(xSize, hidden1Size, r),
 			tensor.NewD2He(hidden1Size, hidden2Size, r),
-			tensor.NewD2He(hidden2Size, outputSize, r),
+			tensor.NewD2He(hidden2Size, ySize, r),
 		},
 	}
-	perLayerD3Var.Init()
+	d3Var.Init()
 
-	model := model.NewD1(&perLayerD1Var, &perLayerD2Var, &perLayerD3Var)
+	model := model.NewD1(&d1Var, &d2Var, &d3Var)
 	forwards := layer.D1Forwards{
-		layer.NewD1AffineForward(perLayerD3Var.Param[0], perLayerD2Var.Param[0], perLayerD3Var.GetGrad()[0], perLayerD2Var.GetGrad()[0]),
-		layer.NewD1PReLUForward(&perLayerD1Var.Param[0], &perLayerD1Var.GetGrad()[0]),
-		//layer.NewD1DropoutForward(0.1, &isTrain, r),
+		layer.NewD1AffineForward(d3Var.Param[0], d2Var.Param[0], d3Var.GetGrad()[0], d2Var.GetGrad()[0]),
+		layer.NewD1PReLUForward(&d1Var.Param[0], &d1Var.GetGrad()[0]),
+		//layer.NewD1LReLUForward(0.01),
+		layer.NewD1DropoutForward(0.05, &isTrain[0], r),
 
-		layer.NewD1AffineForward(perLayerD3Var.Param[1], perLayerD2Var.Param[1], perLayerD3Var.GetGrad()[1], perLayerD2Var.GetGrad()[1]),
-		layer.NewD1PReLUForward(&perLayerD1Var.Param[1], &perLayerD1Var.GetGrad()[1]),
-		//layer.NewD1DropoutForward(0.1, &isTrain, r),
+		layer.NewD1AffineForward(d3Var.Param[1], d2Var.Param[1], d3Var.GetGrad()[1], d2Var.GetGrad()[1]),
+		layer.NewD1PReLUForward(&d1Var.Param[1], &d1Var.GetGrad()[1]),
+		//layer.NewD1LReLUForward(0.01),
+		layer.NewD1DropoutForward(0.05, &isTrain[0], r),
 
-		layer.NewD1AffineForward(perLayerD3Var.Param[2], perLayerD2Var.Param[2], perLayerD3Var.GetGrad()[2], perLayerD2Var.GetGrad()[2]),
-		layer.NewD1PReLUForward(&perLayerD1Var.Param[2], &perLayerD1Var.GetGrad()[2]),
-		//layer.NewD1DropoutForward(0.1, &isTrain, r),
+		layer.NewD1AffineForward(d3Var.Param[2], d2Var.Param[2], d3Var.GetGrad()[2], d2Var.GetGrad()[2]),
+		layer.NewD1PReLUForward(&d1Var.Param[2], &d1Var.GetGrad()[2]),
+		//layer.NewD1LReLUForward(0.01),
+		layer.NewD1DropoutForward(0.05, &isTrain[0], r),
 		//layer.NewD1TanhForward(),
 	}
 
 	model.Forwards = forwards
 	model.LossForward = layer.NewD1MeanSquaredErrorForward()
-	model.L2RegularizationD1Param = 0.01
-	model.L2RegularizationD3Param = 0.01
+	lambda := 0.0001
+	model.ParamLoss = func(d1 tensor.D1, _ tensor.D2, d3 tensor.D3) float64 {
+		return mlfuncs.D3L2Regularization(d3, lambda)
+	}
+	model.ParamLossDerivative = func(d1 tensor.D1, d2 tensor.D2, d3 tensor.D3) (tensor.D1, tensor.D2, tensor.D3) {
+		return tensor.NewD1Zeros(len(d1)),
+			tensor.NewD2ZerosLike(d2),
+			mlfuncs.D3L2RegularizationDerivative(d3, lambda)
+	}
 
 	mnist, err := dataset.LoadMnist()
 	if err != nil {
 		panic(err)
 	}
 
-	// oldParamD1 := perLayerD1Var.Param.Clone()
-	// oldParamD2 := perLayerD2Var.Param.Clone()
-	// oldParamD3 := perLayerD3Var.Param.Clone()
+	// oldParamD1 := d1Var.Param.Clone()
+	// oldParamD2 := d2Var.Param.Clone()
+	// oldParamD3 := d3Var.Param.Clone()
 
 	trainNum := 256000
 	for i := 0; i < trainNum; i++ {
 		idx := r.Intn(60000)
-		model.UpdateGradAndTrain(mnist.TrainImg[idx], mnist.TrainLabel[idx], 0.01)
+		model.UpdateGradAndTrain(mnist.TrainImg[idx], mnist.TrainLabel[idx], 0.01, 8.0)
 
-		// if i%8 == 0 {
-		// 	model.SWA(0.5, oldParamD1, oldParamD2, oldParamD3)
-		// 	oldParamD1 = perLayerD1Var.Param.Clone()
-		// 	oldParamD2 = perLayerD2Var.Param.Clone()
-		// 	oldParamD3 = perLayerD3Var.Param.Clone()
+		// if i%16 == 0 {
+		// 	model.SWA(0.9, oldParamD1, oldParamD2, oldParamD3)
+		// 	oldParamD1 = d1Var.Param.Clone()
+		// 	oldParamD2 = d2Var.Param.Clone()
+		// 	oldParamD3 = d3Var.Param.Clone()
 		// }
 
 		// if i%19600 == 0 {
@@ -93,7 +104,7 @@ func TestModel(t *testing.T) {
 			testSize := 128
 			lossSum := 0.0
 			a := 0.0
-			//isTrain = false
+			isTrain[0] = false
 			for j := 0; j < testSize; j++ {
 				idx := r.Intn(10000)
 				_, loss, _, err := model.YAndLoss(mnist.TestImg[idx], mnist.TestLabel[idx])
@@ -109,7 +120,8 @@ func TestModel(t *testing.T) {
 			}
 			fmt.Println("i = ", i, "lossSum = ", lossSum)
 			fmt.Println("a = ", float64(a) / float64(testSize))
-			//isTrain = true
+			fmt.Println(d1Var.Param)
+			isTrain[0] = true
 		}
 	}
 }

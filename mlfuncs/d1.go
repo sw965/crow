@@ -61,7 +61,7 @@ func D1LReLU(x tensor.D1, alpha float64) tensor.D1 {
 		if xi > 0 {
 			y[i] = xi
 		} else {
-			y[i] = xi * alpha
+			y[i] = alpha * xi
 		}
 	}
 	return y
@@ -74,7 +74,7 @@ func D1LReLUDerivative(x tensor.D1, alpha float64) tensor.D1 {
 		if xi > 0 {
 			grad[i] = 1
 		} else {
-			grad[i] = alpha
+			grad[i] =  alpha
 		}
 	}
 	return grad
@@ -165,24 +165,6 @@ func D1L2RegularizationDerivative(w tensor.D1, lambda float64) tensor.D1 {
 		grad[i] = lambda * w[i]
 	}
 	return grad
-}
-
-func D1L2Norm(x tensor.D1) float64 {
-	sum := 0.0
-	for i := range x {
-		xi := x[i]
-		sum += xi * xi
-	}
-	return math.Sqrt(sum)
-}
-
-func D1ClipL2Norm(x tensor.D1, threshold float64) tensor.D1 {
-	norm := D1L2Norm(x)
-	clipped := make(tensor.D1, len(x))
-	for i := range x {
-		clipped[i] = x[i] * (threshold / norm)
-	}
-	return clipped
 }
 
 func D1NumericalDifferentiation(x tensor.D1, f func(tensor.D1)float64) tensor.D1 {
