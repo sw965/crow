@@ -5,7 +5,7 @@ import (
 	"github.com/sw965/crow/tensor"
 )
 
-var MNIST_PATH = omw.SW965_PATH + "mnist_json/"
+var MNIST_PATH = omw.SW965_PATH + "crow/mnist_json/"
 
 type Mnist struct {
 	TrainImg tensor.D2
