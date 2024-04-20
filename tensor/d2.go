@@ -48,26 +48,6 @@ func NewD2He(r, c int, random *rand.Rand) D2 {
     return y
 }
 
-func (d2 D2) Zeros() {
-    for i := range d2 {
-        d2[i].Zeros()
-    }
-}
-
-func (d2 D2) Copy(other D2) {
-    for i := range d2 {
-        d2[i].Copy(other[i])
-    }
-}
-
-func (d2 D2) Clone() D2 {
-    y := make(D2, len(d2))
-    for i := range y {
-        y[i] = slices.Clone(d2[i])
-    }
-    return y
-}
-
 func (d2 D2) AddScalar(scalar float64) {
     for i := range d2 {
         d2[i].AddScalar(scalar)
@@ -217,20 +197,40 @@ func (d2 D2) DotProduct(other D2) (D2, error) {
 	return y, nil
 }
 
+func (d2 D2) Copy(other D2) {
+    for i := range d2 {
+        d2[i].Copy(other[i])
+    }
+}
+
+func (d2 D2) Clone() D2 {
+    y := make(D2, len(d2))
+    for i := range y {
+        y[i] = slices.Clone(d2[i])
+    }
+    return y
+}
+
+func (d2 D2) Zeros() {
+    for i := range d2 {
+        d2[i].Zeros()
+    }
+}
+
+func (d2 D2) MaxAxisRow() D1 {
+    max := make(D1, len(d2))
+    for i := range d2 {
+        max[i] = d2[i].Max()
+    }
+    return max
+}
+
 func (d2 D2) MapFunc(f func(float64)float64) D2 {
     y := make(D2, len(d2))
     for i := range d2 {
         y[i] = d2[i].MapFunc(f)
     }
     return y
-}
-
-func (d2 D2) Max() D1 {
-    max := make(D1, len(d2))
-    for i := range d2 {
-        max[i] = d2[i].Max()
-    }
-    return max
 }
 
 func D2AddScalar(d2 D2, scalar float64) D2 {

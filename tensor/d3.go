@@ -11,26 +11,6 @@ func NewD3ZerosLike(d3 D3) D3 {
 	return omw.MapFunc[D3](d3, NewD2ZerosLike)
 }
 
-func (d3 D3) Zeros() {
-	for i := range d3 {
-		d3[i].Zeros()
-	}
-}
-
-func (d3 D3) Copy(other D3) {
-	for i := range d3 {
-		d3[i].Copy(other[i])
-	}
-}
-
-func (d3 D3) Clone() D3 {
-	y := make(D3, len(d3))
-	for i := range y {
-		y[i] = d3[i].Clone()
-	}
-	return y
-}
-
 func (d3 D3) AddScalar(scalar float64) {
 	for i := range d3 {
 		d3[i].AddScalar(scalar)
@@ -107,20 +87,40 @@ func (d3 D3) Div(other D3) error {
 	return nil
 }
 
+func (d3 D3) Zeros() {
+	for i := range d3 {
+		d3[i].Zeros()
+	}
+}
+
+func (d3 D3) Copy(other D3) {
+	for i := range d3 {
+		d3[i].Copy(other[i])
+	}
+}
+
+func (d3 D3) Clone() D3 {
+	y := make(D3, len(d3))
+	for i := range y {
+		y[i] = d3[i].Clone()
+	}
+	return y
+}
+
+func (d3 D3) MaxAxisRow() D2 {
+	max := make(D2, len(d3))
+	for i := range d3 {
+		max[i] = d3[i].MaxAxisRow()
+	}
+	return max
+}
+
 func (d3 D3) MapFunc(f func(float64)float64) D3 {
 	y := make(D3, len(d3))
 	for i := range d3 {
 		y[i] = d3[i].MapFunc(f)
 	}
 	return y
-}
-
-func (d3 D3) Max() D2 {
-	max := make(D2, len(d3))
-	for i := range d3 {
-		max[i] = d3[i].Max()
-	}
-	return max
 }
 
 func D3Add(d3, other D3) (D3, error) {

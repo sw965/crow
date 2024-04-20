@@ -236,13 +236,13 @@ func (model *D1) ValidateBackwardGrad(x, t tensor.D1, threshold float64) error {
 	if err != nil {
 		return err
 	}
-	maxDiffErrD2 := diffErrD2.MapFunc(math.Abs).Max().Max()
+	maxDiffErrD2 := diffErrD2.MapFunc(math.Abs).MaxAxisRow().Max()
 
 	diffErrD3, err := tensor.D3Sub(model.d3Var.grad, numGradD3)
 	if err != nil {
 		return err
 	}
-	maxDiffErrD3 := diffErrD3.MapFunc(math.Abs).Max().Max().Max()
+	maxDiffErrD3 := diffErrD3.MapFunc(math.Abs).MaxAxisRow().MaxAxisRow().Max()
 
 	fmt.Println("maxDiffErrD1 =", maxDiffErrD1)
 	fmt.Println("maxDiffErrD2 =", maxDiffErrD2)

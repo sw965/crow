@@ -13,6 +13,10 @@ type D1 []float64
 
 func NewD1Zeros(n int) D1 {
     return make(D1, n)
+} 
+
+func NewD1ZerosLike(x D1) D1 {
+    return make(D1, len(x))
 }
 
 func NewD1Ones(n int) D1 {
@@ -39,22 +43,6 @@ func NewD1He(n int, r *rand.Rand) D1 {
         y[i] = r.NormFloat64() * std
     }
     return y
-}
-
-func (d1 D1) Clone() D1 {
-    return slices.Clone(d1)
-}
-
-func (d1 D1) Copy(other D1) {
-    for i := range d1 {
-        d1[i] = other[i]
-    }
-}
-
-func (d1 D1) Zeros() {
-    for i := range d1 {
-        d1[i] = 0
-    }
 }
 
 func (d1 D1) AddScalar(scalar float64) {
@@ -132,6 +120,22 @@ func (d1 D1) DotProduct(other D1) (float64, error) {
 
 func (d1 D1) MapFunc(f func(float64)float64) D1 {
     return omw.MapFunc[D1](d1, f)
+}
+
+func (d1 D1) Clone() D1 {
+    return slices.Clone(d1)
+}
+
+func (d1 D1) Copy(other D1) {
+    for i := range d1 {
+        d1[i] = other[i]
+    }
+}
+
+func (d1 D1) Zeros() {
+    for i := range d1 {
+        d1[i] = 0
+    }
 }
 
 func (d1 D1) Max() float64 {
