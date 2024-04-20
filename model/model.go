@@ -19,10 +19,10 @@ func (v *D1Var) GetGrad() tensor.D1 {
 	return v.grad
 }
 
-func (v *D1Var) Init() {
+func (v *D1Var) Init(momentum float64) {
 	v.grad = make(tensor.D1, len(v.Param))
 	velocity := make(tensor.D1, len(v.Param))
-	v.optimizer = optimizer.NewD1Momentum(velocity)
+	v.optimizer = optimizer.NewD1Momentum(momentum, velocity)
 }
 
 func (v *D1Var) Train(lr float64) {
@@ -39,10 +39,10 @@ func (v *D2Var) GetGrad() tensor.D2 {
 	return v.grad
 }
 
-func (v *D2Var) Init() {
+func (v *D2Var) Init(momentum float64) {
 	v.grad = tensor.NewD2ZerosLike(v.Param)
 	velocity := tensor.NewD2ZerosLike(v.Param)
-	v.optimizer = optimizer.NewD2Momentum(velocity)
+	v.optimizer = optimizer.NewD2Momentum(momentum, velocity)
 }
 
 func (v *D2Var) Train(lr float64) {
@@ -59,10 +59,10 @@ func (v *D3Var) GetGrad() tensor.D3 {
 	return v.grad
 }
 
-func (v *D3Var) Init() {
+func (v *D3Var) Init(momentum float64) {
 	v.grad = tensor.NewD3ZerosLike(v.Param)
 	velocity := tensor.NewD3ZerosLike(v.Param)
-	v.optimizer = optimizer.NewD3Momentum(velocity)
+	v.optimizer = optimizer.NewD3Momentum(momentum, velocity)
 }
 
 func (v *D3Var) Train(lr float64) {
@@ -153,34 +153,6 @@ func (model *D1) SWA(scale float64, oldParamD1 tensor.D1, oldParamD2 tensor.D2, 
 	return model.d3Var.Param.Add(scaledOldParamD3)
 }
 
-func (model *D1) L2NormGrad() float64 {
-	sqSum := 0.0
-	for i := range model.d1Var.grad {
-		gradi := model.d1Var.grad[i]
-		sqSum += (gradi * gradi)
-	}
-
-	for i := range model.d2Var.grad {
-		gradi := model.d2Var.grad[i]
-		for j := range gradi {
-			gradij := gradi[j]
-			sqSum += (gradij * gradij)
-		}
-	}
-
-	for i := range model.d3Var.grad {
-		gradi := model.d3Var.grad[i]
-		for j := range gradi {
-			gradij := gradi[j]
-			for k := range gradij {
-				gradijk := gradij[k]
-				sqSum += (gradijk * gradijk)
-			}
-		}
-	}
-	return math.Sqrt(sqSum)
-}
-
 func (model *D1) UpdateGrad(x, t tensor.D1, threshold float64) error {
 	_, _, bp, err := model.YAndLoss(x, t)
 	if err != nil {
@@ -207,38 +179,7 @@ func (model *D1) UpdateGrad(x, t tensor.D1, threshold float64) error {
 	}
 
 	if threshold > 0.0 {
-		sum := 0.0
-		for i := range model.d1Var.grad {
-			gradi := model.d1Var.grad[i]
-			sum += (gradi * gradi)
-		}
-
-		for i := range model.d2Var.grad {
-			gradi := model.d2Var.grad[i]
-			for j := range gradi {
-				gradij := gradi[j]
-				sum += (gradij * gradij)
-			}
-		}
-
-		for i := range model.d3Var.grad {
-			gradi := model.d3Var.grad[i]
-			for j := range gradi {
-				gradij := gradi[j]
-				for k := range gradij {
-					gradijk := gradij[k]
-					sum += (gradijk * gradijk)
-				}
-			}
-		}
-
-		l2Norm := math.Sqrt(sum)
-		scale := threshold / l2Norm
-		if scale < 1.0 {
-			model.d1Var.grad.MulScalar(scale)
-			model.d2Var.grad.MulScalar(scale)
-			model.d3Var.grad.MulScalar(scale)
-		}
+		mlfuncs.ClipL2Norm(model.d1Var.grad, model.d2Var.grad, model.d3Var.grad, threshold)
 	}
 	return err
 }
@@ -282,6 +223,7 @@ func (model *D1) ValidateBackwardGrad(x, t tensor.D1, threshold float64) error {
 	numGradD1 := mlfuncs.D1NumericalDifferentiation(model.d1Var.Param, lossD1)
 	numGradD2 := mlfuncs.D2NumericalDifferentiation(model.d2Var.Param, lossD2)
 	numGradD3 := mlfuncs.D3NumericalDifferentiation(model.d3Var.Param, lossD3)
+	mlfuncs.ClipL2Norm(numGradD1, numGradD2, numGradD3, threshold)
 	model.UpdateGrad(x, t, threshold)
 
 	diffErrD1, err := tensor.D1Sub(model.d1Var.grad, numGradD1)

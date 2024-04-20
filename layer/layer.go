@@ -136,6 +136,31 @@ func NewD1PReLUForward(alpha, gradAlpha *float64) D1Forward {
 	}
 }
 
+func NewD1PRReLUForward(alpha *float64, min, max float64, gradAlpha *float64, isTrain *bool, r *rand.Rand) D1Forward {
+	return func(x tensor.D1, backwards D1Backwards) (tensor.D1, D1Backwards, error) {
+		y, noise := mlfuncs.D1PRReLU(x, *alpha, min, max, *isTrain, r)
+		var backward D1Backward
+		backward = func(chain tensor.D1) (tensor.D1, error) {
+			dydx, dydVectorizedAlpha := mlfuncs.D1PRReLUDerivative(x, *alpha, noise)
+
+			// ∂L/∂dVectorizedAlpha
+			dVectorizedAlpha, err := tensor.D1Mul(dydVectorizedAlpha, chain)
+			if err != nil {
+				return tensor.D1{}, err
+			}
+			// ∂L/∂alpha
+			*gradAlpha = omw.Sum(dVectorizedAlpha...)
+
+			// ∂L/∂x
+			dx, err := tensor.D1Mul(dydx, chain)
+			return dx, err
+
+		}
+		backwards = append(backwards, backward)
+		return y, backwards, nil
+	}
+}
+
 func NewD1SigmoidForward() D1Forward {
 	return func(x tensor.D1, backwards D1Backwards) (tensor.D1, D1Backwards, error) {
 		y := mlfuncs.D1Sigmoid(x)

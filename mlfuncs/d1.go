@@ -100,6 +100,41 @@ func D1PReLUDerivative(x tensor.D1, alpha float64) (tensor.D1, tensor.D1) {
 	return gradX, vectorizedGradAlpha
 }
 
+func D1PRReLU(x tensor.D1, alpha, min, max float64, isTrain bool, r *rand.Rand) (tensor.D1, float64) {
+	y := make(tensor.D1, len(x))
+	var noise float64
+	if isTrain {
+		noise = omw.RandFloat64(min, max, r)
+	} else {
+		noise = (min + max) / 2.0
+	}
+	for i := range y {
+		xi := x[i]
+		if xi > 0 {
+			y[i] = xi
+		} else {
+			y[i] = alpha * noise * xi
+		}
+	}
+	return y, noise
+}
+
+func D1PRReLUDerivative(x tensor.D1, alpha, noise float64) (tensor.D1, tensor.D1) {
+	gradX := make(tensor.D1, len(x))
+	vectorizedGradAlpha := make(tensor.D1, len(x))
+	for i := range x {
+		xi := x[i]
+		if xi > 0 {
+			gradX[i] = 1
+			vectorizedGradAlpha[i] = 0
+		} else {
+			gradX[i] = alpha * noise
+			vectorizedGradAlpha[i] = noise * xi
+		}
+	}
+	return gradX, vectorizedGradAlpha
+}
+
 func D1Dropout(x tensor.D1, p float64, isTrain bool, r *rand.Rand) (tensor.D1, tensor.D1) {
 	n := len(x)
 	y := make(tensor.D1, n)
