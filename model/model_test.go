@@ -3,6 +3,7 @@ package model_test
 import (
 	"testing"
 	"fmt"
+	"time"
 
 	"github.com/sw965/crow/dataset"
 	"github.com/sw965/crow/model"
@@ -104,10 +105,11 @@ func TestModel(t *testing.T) {
 		// }
 
 		if i%196 == 0 {
-			testSize := 128
+			testSize := 600
 			lossSum := 0.0
 			a := 0.0
 			isTrain[0] = false
+			bf_t := time.Now()
 			for j := 0; j < testSize; j++ {
 				idx := r.Intn(10000)
 				_, loss, _, err := model.YAndLoss(mnist.TestImg[idx], mnist.TestLabel[idx])
@@ -121,6 +123,8 @@ func TestModel(t *testing.T) {
 				}
 				a += acc
 			}
+			af_t := time.Now()
+			fmt.Println("time=", af_t.Sub(bf_t))
 			fmt.Println("i = ", i, "lossSum = ", lossSum)
 			fmt.Println("a = ", float64(a) / float64(testSize))
 			fmt.Println(d1Var.Param)

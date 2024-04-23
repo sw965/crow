@@ -182,19 +182,16 @@ func (d2 D2) DotProduct(other D2) (D2, error) {
 		return nil, fmt.Errorf("tensor.D2の列数と行数が一致しないため、内積の計算ができません。")
 	}
 
-    var err error
-    t := other.Transpose()
-	y := NewD2Zeros(len(d2), len(other[0]))
-	for i := range d2 {
-        row := d2[i]
-        for j := range t {
-            y[i][j], err = row.DotProduct(t[j])
-            if err != nil {
-                return D2{}, err
+    y := make(D2, len(d2))
+    for i := range y {
+        y[i] = make(D1, len(other[0]))
+        for j := range y[i] {
+            for k := range d2[i] {
+                y[i][j] += d2[i][k] * other[k][j]
             }
         }
     }
-	return y, nil
+    return y, nil
 }
 
 func (d2 D2) Copy(other D2) {
