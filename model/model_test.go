@@ -77,7 +77,7 @@ func TestModel(t *testing.T) {
 			mlfuncs.D3L2RegularizationDerivative(d3, lambda)
 	}
 
-	mnist, err := dataset.LoadMnist()
+	mnist, err := dataset.LoadFlatMnist()
 	if err != nil {
 		panic(err)
 	}

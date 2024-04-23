@@ -2,13 +2,12 @@ package sequential
 
 import (
 	"math/rand"
-
 	"github.com/sw965/omw"
 )
 
-type Player[S any, A comparable] func(*S) A
+type Player[S any, A comparable] func(*S) (A, error)
 type LegalActionsFunc[S any, AS ~[]A, A comparable] func(*S) AS
-type PushFunc[S any, A comparable] func(S, A) S
+type PushFunc[S any, A comparable] func(S, *A) (S, error)
 type EqualFunc[S any] func(*S, *S) bool
 type IsEndFunc[S any] func(*S) bool
 
@@ -31,37 +30,29 @@ func (g *Game[S, AS, A]) Clone() Game[S, AS, A] {
 }
 
 func (g *Game[S, AS, A]) SetRandomActionPlayer(r *rand.Rand) {
-	g.Player = func(state *S) A {
+	g.Player = func(state *S) (A, error) {
 		actions := g.LegalActions(state)
-		return omw.RandChoice(actions, r)
+		action := omw.RandChoice(actions, r)
+		return action, nil
 	}
 }
 
-func (g *Game[S, AS, A]) Playout(state S) S {
+func (g *Game[S, AS, A]) Playout(state S) (S, error) {
 	for {
 		isEnd := g.IsEnd(&state)
 		if isEnd {
 			break
 		}
-		action := g.Player(&state)
-		state = g.Push(state, action)
-	}
-	return state
-}
-
-func (g *Game[S, AS, A]) PlayoutWithHistory(state S, cap_ int) (S, []S, AS) {
-	ss := make([]S, 0, cap_)
-	as := make(AS, 0, cap_)
-
-	for {
-		isEnd := g.IsEnd(&state)
-		if isEnd {
-			break
+		action, err := g.Player(&state)
+		if err != nil {
+			var s S
+			return s, err
 		}
-		action := g.Player(&state)
-		ss = append(ss, state)
-		as = append(as, action)
-		state = g.Push(state, action)
+		state, err = g.Push(state, &action)
+		if err != nil {
+			var s S
+			return s, err
+		}
 	}
-	return state, ss, as
+	return state, nil
 }

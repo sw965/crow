@@ -5,6 +5,12 @@ import (
 	"github.com/sw965/crow/tensor"
 )
 
+func PolicyUpperConfidenceBound(v, p, c float64, totalN, actionN int) float64 {
+	total := float64(totalN)
+	n := float64(actionN+1)
+	return v + (p * c * math.Sqrt(total) / n)
+}
+
 func L2Norm(d1 tensor.D1, d2 tensor.D2, d3 tensor.D3) float64 {
 	sqSum := 0.0
 	for i := range d1 {
@@ -34,8 +40,8 @@ func L2Norm(d1 tensor.D1, d2 tensor.D2, d3 tensor.D3) float64 {
 }
 
 func ClipL2Norm(d1 tensor.D1, d2 tensor.D2, d3 tensor.D3, threshold float64) {
-	l2Norm := L2Norm(d1, d2, d3)
-	scale := threshold / l2Norm
+	norm := L2Norm(d1, d2, d3)
+	scale := threshold / norm
 	if scale < 1.0 {
 		d1.MulScalar(scale)
 		d2.MulScalar(scale)

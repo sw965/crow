@@ -17,19 +17,19 @@ type FlatMnist struct {
 func LoadFlatMnist() (FlatMnist, error) {
 	trainImg, err := omw.LoadJSON[tensor.D2](FLAT_MNIST_PATH + "train_img" + omw.JSON_EXTENSION)
 	if err != nil {
-		return Mnist{}, err
+		return FlatMnist{}, err
 	}
 
 	trainLabel, err := omw.LoadJSON[tensor.D2](FLAT_MNIST_PATH + "train_label" + omw.JSON_EXTENSION)
 	if err != nil {
-		return Mnist{}, err
+		return FlatMnist{}, err
 	}
 
 	testImg, err := omw.LoadJSON[tensor.D2](FLAT_MNIST_PATH + "test_img" + omw.JSON_EXTENSION)
 	if err != nil {
-		return Mnist{}, err
+		return FlatMnist{}, err
 	}
 
 	testLabel, err := omw.LoadJSON[tensor.D2](FLAT_MNIST_PATH + "test_label" + omw.JSON_EXTENSION)
-	return Mnist{TrainImg:trainImg, TrainLabel:trainLabel, TestImg:testImg, TestLabel:testLabel}, err
+	return FlatMnist{TrainImg:trainImg, TrainLabel:trainLabel, TestImg:testImg, TestLabel:testLabel}, err
 }

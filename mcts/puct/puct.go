@@ -2,62 +2,64 @@ package puct
 
 import (
 	"math/rand"
-	"github.com/sw965/crow"
+	"github.com/sw965/crow/pucb"
 	"github.com/sw965/omw"
 	"github.com/sw965/crow/game/sequential"
 	"golang.org/x/exp/maps"
 )
 
-type LeafEvalY float64
-type LeafEvalFunc[S any] func(*S) LeafEvalY
+type ActionPolicy[A comparable] map[A]float64
+type ActionPolicyFunc[S any, A comparable] func(*S) ActionPolicy[A]
 
-type BackwardEvalY float64
-type BackwardEvalFunc[S any] func(LeafEvalY, *S) BackwardEvalY
+type LeafNodeEvalY float64
+type LeafNodeEvalFunc[S any] func(*S) LeafNodeEvalY
 
-type Eval[S any] struct {
-	Leaf LeafEvalFunc[S]
-	Backward BackwardEvalFunc[S]
+type EachPlayerEvalY float64
+type EachPlayerEvalFunc[S any] func(LeafNodeEvalY, *S) EachPlayerEvalY
+
+type EvalFunc[S any] struct {
+	LeafNode LeafNodeEvalFunc[S]
+	EachPlayer EachPlayerEvalFunc[S]
 }
 
 type Node[S any, AS ~[]A, A comparable] struct {
 	State S
-	PUCBManager crow.PUCBManager[AS, A]
+	PUCBManager pucb.Manager[AS, A]
 	NextNodes Nodes[S, AS, A]
 	SelectCount     int
 }
 
 func (node *Node[S, AS, A]) Trial() int {
-	trials := node.PUCBManager.Trials()
-	return omwmath.Sum(trials...)
+	return node.PUCBManager.TotalTrial()
 }
 
-func (node *Node[S, AS, A]) ActionPrediction(r *rand.Rand, cap_ int) AS {
-	y := make([]A, 0, cap_)
+func (node *Node[S, AS, A]) PredictActions(r *rand.Rand, cap_ int) AS {
+	actions := make([]A, 0, cap_)
 	for {
 		if len(node.PUCBManager) == 0 {
 			break
 		}
 
-		action := omwrand.Choice(node.PUCBManager.MaxTrialKeys(), r)
-		y = append(y, action)
+		maxTrialAction := omw.RandChoice(node.PUCBManager.MaxTrialKeys(), r)
+		actions = append(actions, maxTrialAction)
 
 		if len(node.NextNodes) == 0 {
 			break
 		}
 
-		max := node.NextNodes[0].Trial()
+		maxTrial := node.NextNodes[0].Trial()
 		nextNode := node.NextNodes[0]
 
 		for _, nn := range node.NextNodes[1:] {
 			trial := nn.Trial()
-			if trial > max {
-				max = trial
+			if trial > maxTrial {
+				maxTrial = trial
 				nextNode = nn
 			}
 		}
 		node = nextNode
 	}
-	return y
+	return actions
 }
 
 type Nodes[S any, AS ~[]A, A comparable] []*Node[S, AS, A]
@@ -78,11 +80,11 @@ type Select[S any, AS ~[]A,  A comparable] struct {
 
 type Selects[S any, AS ~[]A, A comparable] []Select[S, AS, A]
 
-func (ss Selects[S, AS, A]) Backward(y LeafEvalY, eval BackwardEvalFunc[S]) {
+func (ss Selects[S, AS, A]) Backward(y LeafNodeEvalY, eval EachPlayerEvalFunc[S]) {
 	for _, s := range ss {
 		node := s.Node
 		action := s.Action
-		node.PUCBManager[action].AccumReward += float64(eval(y, &node.State))
+		node.PUCBManager[action].TotalValue += float64(eval(y, &node.State))
 		node.PUCBManager[action].Trial += 1
 		node.SelectCount = 0
 	}
@@ -90,45 +92,48 @@ func (ss Selects[S, AS, A]) Backward(y LeafEvalY, eval BackwardEvalFunc[S]) {
 
 type MCTS[S any, AS ~[]A, A comparable] struct {
 	Game sequential.Game[S, AS, A]
-	ActionPolicy crow.ActionPolicyFunc[S, A]
-	Eval Eval[S]
+	ActionPolicy ActionPolicyFunc[S, A]
+	EvalFunc EvalFunc[S]
 }
 
 func (mcts *MCTS[S, AS, A]) NewNode(state *S) *Node[S, AS, A] {
 	apy := mcts.ActionPolicy(state)
-	m := crow.PUCBManager[AS, A]{}
+	m := pucb.Manager[AS, A]{}
 	for a, p := range apy {
-		m[a] = &crow.PUCBCalculator{P:p}
+		m[a] = &pucb.Calculator{P:p}
 	}
 	return &Node[S, AS, A]{State:*state, PUCBManager:m}
 }
 
-func (mcts *MCTS[S, AS, A]) SetActionNoPolicy() {
-	var f crow.ActionPolicyFunc[S, A]
-	f = func(state *S) crow.ActionPolicY[A] {
+func (mcts *MCTS[S, AS, A]) SetUniformActionPolicy() {
+	var f ActionPolicyFunc[S, A]
+	f = func(state *S) ActionPolicy[A] {
 		actions := mcts.Game.LegalActions(state)
-		p := 1.0 / float64(len(actions))
-		y := crow.ActionPolicY[A]{}
+		n := len(actions)
+		p := 1.0 / float64(n)
+		policy := ActionPolicy[A]{}
 		for _, a := range actions {
-			y[a] = p
+			policy[a] = p
 		}
-		return y
+		return policy
 	}
 	mcts.ActionPolicy = f
 }
 
-func (mcts *MCTS[S, AS, A]) SelectExpansionBackward(node *Node[S, AS, A], allNodes Nodes[S, AS, A], c float64, r *rand.Rand, cap_ int) (Nodes[S, AS, A], int) {
+func (mcts *MCTS[S, AS, A]) SelectExpansionBackward(node *Node[S, AS, A], allNodes Nodes[S, AS, A], c float64, r *rand.Rand, cap_ int) (Nodes[S, AS, A], int, error) {
 	state := node.State
 	selects := make(Selects[S, AS, A], 0, cap_)
-
+	var err error
 	for {
-		//select
-		action := omwrand.Choice(node.PUCBManager.MaxKeys(c), r)
+		action := omw.RandChoice(node.PUCBManager.MaxKeys(c), r)
 		selects = append(selects, Select[S, AS, A]{Node:node, Action:action})
 
 		node.SelectCount += 1
 
-		state = mcts.Game.Push(state, action)
+		state, err = mcts.Game.Push(state, &action)
+		if err != nil {
+			return Nodes[S, AS, A]{}, 0, err
+		}
 		stateP := &state
 
 		if isEnd := mcts.Game.IsEnd(stateP); isEnd {
@@ -161,28 +166,36 @@ func (mcts *MCTS[S, AS, A]) SelectExpansionBackward(node *Node[S, AS, A], allNod
 		}
 		node = nextNode
 	}
-	y := mcts.Eval.Leaf(&state)
-	selects.Backward(y, mcts.Eval.Backward)
-	return allNodes, len(selects)
+	y := mcts.EvalFunc.LeafNode(&state)
+	selects.Backward(y, mcts.EvalFunc.EachPlayer)
+	return allNodes, len(selects), nil
 }
 
-func (mcts *MCTS[S, AS, A]) Run(simulation int, rootState S, c float64, r *rand.Rand) Nodes[S, AS, A] {
+func (mcts *MCTS[S, AS, A]) Run(simulation int, rootState S, c float64, r *rand.Rand) (Nodes[S, AS, A], error) {
 	rootNode := mcts.NewNode(&rootState)
 	allNodes := Nodes[S, AS, A]{rootNode}
 	selectNum := 0
+	var err error
 	for i := 0; i < simulation; i++ {
-		allNodes, selectNum = mcts.SelectExpansionBackward(rootNode, allNodes, c, r, selectNum + 1)
+		allNodes, selectNum, err = mcts.SelectExpansionBackward(rootNode, allNodes, c, r, selectNum + 1)
+		if err != nil {
+			return Nodes[S, AS, A]{}, err
+		}
 	}
-	return allNodes
+	return allNodes, nil
 }
 
 func NewPlayer[S any, AS ~[]A, A comparable](mcts *MCTS[S, AS, A], simulation int, c float64, random *rand.Rand, r float64) sequential.Player[S, A] {
-	player := func(state *S) A {
-		allNodes := mcts.Run(simulation, *state, c, random)
+	player := func(state *S) (A, error) {
+		allNodes, err:= mcts.Run(simulation, *state, c, random)
+		if err != nil {
+			var a A
+			return a, err
+		}
 		rootNode := allNodes[0]
 
 		percents := rootNode.PUCBManager.TrialPercents()
-		max := omwmath.Max(maps.Values(percents)...)
+		max := omw.Max(maps.Values(percents)...)
 
 		n := len(percents)
 		actions := make(AS, 0, n)
@@ -195,8 +208,8 @@ func NewPlayer[S any, AS ~[]A, A comparable](mcts *MCTS[S, AS, A], simulation in
 			}
 		}
 
-		idx := omwrand.IntWithWeight(ws, random)
-		return actions[idx]
+		idx := omw.RandIntByWeight(ws, random)
+		return actions[idx], nil
 	}
 	return player
 }

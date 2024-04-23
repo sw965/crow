@@ -1,20 +1,21 @@
 package simultaneous
 
 import (
+	"fmt"
 	"math/rand"
 	"github.com/sw965/omw"
 )
 
-type Player[S any, AS ~[]A, A comparable] func(*S) AS
+type Player[S any, AS ~[]A, A comparable] func(*S) (AS, error)
 type LegalActionssFunc[S any, ASS ~[]AS, AS ~[]A, A comparable] func(*S) ASS
-type PushFunc[S any, A comparable] func(S, ...A) S
+type PushFunc[S any, AS ~[]A, A comparable] func(S, AS) (S, error)
 type EqualFunc[S any] func(*S, *S) bool
 type IsEndFunc[S any] func(*S) bool
 
 type Game[S any, ASS ~[]AS, AS ~[]A, A comparable] struct {
 	Player Player[S, AS, A]
 	LegalActionss LegalActionssFunc[S, ASS, AS, A]
-	Push PushFunc[S, A]
+	Push PushFunc[S, AS, A]
 	Equal EqualFunc[S]
 	IsEnd IsEndFunc[S]
 }
@@ -29,54 +30,33 @@ func (g *Game[S, ASS, AS, A]) Clone() Game[S, ASS, AS, A] {
 	}
 }
 
-func (g *Game[S, ASS, AS, A]) PadLegalActionss(state *S, noAction A) ASS {
-	actionss := g.LegalActionss(state)
-	ass := make(ASS, len(actionss))
-	for playerI, actions := range actionss {
-		if len(actions) == 0 {
-			ass[playerI] = AS{noAction}
-		} else {
-			ass[playerI] = actionss[playerI]
+func (g *Game[S, ASS, AS, A]) SetRandomActionPlayer(r *rand.Rand) {
+	g.Player = func(state *S) (AS, error) {
+		actionss := g.LegalActionss(state)
+		randActions := make(AS, len(actionss))
+		for playerI, as := range actionss {
+			as[playerI] = omw.RandChoice(as, r)
 		}
-	}
-	return ass
-}
-
-func (g *Game[S, ASS, AS, A]) SetRandomActionPlayer(r *rand.Rand, noAction A) {
-	g.Player = func(state *S) AS {
-		actionss := g.PadLegalActionss(state, noAction)
-		y := make([]A, len(actionss))
-		for playerI, actions := range actionss {
-			y[playerI] = omw.RandChoice(actions, r)
-		}
-		return y
+		return randActions, nil
 	}
 }
 
-func (g *Game[S, ASS, AS, A]) Playout(state S) S {
+func (g *Game[S, ASS, AS, A]) Playout(state S) (S, error) {
 	for {
 		isEnd := g.IsEnd(&state)
 		if isEnd {
 			break
 		}
-		actions := g.Player(&state)
-		state = g.Push(state, actions...)
-	}
-	return state
-}
-
-func (g *Game[S, ASS, AS, A]) PlayoutWithHistory(state S, cap_ int) (S, []S, ASS) {
-	ss := make([]S, 0, cap_)
-	ass := make(ASS, 0, cap_)
-	for {
-		isEnd := g.IsEnd(&state)
-		if isEnd {
-			break
+		actions, err := g.Player(&state)
+		if err != nil {
+			var s S
+			return s, err
 		}
-		actions := g.Player(&state)
-		ss = append(ss, state)
-		ass = append(ass, actions)
-		state = g.Push(state, actions...)
+		state, err = g.Push(state, actions)
+		if err != nil {
+			var s S
+			return s, err
+		}
 	}
-	return state, ss, ass
+	return state, nil
 }
