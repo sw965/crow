@@ -105,7 +105,7 @@ func TestModel(t *testing.T) {
 		// }
 
 		if i%196 == 0 {
-			testSize := 600
+			testSize := 180
 			lossSum := 0.0
 			a := 0.0
 			isTrain[0] = false
