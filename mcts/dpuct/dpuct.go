@@ -1,8 +1,8 @@
 package dpuct
 
 import (
-	"github.com/sw965/crow/game/simultaneous"
 	"math/rand"
+	"github.com/sw965/crow/game/simultaneous"
 	"github.com/sw965/crow/pucb"
 )
 
@@ -171,7 +171,7 @@ func (mcts *MCTS[S, ASS, AS, A]) SelectExpansionBackward(node *Node[S, ASS, AS, 
 	return allNodes, len(selects), nil
 }
 
-func (mcts *MCTS[S, ASS, AS, A]) Run(rootState S, c float64, r *rand.Rand) (Nodes[S, ASS, AS, A], error) {
+func (mcts *MCTS[S, ASS, AS, A]) Run(simulation int, rootState S, c float64, r *rand.Rand) (Nodes[S, ASS, AS, A], error) {
 	rootNode := mcts.NewNode(&rootState)
 	allNodes := Nodes[S, ASS, AS, A]{rootNode}
 	selectNum := 0
