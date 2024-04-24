@@ -90,5 +90,5 @@ func TestDPUCT(t *testing.T) {
 		}
 	}
 
-	fmt.Println(allNodes[0].PredictActionss(r, 64))
+	fmt.Println(allNodes[0].MaxTrialActionsPath(r, 64))
 }

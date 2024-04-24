@@ -113,11 +113,6 @@ func (d1 D1) Div(other D1) error {
     return nil
 }
 
-func (d1 D1) DotProduct(other D1) (float64, error) {
-    mul, err := D1Mul(d1, other)
-    return omw.Sum(mul...), err
-}
-
 func (d1 D1) MapFunc(f func(float64)float64) D1 {
     return omw.MapFunc[D1](d1, f)
 }

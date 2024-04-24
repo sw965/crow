@@ -24,9 +24,9 @@ type Node[S any, ASS ~[]AS, AS ~[]A, A comparable] struct {
 	SelectCount  int
 }
 
-func (node *Node[S, ASS, AS, A]) PredictActionss(r *rand.Rand, cap_ int) ASS {
-	result := make(ASS, 0, cap_)
-	for {
+func (node *Node[S, ASS, AS, A]) MaxTrialActionsPath(r *rand.Rand, n int) ASS {
+	result := make(ASS, 0, n)
+	for i := 0; i < n; i++ {
 		if len(node.PUCBManagers) == 0 {
 			break
 		}
@@ -171,7 +171,7 @@ func (mcts *MCTS[S, ASS, AS, A]) SelectExpansionBackward(node *Node[S, ASS, AS, 
 	return allNodes, len(selects), nil
 }
 
-func (mcts *MCTS[S, ASS, AS, A]) Run(simulation int, rootState S, c float64, r *rand.Rand) (Nodes[S, ASS, AS, A], error) {
+func (mcts *MCTS[S, ASS, AS, A]) Run(rootState S, c float64, r *rand.Rand) (Nodes[S, ASS, AS, A], error) {
 	rootNode := mcts.NewNode(&rootState)
 	allNodes := Nodes[S, ASS, AS, A]{rootNode}
 	selectNum := 0

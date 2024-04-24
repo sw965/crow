@@ -1,7 +1,6 @@
 package simultaneous
 
 import (
-	"fmt"
 	"math/rand"
 	"github.com/sw965/omw"
 )

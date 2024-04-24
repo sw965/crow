@@ -50,6 +50,29 @@ func (bp *D1BackPropagator) Run() (tensor.D1, error) {
 	return chain, nil
 }
 
+func NewD1LinearForward(w tensor.D1, b float64, gradW tensor.D1, gradB *float64) D1Forward {
+	return func(x tensor.D1, backwards D1Backwards) (tensor.D1, D1Backwards, error) {
+		mul, err := tensor.D1Mul(x, w)
+		if err != nil {
+			return tensor.D1{}, D1Backwards{}, err
+		}
+		y := tensor.D1{omw.Sum(mul...) + b}
+
+		var backward D1Backward
+		backward = func(chain tensor.D1) (tensor.D1, error) {
+			// ∂L/∂w
+			dw := tensor.D1MulScalar(x, chain[0])
+			gradW.Copy(dw)
+			// ∂L/∂b
+			*gradB = omw.Sum(chain...)
+			dx := tensor.D1MulScalar(w, chain[0])
+			return dx, nil
+		}
+		backwards = append(backwards, backward)
+		return y, backwards, nil
+	}
+} 
+
 func NewD1AffineForward(w tensor.D2, b tensor.D1, gradW tensor.D2, gradB tensor.D1) D1Forward {
 	return func(x tensor.D1, backwards D1Backwards) (tensor.D1, D1Backwards, error) {
 		dot, err := tensor.D2{x}.DotProduct(w)

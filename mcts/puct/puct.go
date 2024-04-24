@@ -33,15 +33,15 @@ func (node *Node[S, AS, A]) Trial() int {
 	return node.PUCBManager.TotalTrial()
 }
 
-func (node *Node[S, AS, A]) PredictActions(r *rand.Rand, cap_ int) AS {
-	actions := make([]A, 0, cap_)
-	for {
+func (node *Node[S, AS, A]) MaxTrialActionPath(r *rand.Rand, n int) AS {
+	result := make([]A, 0, n)
+	for i := 0; i < n; i++ {
 		if len(node.PUCBManager) == 0 {
 			break
 		}
 
 		maxTrialAction := omw.RandChoice(node.PUCBManager.MaxTrialKeys(), r)
-		actions = append(actions, maxTrialAction)
+		result = append(result, maxTrialAction)
 
 		if len(node.NextNodes) == 0 {
 			break
@@ -59,7 +59,7 @@ func (node *Node[S, AS, A]) PredictActions(r *rand.Rand, cap_ int) AS {
 		}
 		node = nextNode
 	}
-	return actions
+	return result
 }
 
 type Nodes[S any, AS ~[]A, A comparable] []*Node[S, AS, A]
