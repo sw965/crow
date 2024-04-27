@@ -1,10 +1,16 @@
 package pucb
 
 import (
+	"math"
 	"math/rand"
 	"github.com/sw965/omw"
-	"github.com/sw965/crow/mlfuncs"
 )
+
+func Calculation(v, p, c float64, totalN, actionN int) float64 {
+	total := float64(totalN)
+	n := float64(actionN+1)
+	return v + (p * c * math.Sqrt(total) / n)
+}
 
 type Calculator struct {
 	P float64
@@ -16,9 +22,9 @@ func (c *Calculator) AverageValue() float64 {
 	return float64(c.TotalValue) / float64(c.Trial+1)
 }
 
-func (c *Calculator) CalcPUCB(totalTrial int, C float64) float64 {
+func (c *Calculator) Calculation(totalTrial int, C float64) float64 {
 	v := c.AverageValue()
-	return mlfuncs.PolicyUpperConfidenceBound(v, c.P, C, totalTrial, c.Trial)
+	return Calculation(v, c.P, C, totalTrial, c.Trial)
 }
 
 type Manager[KS ~[]K, K comparable] map[K]*Calculator
@@ -39,7 +45,7 @@ func (m Manager[KS, K]) Max(c float64) float64 {
 	total := m.TotalTrial()
 	pucbs := make([]float64, 0, len(m))
 	for _, v := range m {
-		pucbs = append(pucbs, v.CalcPUCB(total, c))
+		pucbs = append(pucbs, v.Calculation(total, c))
 	}
 	return omw.Max(pucbs...)
 }
@@ -49,7 +55,7 @@ func (m Manager[KS, K]) MaxKeys(c float64) KS {
 	total := m.TotalTrial()
 	ks := make(KS, 0, len(m))
 	for k, v := range m {
-		if v.CalcPUCB(total, c) == max {
+		if v.Calculation(total, c) == max {
 			ks = append(ks, k)
 		}
 	}

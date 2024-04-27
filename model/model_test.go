@@ -3,8 +3,6 @@ package model_test
 import (
 	"testing"
 	"fmt"
-	"time"
-
 	"github.com/sw965/crow/dataset"
 	"github.com/sw965/crow/model"
 	"github.com/sw965/crow/layer"
@@ -45,25 +43,19 @@ func TestModel(t *testing.T) {
 	d3Var.Init(0.9)
 
 	model := model.NewD1(&d1Var, &d2Var, &d3Var)
+	model.L2NormGradClipThreshold = 8.0
 	forwards := layer.D1Forwards{
 		layer.NewD1AffineForward(d3Var.Param[0], d2Var.Param[0], d3Var.GetGrad()[0], d2Var.GetGrad()[0]),
-		//layer.NewD1PReLUForward(&d1Var.Param[0], &d1Var.GetGrad()[0]),
 		layer.NewD1PRReLUForward(&d1Var.Param[0], 0.5, 1.5, &d1Var.GetGrad()[0], &isTrain[0], r),
-		//layer.NewD1LReLUForward(0.01),
-		//layer.NewD1DropoutForward(0.05, &isTrain[0], r),
+		layer.NewD1DropoutForward(0.05, &isTrain[0], r),
 
 		layer.NewD1AffineForward(d3Var.Param[1], d2Var.Param[1], d3Var.GetGrad()[1], d2Var.GetGrad()[1]),
-		//layer.NewD1PReLUForward(&d1Var.Param[1], &d1Var.GetGrad()[1]),
 		layer.NewD1PRReLUForward(&d1Var.Param[1], 0.5, 1.5, &d1Var.GetGrad()[1], &isTrain[0], r),
-		//layer.NewD1LReLUForward(0.01),
-		//layer.NewD1DropoutForward(0.05, &isTrain[0], r),
+		layer.NewD1DropoutForward(0.05, &isTrain[0], r),
 
 		layer.NewD1AffineForward(d3Var.Param[2], d2Var.Param[2], d3Var.GetGrad()[2], d2Var.GetGrad()[2]),
-		//layer.NewD1PReLUForward(&d1Var.Param[2], &d1Var.GetGrad()[2]),
 		layer.NewD1PRReLUForward(&d1Var.Param[2], 0.5, 1.5, &d1Var.GetGrad()[2], &isTrain[0], r),
-		//layer.NewD1LReLUForward(0.01),
-		//layer.NewD1DropoutForward(0.05, &isTrain[0], r),
-		//layer.NewD1TanhForward(),
+		layer.NewD1DropoutForward(0.05, &isTrain[0], r),
 	}
 
 	model.Forwards = forwards
@@ -82,52 +74,28 @@ func TestModel(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-
-	// oldParamD1 := d1Var.Param.Clone()
-	// oldParamD2 := d2Var.Param.Clone()
-	// oldParamD3 := d3Var.Param.Clone()
-	threshold := 8.0
+	trainImgNum := len(mnist.TrainImg)
+	testImgNum := len(mnist.TestImg)
 	trainNum := 256000
+	testSize := 196
 	for i := 0; i < trainNum; i++ {
-		idx := r.Intn(60000)
-		model.UpdateGradAndTrain(mnist.TrainImg[idx], mnist.TrainLabel[idx], 0.01, threshold)
-
-		// if i%16 == 0 {
-		// 	model.SWA(0.9, oldParamD1, oldParamD2, oldParamD3)
-		// 	oldParamD1 = d1Var.Param.Clone()
-		// 	oldParamD2 = d2Var.Param.Clone()
-		// 	oldParamD3 = d3Var.Param.Clone()
-		// }
-
-		// if i%1960 == 0 {
-		// 	tmp := r.Intn(10000)
-		// 	model.ValidateBackwardGrad(mnist.TestImg[tmp], mnist.TestLabel[tmp], threshold)
-		// }
-
+		idx := r.Intn(trainImgNum)
+		model.UpdateGradAndTrain(mnist.TrainImg[idx], mnist.TrainLabel[idx], 0.01)
 		if i%196 == 0 {
-			testSize := 180
-			lossSum := 0.0
-			a := 0.0
+			idxs := omw.RandIntns(testSize, testImgNum, r)
+			miniBatchTestImg := omw.ElementsAtIndices(mnist.TestImg, idxs...)
+			miniBatchTestLabel := omw.ElementsAtIndices(mnist.TestLabel, idxs...)
 			isTrain[0] = false
-			bf_t := time.Now()
-			for j := 0; j < testSize; j++ {
-				idx := r.Intn(10000)
-				_, loss, _, err := model.YAndLoss(mnist.TestImg[idx], mnist.TestLabel[idx])
-				if err != nil {
-					panic(err)
-				}
-				lossSum += loss
-				acc, err := model.Accuracy(mnist.TestImg[idx], mnist.TestLabel[idx])
-				if err != nil {
-					panic(err)
-				}
-				a += acc
+			loss, err := model.MeanLoss(miniBatchTestImg, miniBatchTestLabel)
+			if err != nil {
+				panic(err)
 			}
-			af_t := time.Now()
-			fmt.Println("time=", af_t.Sub(bf_t))
-			fmt.Println("i = ", i, "lossSum = ", lossSum)
-			fmt.Println("a = ", float64(a) / float64(testSize))
-			fmt.Println(d1Var.Param)
+			accuracy, err := model.Accuracy(miniBatchTestImg, miniBatchTestLabel)
+			if err != nil {
+				panic(err)
+			}
+
+			fmt.Println("loss =", loss, "accuracy =", accuracy)
 			isTrain[0] = true
 		}
 	}

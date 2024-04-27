@@ -7,6 +7,7 @@ import (
 	"github.com/sw965/crow/tensor"
 	"github.com/sw965/crow/mlfuncs"
 	"github.com/sw965/crow/optimizer"
+	"github.com/sw965/omw"
 )
 
 type D1Var struct {
@@ -79,55 +80,71 @@ type D1 struct {
 
 	ParamLoss func(tensor.D1, tensor.D2, tensor.D3) float64
 	ParamLossDerivative func(tensor.D1, tensor.D2, tensor.D3) (tensor.D1, tensor.D2, tensor.D3)
+
+	L2NormGradClipThreshold float64
 }
 
 func NewD1(d1Var *D1Var, d2Var *D2Var, d3Var *D3Var) D1 {
 	return D1{d1Var:*d1Var, d2Var:*d2Var, d3Var:*d3Var}
 }
 
-func (model *D1) Predict(x tensor.D1) (tensor.D1, layer.D1Backwards, error) {
+func (model *D1) predict(x tensor.D1) (tensor.D1, layer.D1Backwards, error) {
 	y, backwards, err := model.Forwards.Run(x)
 	return y, backwards, err
 }
 
-func (model *D1) YAndLoss(x, t tensor.D1) (tensor.D1, float64, *layer.D1BackPropagator, error) {
-	y, backwards, err := model.Predict(x)
-	loss, lossBackward, err := model.LossForward(y, t)
-	loss += model.ParamLoss(model.d1Var.Param, model.d2Var.Param, model.d3Var.Param)
-	bp := layer.NewD1BackPropagator(backwards, lossBackward)
-	return y, loss, &bp, err
+func (model *D1) Predict(x tensor.D1) (tensor.D1, error) {
+	y, _, err := model.Forwards.Run(x)
+	return y, err
 }
 
-func (model *D1) Accuracy(x, t tensor.D1) (float64, error) {
-	y, _, err := model.Predict(x)
+func (model *D1) newBackPropagator(x, t tensor.D1) (*layer.D1BackPropagator, error) {
+	y, backwards, err := model.predict(x)
 	if err != nil {
-		return 0.0, err
+		return &layer.D1BackPropagator{}, err
+	}
+	_, lossBackward, err := model.LossForward(y, t)
+	bp := layer.NewD1BackPropagator(backwards, lossBackward)
+	return &bp, err
+}
+
+func (model *D1) MeanLoss(x, t tensor.D2) (float64, error) {
+	n := len(x)
+	if n != len(t) {
+		return 0.0, fmt.Errorf("入力値と正解ラベルのバッチ数が一致しないため、平均損失が計算できません。一致するようにしてください。")
 	}
 
-	maxY := y[0]
-	maxYIdx := 0
-	for i, yi := range y[1:] {
-		if yi > maxY {
-			maxY = yi
-			maxYIdx = (i+1)
+	sum := 0.0
+	for i := range x {
+		y, err := model.Predict(x[i])
+		if err != nil {
+			return 0.0, err
+		}
+		loss, _, err := model.LossForward(y, t[i])
+		if err != nil {
+			return 0.0, err
+		}
+		sum += loss
+		sum += model.ParamLoss(model.d1Var.Param, model.d2Var.Param, model.d3Var.Param)
+	}
+
+	mean := sum / float64(n)
+	return mean, nil
+}
+
+func (model *D1) Accuracy(x, t tensor.D2) (float64, error) {
+	n := len(x)
+	correct := 0
+	for i := range x {
+		y, err := model.Predict(x[i])
+		if err != nil {
+			return 0.0, err
+		}
+		if omw.MaxIndex(y) == omw.MaxIndex(t[i]) {
+			correct += 1
 		}
 	}
-
-	maxT := t[0]
-	maxTIdx := 0
-
-	for i, ti := range t[1:] {
-		if ti > maxT {
-			maxT = ti
-			maxTIdx = (i+1)
-		}
-	}
-
-	if maxYIdx == maxTIdx {
-		return 1.0, nil
-	} else {
-		return 0.0, nil
-	}
+	return float64(correct) / float64(n), nil
 }
 
 func (model *D1) SWA(scale float64, oldParamD1 tensor.D1, oldParamD2 tensor.D2, oldParamD3 tensor.D3) error {
@@ -153,12 +170,13 @@ func (model *D1) SWA(scale float64, oldParamD1 tensor.D1, oldParamD2 tensor.D2, 
 	return model.d3Var.Param.Add(scaledOldParamD3)
 }
 
-func (model *D1) UpdateGrad(x, t tensor.D1, threshold float64) error {
-	_, _, bp, err := model.YAndLoss(x, t)
+func (model *D1) UpdateGrad(x, t tensor.D1) error {
+	bp, err := model.newBackPropagator(x, t)
 	if err != nil {
 		return err
 	}
 	_, err = bp.Run()
+
 	gradD1, gradD2, gradD3 := model.ParamLossDerivative(
 		model.d1Var.Param, model.d2Var.Param, model.d3Var.Param,
 	)
@@ -178,8 +196,8 @@ func (model *D1) UpdateGrad(x, t tensor.D1, threshold float64) error {
 		return err
 	}
 
-	if threshold > 0.0 {
-		mlfuncs.ClipL2Norm(model.d1Var.grad, model.d2Var.grad, model.d3Var.grad, threshold)
+	if model.L2NormGradClipThreshold > 0.0 {
+		mlfuncs.ClipL2Norm(model.d1Var.grad, model.d2Var.grad, model.d3Var.grad, model.L2NormGradClipThreshold)
 	}
 	return err
 }
@@ -190,14 +208,14 @@ func (model *D1) Train(lr float64) {
 	model.d3Var.Train(lr)
 }
 
-func (model *D1) UpdateGradAndTrain(x, t tensor.D1, lr, threshold float64) {
-	model.UpdateGrad(x, t, threshold)
+func (model *D1) UpdateGradAndTrain(x, t tensor.D1, lr float64) {
+	model.UpdateGrad(x, t)
 	model.Train(lr)
 }
 
-func (model *D1) ValidateBackwardGrad(x, t tensor.D1, threshold float64) error {
+func (model *D1) ValidateBackwardGrad(x, t tensor.D1) error {
 	lossD1 := func(_ tensor.D1) float64 {
-		_, loss, _, err := model.YAndLoss(x, t)
+		loss, err := model.MeanLoss(tensor.D2{x}, tensor.D2{t})
 		if err != nil {
 			panic(err)
 		}
@@ -205,7 +223,7 @@ func (model *D1) ValidateBackwardGrad(x, t tensor.D1, threshold float64) error {
 	}
 
 	lossD2 := func(_ tensor.D2) float64 {
-		_, loss, _, err := model.YAndLoss(x, t)
+		loss, err := model.MeanLoss(tensor.D2{x}, tensor.D2{t})
 		if err != nil {
 			panic(err)
 		}
@@ -213,7 +231,7 @@ func (model *D1) ValidateBackwardGrad(x, t tensor.D1, threshold float64) error {
 	}
 
 	lossD3 := func(d2Params tensor.D3) float64 {
-		_, loss, _, err := model.YAndLoss(x, t)
+		loss, err := model.MeanLoss(tensor.D2{x}, tensor.D2{t})
 		if err != nil {
 			panic(err)
 		}
@@ -223,8 +241,8 @@ func (model *D1) ValidateBackwardGrad(x, t tensor.D1, threshold float64) error {
 	numGradD1 := mlfuncs.D1NumericalDifferentiation(model.d1Var.Param, lossD1)
 	numGradD2 := mlfuncs.D2NumericalDifferentiation(model.d2Var.Param, lossD2)
 	numGradD3 := mlfuncs.D3NumericalDifferentiation(model.d3Var.Param, lossD3)
-	mlfuncs.ClipL2Norm(numGradD1, numGradD2, numGradD3, threshold)
-	model.UpdateGrad(x, t, threshold)
+	mlfuncs.ClipL2Norm(numGradD1, numGradD2, numGradD3, model.L2NormGradClipThreshold)
+	model.UpdateGrad(x, t)
 
 	diffErrD1, err := tensor.D1Sub(model.d1Var.grad, numGradD1)
 	if err != nil {

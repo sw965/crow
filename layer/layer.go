@@ -75,11 +75,12 @@ func NewD1LinearForward(w tensor.D1, b float64, gradW tensor.D1, gradB *float64)
 
 func NewD1AffineForward(w tensor.D2, b tensor.D1, gradW tensor.D2, gradB tensor.D1) D1Forward {
 	return func(x tensor.D1, backwards D1Backwards) (tensor.D1, D1Backwards, error) {
-		dot, err := tensor.D2{x}.DotProduct(w)
+		y, err := tensor.D2{x}.DotProduct(w)
 		if err != nil {
 			return tensor.D1{}, D1Backwards{}, err
 		}
-		y, err := tensor.D1Add(dot[0], b)
+		err = y[0].Add(b)
+		//y, err := tensor.D1Add(dot[0], b)
 
 		var backward D1Backward
 		backward = func(chain tensor.D1) (tensor.D1, error) {
@@ -102,7 +103,7 @@ func NewD1AffineForward(w tensor.D2, b tensor.D1, gradW tensor.D2, gradB tensor.
 			return dx[0], err
 		}
 		backwards = append(backwards, backward)
-		return y, backwards, err
+		return y[0], backwards, err
 	}
 }
 

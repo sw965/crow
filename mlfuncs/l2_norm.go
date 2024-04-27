@@ -5,12 +5,6 @@ import (
 	"github.com/sw965/crow/tensor"
 )
 
-func PolicyUpperConfidenceBound(v, p, c float64, totalN, actionN int) float64 {
-	total := float64(totalN)
-	n := float64(actionN+1)
-	return v + (p * c * math.Sqrt(total) / n)
-}
-
 func L2Norm(d1 tensor.D1, d2 tensor.D2, d3 tensor.D3) float64 {
 	sqSum := 0.0
 	for i := range d1 {
