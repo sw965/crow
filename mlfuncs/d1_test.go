@@ -9,6 +9,11 @@ import (
 	"math"
 )
 
+func TestD1Softmax(t *testing.T) {
+	x := tensor.D1{1, 2, 5, 4, 3}
+	fmt.Println(mlfuncs.D1Softmax(x))
+}
+
 func TestD1PReLUDerivative(test *testing.T) {
 	r := omw.NewMt19937()
 	x := tensor.NewD1RandomUniform(10, -0.1, 0.1, r)
@@ -54,10 +59,6 @@ func TestD1PReLUDerivative(test *testing.T) {
 	fmt.Println("maxDiffErrX =", maxDiffErrX, "diffErrAlpha =", diffErrAlpha)
 }
 
-func TestD1Dropout(test *testing.T) {
-
-}
-
 func TestD1L2RegularizationDerivative(test *testing.T) {
 	r := omw.NewMt19937()
 	n := 10
@@ -76,10 +77,4 @@ func TestD1L2RegularizationDerivative(test *testing.T) {
 	}
 	maxDiffErr := omw.Max(diffErr...)
 	fmt.Println("maxDiffErr =", maxDiffErr)
-}
-
-func TestD1ClipL2Norm(t *testing.T) {
-	grad := tensor.D1{11, 20, 8}
-	result := mlfuncs.D1ClipL2Norm(grad, 10)
-	fmt.Println(result)
 }

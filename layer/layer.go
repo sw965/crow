@@ -122,12 +122,12 @@ func NewD1ReLUForward() D1Forward {
 	}
 }
 
-func NewD1LReLUForward(alpha float64) D1Forward {
+func NewD1LeakyReLUForward(alpha float64) D1Forward {
 	return func(x tensor.D1, backwards D1Backwards) (tensor.D1, D1Backwards, error) {
-		y := mlfuncs.D1LReLU(x, alpha)
+		y := mlfuncs.D1LeakyReLU(x, alpha)
 		var backward D1Backward
 		backward = func(chain tensor.D1) (tensor.D1, error) {
-			dydx := mlfuncs.D1LReLUDerivative(x, alpha)
+			dydx := mlfuncs.D1LeakyReLUDerivative(x, alpha)
 			dx, err := tensor.D1Mul(dydx, chain)
 			return dx, err
 		}
@@ -136,12 +136,12 @@ func NewD1LReLUForward(alpha float64) D1Forward {
 	}
 }
 
-func NewD1PReLUForward(alpha, gradAlpha *float64) D1Forward {
+func NewD1ParamReLUForward(alpha, gradAlpha *float64) D1Forward {
 	return func(x tensor.D1, backwards D1Backwards) (tensor.D1, D1Backwards, error) {
-		y := mlfuncs.D1PReLU(x, *alpha)
+		y := mlfuncs.D1LeakyReLU(x, *alpha)
 		var backward D1Backward
 		backward = func(chain tensor.D1) (tensor.D1, error) {
-			dydx, dydVectorizedAlpha := mlfuncs.D1PReLUDerivative(x, *alpha)
+			dydx, dydVectorizedAlpha := mlfuncs.D1ParamReLUDerivative(x, *alpha)
 
 			// ∂L/∂dVectorizedAlpha
 			dVectorizedAlpha, err := tensor.D1Mul(dydVectorizedAlpha, chain)
@@ -160,12 +160,12 @@ func NewD1PReLUForward(alpha, gradAlpha *float64) D1Forward {
 	}
 }
 
-func NewD1PRReLUForward(alpha *float64, min, max float64, gradAlpha *float64, isTrain *bool, r *rand.Rand) D1Forward {
+func NewD1ParamRandReLUForward(alpha *float64, min, max float64, gradAlpha *float64, isTrain *bool, r *rand.Rand) D1Forward {
 	return func(x tensor.D1, backwards D1Backwards) (tensor.D1, D1Backwards, error) {
-		y, noise := mlfuncs.D1PRReLU(x, *alpha, min, max, *isTrain, r)
+		y, noise := mlfuncs.D1ParamRandReLU(x, *alpha, min, max, *isTrain, r)
 		var backward D1Backward
 		backward = func(chain tensor.D1) (tensor.D1, error) {
-			dydx, dydVectorizedAlpha := mlfuncs.D1PRReLUDerivative(x, *alpha, noise)
+			dydx, dydVectorizedAlpha := mlfuncs.D1ParamRandReLUDerivative(x, *alpha, noise)
 
 			// ∂L/∂dVectorizedAlpha
 			dVectorizedAlpha, err := tensor.D1Mul(dydVectorizedAlpha, chain)

@@ -2,7 +2,6 @@ package model
 
 import (
 	"fmt"
-	"math"
 	"github.com/sw965/crow/layer"
 	"github.com/sw965/crow/tensor"
 	"github.com/sw965/crow/mlfuncs"
@@ -147,29 +146,6 @@ func (model *D1) Accuracy(x, t tensor.D2) (float64, error) {
 	return float64(correct) / float64(n), nil
 }
 
-func (model *D1) SWA(scale float64, oldParamD1 tensor.D1, oldParamD2 tensor.D2, oldParamD3 tensor.D3) error {
-	model.d1Var.Param.MulScalar(scale)
-	model.d2Var.Param.MulScalar(scale)
-	model.d3Var.Param.MulScalar(scale)
-
-	oldScale := 1.0 - scale
-	scaledOldParamD1 := tensor.D1MulScalar(oldParamD1, oldScale)
-	scaledOldParamD2 := tensor.D2MulScalar(oldParamD2, oldScale)
-	scaledOldParamD3 := tensor.D3MulScalar(oldParamD3, oldScale)
-
-	err := model.d1Var.Param.Add(scaledOldParamD1)
-	if err != nil {
-		panic(err)
-	}
-
-	err = model.d2Var.Param.Add(scaledOldParamD2)
-	if err != nil {
-		panic(err)
-	}
-
-	return model.d3Var.Param.Add(scaledOldParamD3)
-}
-
 func (model *D1) UpdateGrad(x, t tensor.D1) error {
 	bp, err := model.newBackPropagator(x, t)
 	if err != nil {
@@ -211,59 +187,4 @@ func (model *D1) Train(lr float64) {
 func (model *D1) UpdateGradAndTrain(x, t tensor.D1, lr float64) {
 	model.UpdateGrad(x, t)
 	model.Train(lr)
-}
-
-func (model *D1) ValidateBackwardGrad(x, t tensor.D1) error {
-	lossD1 := func(_ tensor.D1) float64 {
-		loss, err := model.MeanLoss(tensor.D2{x}, tensor.D2{t})
-		if err != nil {
-			panic(err)
-		}
-		return loss
-	}
-
-	lossD2 := func(_ tensor.D2) float64 {
-		loss, err := model.MeanLoss(tensor.D2{x}, tensor.D2{t})
-		if err != nil {
-			panic(err)
-		}
-		return loss
-	}
-
-	lossD3 := func(d2Params tensor.D3) float64 {
-		loss, err := model.MeanLoss(tensor.D2{x}, tensor.D2{t})
-		if err != nil {
-			panic(err)
-		}
-		return loss
-	} 
-
-	numGradD1 := mlfuncs.D1NumericalDifferentiation(model.d1Var.Param, lossD1)
-	numGradD2 := mlfuncs.D2NumericalDifferentiation(model.d2Var.Param, lossD2)
-	numGradD3 := mlfuncs.D3NumericalDifferentiation(model.d3Var.Param, lossD3)
-	mlfuncs.ClipL2Norm(numGradD1, numGradD2, numGradD3, model.L2NormGradClipThreshold)
-	model.UpdateGrad(x, t)
-
-	diffErrD1, err := tensor.D1Sub(model.d1Var.grad, numGradD1)
-	if err != nil {
-		return err
-	}
-	maxDiffErrD1 := diffErrD1.MapFunc(math.Abs).Max()
-
-	diffErrD2, err := tensor.D2Sub(model.d2Var.grad, numGradD2)
-	if err != nil {
-		return err
-	}
-	maxDiffErrD2 := diffErrD2.MapFunc(math.Abs).MaxAxisRow().Max()
-
-	diffErrD3, err := tensor.D3Sub(model.d3Var.grad, numGradD3)
-	if err != nil {
-		return err
-	}
-	maxDiffErrD3 := diffErrD3.MapFunc(math.Abs).MaxAxisRow().MaxAxisRow().Max()
-
-	fmt.Println("maxDiffErrD1 =", maxDiffErrD1)
-	fmt.Println("maxDiffErrD2 =", maxDiffErrD2)
-	fmt.Println("maxDiffErrD3 =", maxDiffErrD3)
-	return nil
 }

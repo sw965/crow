@@ -14,7 +14,7 @@ import (
 func TestModel(t *testing.T) {
 	r := omw.NewMt19937()
 	xSize := 784
-	hidden1Size := 192
+	hidden1Size := 196
 	hidden2Size := 64
 	ySize := 10
 
@@ -43,24 +43,28 @@ func TestModel(t *testing.T) {
 	d3Var.Init(0.9)
 
 	model := model.NewD1(&d1Var, &d2Var, &d3Var)
-	model.L2NormGradClipThreshold = 8.0
+	model.L2NormGradClipThreshold = 128.0
 	forwards := layer.D1Forwards{
 		layer.NewD1AffineForward(d3Var.Param[0], d2Var.Param[0], d3Var.GetGrad()[0], d2Var.GetGrad()[0]),
-		layer.NewD1PRReLUForward(&d1Var.Param[0], 0.5, 1.5, &d1Var.GetGrad()[0], &isTrain[0], r),
-		layer.NewD1DropoutForward(0.05, &isTrain[0], r),
+		//layer.NewD1ParamReLUForward(&d1Var.Param[0], &d1Var.GetGrad()[0]),
+		layer.NewD1ParamRandReLUForward(&d1Var.Param[0], 0.25, 1.75, &d1Var.GetGrad()[0], &isTrain[0], r),
+		//layer.NewD1LeakyReLUForward(0.1),
 
 		layer.NewD1AffineForward(d3Var.Param[1], d2Var.Param[1], d3Var.GetGrad()[1], d2Var.GetGrad()[1]),
-		layer.NewD1PRReLUForward(&d1Var.Param[1], 0.5, 1.5, &d1Var.GetGrad()[1], &isTrain[0], r),
-		layer.NewD1DropoutForward(0.05, &isTrain[0], r),
+		//layer.NewD1ParamReLUForward(&d1Var.Param[1], &d1Var.GetGrad()[1]),
+		layer.NewD1ParamRandReLUForward(&d1Var.Param[1], 0.25, 1.75, &d1Var.GetGrad()[1], &isTrain[0], r),
+		//layer.NewD1LeakyReLUForward(0.1),
 
 		layer.NewD1AffineForward(d3Var.Param[2], d2Var.Param[2], d3Var.GetGrad()[2], d2Var.GetGrad()[2]),
-		layer.NewD1PRReLUForward(&d1Var.Param[2], 0.5, 1.5, &d1Var.GetGrad()[2], &isTrain[0], r),
-		layer.NewD1DropoutForward(0.05, &isTrain[0], r),
+		//layer.NewD1ParamReLUForward(&d1Var.Param[2], &d1Var.GetGrad()[2]),
+		layer.NewD1ParamRandReLUForward(&d1Var.Param[2], 0.25, 1.75, &d1Var.GetGrad()[2], &isTrain[0], r),
+		//layer.NewD1LeakyReLUForward(0.1),
+		layer.NewD1TanhForward(),
 	}
 
 	model.Forwards = forwards
 	model.LossForward = layer.NewD1MeanSquaredErrorForward()
-	lambda := 0.0001
+	lambda := 0.001
 	model.ParamLoss = func(d1 tensor.D1, _ tensor.D2, d3 tensor.D3) float64 {
 		return mlfuncs.D1L2Regularization(d1, lambda) + mlfuncs.D3L2Regularization(d3, lambda)
 	}
@@ -74,10 +78,21 @@ func TestModel(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
+
+	for i := range mnist.TrainLabel {
+		mnist.TrainLabel[i] = mlfuncs.D1SigmoidToTanh(mnist.TrainLabel[i])
+	}
+	fmt.Println("koko", mnist.TrainLabel[0])
+
+	for i := range mnist.TestLabel {
+		mnist.TestLabel[i] = mlfuncs.D1SigmoidToTanh(mnist.TestLabel[i])
+	}
+
 	trainImgNum := len(mnist.TrainImg)
 	testImgNum := len(mnist.TestImg)
 	trainNum := 256000
 	testSize := 196
+
 	for i := 0; i < trainNum; i++ {
 		idx := r.Intn(trainImgNum)
 		model.UpdateGradAndTrain(mnist.TrainImg[idx], mnist.TrainLabel[idx], 0.01)
@@ -95,7 +110,7 @@ func TestModel(t *testing.T) {
 				panic(err)
 			}
 
-			fmt.Println("loss =", loss, "accuracy =", accuracy)
+			fmt.Println("i =", i, "loss =", loss, "accuracy =", accuracy)
 			isTrain[0] = true
 		}
 	}

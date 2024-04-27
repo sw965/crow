@@ -17,6 +17,10 @@ func D1SigmoidGrad(y tensor.D1) tensor.D1 {
 	return omw.MapFunc[tensor.D1](y, ScalarSigmoidGrad)
 }
 
+func D1SigmoidToTanh(y tensor.D1) tensor.D1 {
+	return omw.MapFunc[tensor.D1](y, ScalarSigmoidToTanh)
+}
+
 func D1Tanh(x tensor.D1) tensor.D1 {
 	return omw.MapFunc[tensor.D1](x, math.Tanh)
 }
@@ -27,6 +31,18 @@ func D1TanhGrad(y tensor.D1) tensor.D1 {
 
 func D1TanhToSigmoid(y tensor.D1) tensor.D1 {
 	return omw.MapFunc[tensor.D1](y, ScalarTanhToSigmoid)
+}
+
+func D1Softmax(x tensor.D1) tensor.D1 {
+	x = tensor.D1SubScalar(x, omw.Max(x...))
+	expX := make(tensor.D1, len(x))
+	sum := 0.0
+	for i := range expX {
+		expXi := math.Exp(x[i])
+		expX[i] = expXi
+		sum += expXi
+	}
+	return tensor.D1DivScalar(expX, sum)
 }
 
 func D1ReLU(x tensor.D1) tensor.D1 {
@@ -54,7 +70,7 @@ func D1ReLUDerivative(x tensor.D1) tensor.D1 {
 	return grad
 }
 
-func D1LReLU(x tensor.D1, alpha float64) tensor.D1 {
+func D1LeakyReLU(x tensor.D1, alpha float64) tensor.D1 {
 	y := make(tensor.D1, len(x))
 	for i := range x {
 		xi := x[i]
@@ -67,7 +83,7 @@ func D1LReLU(x tensor.D1, alpha float64) tensor.D1 {
 	return y
 }
 
-func D1LReLUDerivative(x tensor.D1, alpha float64) tensor.D1 {
+func D1LeakyReLUDerivative(x tensor.D1, alpha float64) tensor.D1 {
 	grad := make(tensor.D1, len(x))
 	for i := range x {
 		xi := x[i]
@@ -80,11 +96,7 @@ func D1LReLUDerivative(x tensor.D1, alpha float64) tensor.D1 {
 	return grad
 }
 
-func D1PReLU(x tensor.D1, alpha float64) tensor.D1 {
-	return D1LReLU(x, alpha)
-}
-
-func D1PReLUDerivative(x tensor.D1, alpha float64) (tensor.D1, tensor.D1) {
+func D1ParamReLUDerivative(x tensor.D1, alpha float64) (tensor.D1, tensor.D1) {
 	gradX := make(tensor.D1, len(x))
 	vectorizedGradAlpha := make(tensor.D1, len(x))
 	for i := range x {
@@ -100,7 +112,39 @@ func D1PReLUDerivative(x tensor.D1, alpha float64) (tensor.D1, tensor.D1) {
 	return gradX, vectorizedGradAlpha
 }
 
-func D1PRReLU(x tensor.D1, alpha, min, max float64, isTrain bool, r *rand.Rand) (tensor.D1, float64) {
+func D1RandReLU(x tensor.D1, min, max float64, isTrain bool, r *rand.Rand) (tensor.D1, float64) {
+	y := make(tensor.D1, len(x))
+	var noise float64
+	if isTrain {
+		noise = omw.RandFloat64(min, max, r)
+	} else {
+		noise = (min + max) / 2.0
+	}
+	for i := range y {
+		xi := x[i]
+		if xi > 0 {
+			y[i] = xi
+		} else {
+			y[i] = noise * xi
+		}
+	}
+	return y, noise
+}
+
+func D1RandReLUDerivative(x tensor.D1, noise float64) tensor.D1 {
+	grad := make(tensor.D1, len(x))
+	for i := range x {
+		xi := x[i]
+		if xi > 0 {
+			grad[i] = 1
+		} else {
+			grad[i] = noise
+		}
+	}
+	return grad
+}
+
+func D1ParamRandReLU(x tensor.D1, alpha, min, max float64, isTrain bool, r *rand.Rand) (tensor.D1, float64) {
 	y := make(tensor.D1, len(x))
 	var noise float64
 	if isTrain {
@@ -119,7 +163,7 @@ func D1PRReLU(x tensor.D1, alpha, min, max float64, isTrain bool, r *rand.Rand) 
 	return y, noise
 }
 
-func D1PRReLUDerivative(x tensor.D1, alpha, noise float64) (tensor.D1, tensor.D1) {
+func D1ParamRandReLUDerivative(x tensor.D1, alpha, noise float64) (tensor.D1, tensor.D1) {
 	gradX := make(tensor.D1, len(x))
 	vectorizedGradAlpha := make(tensor.D1, len(x))
 	for i := range x {
