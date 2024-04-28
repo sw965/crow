@@ -2,51 +2,10 @@ package tensor
 
 import (
     "fmt"
-    "math/rand"
     "golang.org/x/exp/slices"
 )
 
 type D2 []D1
-
-func NewD2Zeros(r, c int) D2 {
-	y := make(D2, r)
-	for i := range y {
-		y[i] = make(D1, c)
-	}
-	return y
-}
-
-func NewD2ZerosLike(x D2) D2 {
-    y := make(D2, len(x))
-    for i := range y {
-        y[i] = make(D1, len(x[i]))
-    }
-    return y
-}
-
-func NewD2Ones(r, c int) D2 {
-	y := make(D2, r)
-	for i := range y {
-		y[i] = NewD1Ones(c)
-	}
-	return y
-}
-
-func NewD2RandomUniform(r, c int, min, max float64, random *rand.Rand) D2 {
-    y := make(D2, r)
-    for i := range y {
-        y[i] = NewD1RandomUniform(c, min, max, random)
-    }
-    return y
-}
-
-func NewD2He(r, c int, random *rand.Rand) D2 {
-    y := make(D2, r)
-    for i := range y {
-        y[i] = NewD1He(c, random)
-    }
-    return y
-}
 
 func (d2 D2) AddScalar(scalar float64) {
     for i := range d2 {

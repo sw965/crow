@@ -42,15 +42,20 @@ func D2LinearSumDerivative(x, w tensor.D2) (tensor.D2, tensor.D2, tensor.D1, err
 	return gradX, gradW, gradB, nil
 }
 
-func D2L2Regularization(w tensor.D2, lambda float64) float64 {
-	f := func(w tensor.D1) float64 { return D1L2Regularization(w, lambda) }
-	l2 := omw.MapFunc[tensor.D1](w, f)
+func D2L2Regularization(w tensor.D2, l float64) float64 {
+	l2 := make(tensor.D1, len(w))
+	for i := range l2 {
+		l2[i] = D1L2Regularization(w[i], l)
+	}
 	return omw.Sum(l2...)
 }
 
-func D2L2RegularizationDerivative(w tensor.D2, lambda float64) tensor.D2 {
-	f := func(w tensor.D1) tensor.D1 { return D1L2RegularizationDerivative(w, lambda) }
-	return omw.MapFunc[tensor.D2](w, f)
+func D2L2RegularizationDerivative(w tensor.D2, l float64) tensor.D2 {
+	grad := make(tensor.D2, len(w))
+	for i := range grad {
+		grad[i] = D1L2RegularizationDerivative(w[i], l)
+	}
+	return grad
 }
 
 func D2NumericalDifferentiation(x tensor.D2, f func(tensor.D2)float64) tensor.D2 {

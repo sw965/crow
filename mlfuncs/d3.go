@@ -5,15 +5,20 @@ import (
 	"github.com/sw965/crow/tensor"
 )
 
-func D3L2Regularization(w tensor.D3, lambda float64) float64 {
-	f := func(w tensor.D2) float64 { return D2L2Regularization(w, lambda) }
-	l2 := omw.MapFunc[tensor.D1](w, f)
+func D3L2Regularization(w tensor.D3, l float64) float64 {
+	l2 := make(tensor.D1, len(w))
+	for i := range l2 {
+		l2[i] = D2L2Regularization(w[i], l)
+	}
 	return omw.Sum(l2...)
 }
 
-func D3L2RegularizationDerivative(w tensor.D3, lambda float64) tensor.D3 {
-	f := func(w tensor.D2) tensor.D2 { return D2L2RegularizationDerivative(w, lambda) }
-	return omw.MapFunc[tensor.D3](w, f)
+func D3L2RegularizationDerivative(w tensor.D3, l float64) tensor.D3 {
+	grad := make(tensor.D3, len(w))
+	for i := range grad {
+		grad[i] = D2L2RegularizationDerivative(w[i], l)
+	}
+	return grad
 }
 
 func D3NumericalDifferentiation(x tensor.D3, f func(tensor.D3)float64) tensor.D3 {

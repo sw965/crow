@@ -124,8 +124,10 @@ func (model *D1) MeanLoss(x, t tensor.D2) (float64, error) {
 		return 0.0, fmt.Errorf("入力値と正解ラベルのバッチ数が一致しないため、平均損失が計算できません。一致するようにしてください。")
 	}
 
-	paramLoss := model.D1ParamLoss(model.d1Var.Param) + model.D2ParamLoss(model.d2Var.Param) + model.D3ParamLoss(model.d3Var.Param)
-	sum := paramLoss * float64(n)
+	sum += model.D1ParamLoss(model.d1Var.Param) 
+	sum += model.D2ParamLoss(model.d2Var.Param)
+	sum += model.D3ParamLoss(model.d3Var.Param)
+	sum *= float64(n)
 
 	for i := range x {
 		y, err := model.Predict(x[i])
@@ -391,7 +393,6 @@ func (model *D2LinearSum) ValidateBackwardAndNumericalGradientDifference(x tenso
 	if err != nil {
 		return err
 	}
-
 	maxDiffErrW := diffErrW.MapFunc(math.Abs).MaxAxisRow().Max()
 	maxDiffErrB := diffErrB.MapFunc(math.Abs).Max()
 	fmt.Println("maxDiffErrW =", maxDiffErrW)

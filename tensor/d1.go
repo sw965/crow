@@ -2,48 +2,11 @@ package tensor
 
 import (
     "fmt"
-    "math"
-    "math/rand"
     "golang.org/x/exp/slices"
-
     "github.com/sw965/omw"
 )
 
 type D1 []float64
-
-func NewD1Zeros(n int) D1 {
-    return make(D1, n)
-} 
-
-func NewD1ZerosLike(x D1) D1 {
-    return make(D1, len(x))
-}
-
-func NewD1Ones(n int) D1 {
-	y := make(D1, n)
-	for i := range y {
-		y[i] = 1.0 
-	}
-	return y
-}
-
-func NewD1RandomUniform(n int, min, max float64, r *rand.Rand) D1 {
-	y := make(D1, n)
-	for i := range y {
-		y[i] = omw.RandFloat64(min, max, r)
-	}
-	return y
-
-}
-
-func NewD1He(n int, r *rand.Rand) D1 {
-    std := math.Sqrt(2.0 / float64(n))
-    y := make(D1, n)
-    for i := range y {
-        y[i] = r.NormFloat64() * std
-    }
-    return y
-}
 
 func (d1 D1) AddScalar(scalar float64) {
     for i := range d1 {

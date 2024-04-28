@@ -200,20 +200,20 @@ func D1MeanSquaredError(y, t tensor.D1) (float64, error) {
 		return 0.0, fmt.Errorf("len(y) != len(t) であるため、MeanSquaredErrorを計算できません。")
 	}
 
-    sum := 0.0
+    sqSum := 0.0
     for i := range y {
         diff := y[i] - t[i]
-        sum += (diff * diff)
+        sqSum += (diff * diff)
     }
     n := len(y)
-    return 0.5 * sum / float64(n), nil
+	mean := sqSum/float64(n)
+    return 0.5*mean, nil
 }
 
 func D1MeanSquaredErrorDerivative(y, t tensor.D1) (tensor.D1, error) {
 	if len(y) != len(t) {
 		return tensor.D1{}, fmt.Errorf("len(y) != len(t) であるため、MeanSquaredErrorDerivativeを計算できません。")
 	}
-
 	n := len(y)
     grad := make(tensor.D1, n)
     for i := range y {
@@ -223,12 +223,12 @@ func D1MeanSquaredErrorDerivative(y, t tensor.D1) (tensor.D1, error) {
 }
 
 func D1L2Regularization(w tensor.D1, lambda float64) float64 {
-	sum := 0.0
+	sqSum := 0.0
 	for i := range w {
 		wi := w[i]
-		sum += wi * wi
+		sqSum += wi * wi
 	}
-	return 0.5 * lambda * sum
+	return 0.5 * lambda * sqSum
 }
 
 func D1L2RegularizationDerivative(w tensor.D1, lambda float64) tensor.D1 {

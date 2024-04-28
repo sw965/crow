@@ -2,14 +2,9 @@ package tensor
 
 import (
 	"fmt"
-	"github.com/sw965/omw"
 )
 
 type D3 []D2
-
-func NewD3ZerosLike(d3 D3) D3 {
-	return omw.MapFunc[D3](d3, NewD2ZerosLike)
-}
 
 func (d3 D3) AddScalar(scalar float64) {
 	for i := range d3 {

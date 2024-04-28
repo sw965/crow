@@ -30,11 +30,11 @@ func (c *Calculator) Calculation(totalTrial int, C float64) float64 {
 type Manager[KS ~[]K, K comparable] map[K]*Calculator
 
 func (m Manager[KS, K]) Trials() []int {
-	trials := make([]int, 0, len(m))
+	ret := make([]int, 0, len(m))
 	for _, v := range m {
-		trials = append(trials, v.Trial)
+		ret = append(ret, v.Trial)
 	}
-	return trials
+	return ret
 }
 
 func (m Manager[KS, K]) TotalTrial() int {
@@ -75,11 +75,11 @@ func (m Manager[KS, K]) MaxTrialKeys() KS {
 
 func (m Manager[KS, K]) TrialPercents() map[K]float64 {
 	total := m.TotalTrial()
-	percents := map[K]float64{}
+	ret := map[K]float64{}
 	for k, v := range m {
-		percents[k] = float64(v.Trial) / float64(total)
+		ret[k] = float64(v.Trial) / float64(total)
 	}
-	return percents
+	return ret
 }
 
 type Managers[KS ~[]K, K comparable] []Manager[KS, K]

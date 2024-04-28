@@ -25,14 +25,14 @@ type Node[S any, ASS ~[]AS, AS ~[]A, A comparable] struct {
 }
 
 func (node *Node[S, ASS, AS, A]) MaxTrialActionsPath(r *rand.Rand, n int) ASS {
-	result := make(ASS, 0, n)
+	ret := make(ASS, 0, n)
 	for i := 0; i < n; i++ {
 		if len(node.PUCBManagers) == 0 {
 			break
 		}
 
-		maxTrialActions := node.PUCBManagers.MaxTrialKeys(r)
-		result = append(result, maxTrialActions)
+		actions := node.PUCBManagers.MaxTrialKeys(r)
+		ret = append(ret, actions)
 
 		if len(node.NextNodes) == 0 {
 			break
@@ -50,7 +50,7 @@ func (node *Node[S, ASS, AS, A]) MaxTrialActionsPath(r *rand.Rand, n int) ASS {
 		}
 		node = nextNode
 	}
-	return result
+	return ret
 }
 
 type Nodes[S any, ASS ~[]AS, AS ~[]A, A comparable] []*Node[S, ASS, AS, A]

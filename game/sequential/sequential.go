@@ -31,9 +31,9 @@ func (g *Game[S, AS, A]) Clone() Game[S, AS, A] {
 
 func (g *Game[S, AS, A]) SetRandomActionPlayer(r *rand.Rand) {
 	g.Player = func(state *S) (A, error) {
-		actions := g.LegalActions(state)
-		action := omw.RandChoice(actions, r)
-		return action, nil
+		legals := g.LegalActions(state)
+		ret := omw.RandChoice(legals, r)
+		return ret, nil
 	}
 }
 
