@@ -33,16 +33,22 @@ func D1TanhToSigmoid(y tensor.D1) tensor.D1 {
 	return omw.MapFunc[tensor.D1](y, ScalarTanhToSigmoid)
 }
 
-func D1Softmax(x tensor.D1) tensor.D1 {
-	x = tensor.D1SubScalar(x, omw.Max(x...))
-	expX := make(tensor.D1, len(x))
-	sum := 0.0
-	for i := range expX {
-		expXi := math.Exp(x[i])
-		expX[i] = expXi
-		sum += expXi
+func D1LinearSum(x, w tensor.D1, b float64) (float64, error) {
+	hadamard, err := tensor.D1Mul(x, w)
+	y := omw.Sum(hadamard...) + b
+	return y, err
+}
+
+func D1LinearSumDerivative(x, w tensor.D1) (tensor.D1, tensor.D1, float64, error) {
+	n := len(x)
+	gradX := make(tensor.D1, n)
+	gradW := make(tensor.D1, n)
+	gradB := 1.0
+	for i := range x {
+		gradX[i] = w[i]
+		gradW[i] = x[i]
 	}
-	return tensor.D1DivScalar(expX, sum)
+	return gradX, gradW, gradB, nil
 }
 
 func D1ReLU(x tensor.D1) tensor.D1 {
@@ -129,19 +135,6 @@ func D1RandReLU(x tensor.D1, min, max float64, isTrain bool, r *rand.Rand) (tens
 		}
 	}
 	return y, noise
-}
-
-func D1RandReLUDerivative(x tensor.D1, noise float64) tensor.D1 {
-	grad := make(tensor.D1, len(x))
-	for i := range x {
-		xi := x[i]
-		if xi > 0 {
-			grad[i] = 1
-		} else {
-			grad[i] = noise
-		}
-	}
-	return grad
 }
 
 func D1ParamRandReLU(x tensor.D1, alpha, min, max float64, isTrain bool, r *rand.Rand) (tensor.D1, float64) {

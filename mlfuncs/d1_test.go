@@ -9,12 +9,7 @@ import (
 	"math"
 )
 
-func TestD1Softmax(t *testing.T) {
-	x := tensor.D1{1, 2, 5, 4, 3}
-	fmt.Println(mlfuncs.D1Softmax(x))
-}
-
-func TestD1PReLUDerivative(test *testing.T) {
+func TestD1ParamReLUDerivative(test *testing.T) {
 	r := omw.NewMt19937()
 	x := tensor.NewD1RandomUniform(10, -0.1, 0.1, r)
 	t := tensor.NewD1RandomUniform(10, -0.1, 0.1, r)
@@ -22,7 +17,7 @@ func TestD1PReLUDerivative(test *testing.T) {
 	alpha := omw.RandFloat64(-0.1, 0.1, r)
 
 	loss := func(x tensor.D1, alpha float64) float64 {
-		y := mlfuncs.D1PReLU(x, alpha)
+		y := mlfuncs.D1LeakyReLU(x, alpha)
 		l, err := mlfuncs.D1MeanSquaredError(y, t)
 		if err != nil {
 			panic(err)
@@ -35,8 +30,8 @@ func TestD1PReLUDerivative(test *testing.T) {
 	numGradX := mlfuncs.D1NumericalDifferentiation(x, lossX)
 	numGradAlpha := mlfuncs.ScalarNumericalDifferentiation(alpha, lossAlpha)
 
-	dydx, dydVectorizedGradAlpha := mlfuncs.D1PReLUDerivative(x, alpha)
-	chain, err := mlfuncs.D1MeanSquaredErrorDerivative(mlfuncs.D1LReLU(x, alpha), t)
+	dydx, dydVectorizedGradAlpha := mlfuncs.D1ParamReLUDerivative(x, alpha)
+	chain, err := mlfuncs.D1MeanSquaredErrorDerivative(mlfuncs.D1LeakyReLU(x, alpha), t)
 	if err != nil {
 		panic(err)
 	}

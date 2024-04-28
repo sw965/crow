@@ -5,6 +5,43 @@ import (
 	"github.com/sw965/crow/tensor"
 )
 
+func D2SigmoidToTanh(y tensor.D2) tensor.D2 {
+	return omw.MapFunc[tensor.D2](y, D1SigmoidToTanh)
+}
+
+func D2TanhToSigmoid(y tensor.D2) tensor.D2 {
+	return omw.MapFunc[tensor.D2](y, D1TanhToSigmoid)
+}
+
+func D2LinearSum(x, w tensor.D2, b tensor.D1) (tensor.D1, error) {
+	var err error
+	y := make(tensor.D1, len(x))
+	for i := range y {
+		y[i], err = D1LinearSum(x[i], w[i], b[i])
+		if err != nil {
+			return tensor.D1{}, err
+		}
+	}
+	return y, nil
+}
+
+func D2LinearSumDerivative(x, w tensor.D2) (tensor.D2, tensor.D2, tensor.D1, error) {
+	n := len(x)
+	gradX := make(tensor.D2, n)
+	gradW := make(tensor.D2, n)
+	gradB := make(tensor.D1, n)
+	for i := range x {
+		gradXi, gradWi, gradBi, err := D1LinearSumDerivative(x[i], w[i])
+		if err != nil {
+			return tensor.D2{}, tensor.D2{}, tensor.D1{}, err
+		}
+		gradX[i] = gradXi
+		gradW[i] = gradWi
+		gradB[i] = gradBi
+	}
+	return gradX, gradW, gradB, nil
+}
+
 func D2L2Regularization(w tensor.D2, lambda float64) float64 {
 	f := func(w tensor.D1) float64 { return D1L2Regularization(w, lambda) }
 	l2 := omw.MapFunc[tensor.D1](w, f)

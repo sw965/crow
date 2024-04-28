@@ -52,17 +52,18 @@ func (bp *D1BackPropagator) Run() (tensor.D1, error) {
 
 func NewD1LinearForward(w tensor.D1, b float64, gradW tensor.D1, gradB *float64) D1Forward {
 	return func(x tensor.D1, backwards D1Backwards) (tensor.D1, D1Backwards, error) {
-		mul, err := tensor.D1Mul(x, w)
+		hadamard, err := tensor.D1Mul(x, w)
 		if err != nil {
 			return tensor.D1{}, D1Backwards{}, err
 		}
-		y := tensor.D1{omw.Sum(mul...) + b}
+		y := tensor.D1{omw.Sum(hadamard...) + b}
 
 		var backward D1Backward
 		backward = func(chain tensor.D1) (tensor.D1, error) {
 			// ∂L/∂w
 			dw := tensor.D1MulScalar(x, chain[0])
 			gradW.Copy(dw)
+
 			// ∂L/∂b
 			*gradB = omw.Sum(chain...)
 			dx := tensor.D1MulScalar(w, chain[0])
@@ -75,12 +76,11 @@ func NewD1LinearForward(w tensor.D1, b float64, gradW tensor.D1, gradB *float64)
 
 func NewD1AffineForward(w tensor.D2, b tensor.D1, gradW tensor.D2, gradB tensor.D1) D1Forward {
 	return func(x tensor.D1, backwards D1Backwards) (tensor.D1, D1Backwards, error) {
-		y, err := tensor.D2{x}.DotProduct(w)
+		dot, err := tensor.D2{x}.DotProduct(w)
 		if err != nil {
 			return tensor.D1{}, D1Backwards{}, err
 		}
-		err = y[0].Add(b)
-		//y, err := tensor.D1Add(dot[0], b)
+		y, err := tensor.D1Add(dot[0], b)
 
 		var backward D1Backward
 		backward = func(chain tensor.D1) (tensor.D1, error) {
@@ -103,7 +103,7 @@ func NewD1AffineForward(w tensor.D2, b tensor.D1, gradW tensor.D2, gradB tensor.
 			return dx[0], err
 		}
 		backwards = append(backwards, backward)
-		return y[0], backwards, err
+		return y, backwards, err
 	}
 }
 
@@ -151,6 +151,21 @@ func NewD1ParamReLUForward(alpha, gradAlpha *float64) D1Forward {
 			// ∂L/∂alpha
 			*gradAlpha = omw.Sum(dVectorizedAlpha...)
 
+			// ∂L/∂x
+			dx, err := tensor.D1Mul(dydx, chain)
+			return dx, err
+		}
+		backwards = append(backwards, backward)
+		return y, backwards, nil
+	}
+}
+
+func NewD1RandReLUForward(min, max float64, isTrain *bool, r *rand.Rand) D1Forward {
+	return func(x tensor.D1, backwards D1Backwards) (tensor.D1, D1Backwards, error) {
+		y, noise := mlfuncs.D1RandReLU(x, min, max, *isTrain, r)
+		var backward D1Backward
+		backward = func(chain tensor.D1) (tensor.D1, error) {
+			dydx := mlfuncs.D1LeakyReLUDerivative(x, noise)
 			// ∂L/∂x
 			dx, err := tensor.D1Mul(dydx, chain)
 			return dx, err
@@ -245,3 +260,39 @@ func NewD1MeanSquaredErrorForward() D1LossForward {
 		return l, backward, err
 	}
 }
+
+type D2LinearSumForward func(tensor.D2) (tensor.D1, D2LinearSumBackward, error)
+
+func NewD2LinearSumForward(w tensor.D2, b tensor.D1, gradW tensor.D2, gradB tensor.D1) D2LinearSumForward {
+	return func(x tensor.D2) (tensor.D1, D2LinearSumBackward, error) {
+		y, err := mlfuncs.D2LinearSum(x, w, b)
+		var backward D2LinearSumBackward
+		backward = func(chain tensor.D1) (tensor.D2, error) {
+			dydx, dydw, _, err := mlfuncs.D2LinearSumDerivative(x, w)
+			if err != nil {
+				return tensor.D2{}, err
+			}
+
+			// ∂L/∂x
+			dx, err := tensor.D2MulD1(dydx, chain)
+			if err != nil {
+				return tensor.D2{}, err
+			}
+
+			// ∂L/∂w
+			dw, err := tensor.D2MulD1(dydw, chain)
+			if err != nil {
+				return tensor.D2{}, err
+			}
+			gradW.Copy(dw)
+
+			// ∂L/∂b
+			db := chain
+			gradB.Copy(db)
+			return dx, err
+		}
+		return y, backward, err
+	}
+}
+
+type D2LinearSumBackward func(tensor.D1) (tensor.D2, error)
