@@ -336,10 +336,12 @@ func (model *D2LinearSum) Grad(x tensor.D2, t tensor.D1) (tensor.D2, tensor.D2, 
 	return dLdx, dLdw, dLdb, nil
 }
 
-func (model *D2LinearSum) Train(x tensor.D2, t tensor.D1) error {
+func (model *D2LinearSum) Train(x tensor.D2, t tensor.D1, lr float64) error {
 	_, dLdw, dLdb, err := model.Grad(x, t)
-	model.w.Copy(dLdw)
-	model.b.Copy(dLdb)
+	dLdw.MulScalar(lr)
+	dLdb.MulScalar(lr)
+	model.w.Sub(dLdw)
+	model.b.Sub(dLdb)
 	return err
 }
 
