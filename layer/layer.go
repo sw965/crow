@@ -224,7 +224,7 @@ type D1LossBackward func() (tensor.D1, error)
 
 func NewD1MeanSquaredErrorForward() D1LossForward {
 	return func(y, t tensor.D1) (float64, D1LossBackward, error) {
-		l, err := mlfuncs.D1MeanSquaredError(y, t)
+		loss, err := mlfuncs.D1MeanSquaredError(y, t)
 		var backward D1LossBackward
 		backward = func() (tensor.D1, error) {
 			dLdy, err := mlfuncs.D1MeanSquaredErrorDerivative(y, t)
@@ -233,42 +233,6 @@ func NewD1MeanSquaredErrorForward() D1LossForward {
 			}
 			return dLdy, err
 		}
-		return l, backward, err
+		return loss, backward, err
 	}
 }
-
-type D2LinearSumForward func(tensor.D2) (tensor.D1, D2LinearSumBackward, error)
-
-func NewD2LinearSumForward(w tensor.D2, b tensor.D1, gradW tensor.D2, gradB tensor.D1) D2LinearSumForward {
-	return func(x tensor.D2) (tensor.D1, D2LinearSumBackward, error) {
-		y, err := mlfuncs.D2LinearSum(x, w, b)
-		var backward D2LinearSumBackward
-		backward = func(chain tensor.D1) (tensor.D2, error) {
-			dydx, dydw, _, err := mlfuncs.D2LinearSumDerivative(x, w)
-			if err != nil {
-				return tensor.D2{}, err
-			}
-
-			// ∂L/∂x
-			dx, err := tensor.D2MulD1(dydx, chain)
-			if err != nil {
-				return tensor.D2{}, err
-			}
-
-			// ∂L/∂w
-			dw, err := tensor.D2MulD1(dydw, chain)
-			if err != nil {
-				return tensor.D2{}, err
-			}
-			gradW.Copy(dw)
-
-			// ∂L/∂b
-			db := chain
-			gradB.Copy(db)
-			return dx, err
-		}
-		return y, backward, err
-	}
-}
-
-type D2LinearSumBackward func(tensor.D1) (tensor.D2, error)

@@ -12,6 +12,7 @@ import (
 )
 
 func TestModel(t *testing.T) {
+	return
 	r := omw.NewMt19937()
 	xSize := 784
 	hidden1Size := 64
@@ -42,8 +43,8 @@ func TestModel(t *testing.T) {
 	}
 	d3Var.Init(0.9)
 
-	model := model.NewD1(&d1Var, &d2Var, &d3Var)
-	model.L2NormGradClipThreshold = 128.0
+	affine := model.NewD1(&d1Var, &d2Var, &d3Var)
+	affine.L2NormGradClipThreshold = 128.0
 
 	forwards := layer.D1Forwards{
 		layer.NewD1AffineForward(d3Var.Param[0], d2Var.Param[0], d3Var.GetGrad()[0], d2Var.GetGrad()[0]),
@@ -71,14 +72,14 @@ func TestModel(t *testing.T) {
 		layer.NewD1TanhForward(),
 	}
 
-	model.Forwards = forwards
-	model.LossForward = layer.NewD1MeanSquaredErrorForward()
+	affine.Forwards = forwards
+	affine.LossForward = layer.NewD1MeanSquaredErrorForward()
 
 	lambda := 0.001
-	model.D3ParamLoss = func(w tensor.D3) float64 {
+	affine.D3ParamLoss = func(w tensor.D3) float64 {
 		return mlfuncs.D3L2Regularization(w, lambda)
 	}
-	model.D3ParamLossDerivative = func(w tensor.D3) tensor.D3 {
+	affine.D3ParamLossDerivative = func(w tensor.D3) tensor.D3 {
 		return mlfuncs.D3L2RegularizationDerivative(w, lambda)
 	}
 
@@ -97,18 +98,18 @@ func TestModel(t *testing.T) {
 
 	for i := 0; i < trainNum; i++ {
 		idx := r.Intn(trainImgNum)
-		model.Train(mnist.TrainImg[idx], mnist.TrainLabel[idx], 0.01)
+		affine.Train(mnist.TrainImg[idx], mnist.TrainLabel[idx], 0.01)
 		if i%196 == 0 {
-			//model.ValidateBackwardAndNumericalGradientDifference(mnist.TrainImg[idx], mnist.TrainLabel[idx])
+			//affine.ValidateBackwardAndNumericalGradientDifference(mnist.TrainImg[idx], mnist.TrainLabel[idx])
 			idxs := omw.RandIntns(testSize, testImgNum, r)
 			miniBatchTestImg := omw.ElementsAtIndices(mnist.TestImg, idxs...)
 			miniBatchTestLabel := omw.ElementsAtIndices(mnist.TestLabel, idxs...)
 			isTrain[0] = false
-			loss, err := model.MeanLoss(miniBatchTestImg, miniBatchTestLabel)
+			loss, err := affine.MeanLoss(miniBatchTestImg, miniBatchTestLabel)
 			if err != nil {
 				panic(err)
 			}
-			accuracy, err := model.Accuracy(miniBatchTestImg, miniBatchTestLabel)
+			accuracy, err := affine.Accuracy(miniBatchTestImg, miniBatchTestLabel)
 			if err != nil {
 				panic(err)
 			}

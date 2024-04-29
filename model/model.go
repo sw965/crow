@@ -103,16 +103,6 @@ func NewD1(d1Var *D1Var, d2Var *D2Var, d3Var *D3Var) D1 {
 	return model
 }
 
-func (model *D1) newBackPropagator(x, t tensor.D1) (*layer.D1BackPropagator, error) {
-	y, backwards, err := model.Forwards.Run(x)
-	if err != nil {
-		return &layer.D1BackPropagator{}, err
-	}
-	_, lossBackward, err := model.LossForward(y, t)
-	bp := layer.NewD1BackPropagator(backwards, lossBackward)
-	return &bp, err
-}
-
 func (model *D1) Predict(x tensor.D1) (tensor.D1, error) {
 	y, _, err := model.Forwards.Run(x)
 	return y, err
@@ -124,7 +114,7 @@ func (model *D1) MeanLoss(x, t tensor.D2) (float64, error) {
 		return 0.0, fmt.Errorf("入力値と正解ラベルのバッチ数が一致しないため、平均損失が計算できません。一致するようにしてください。")
 	}
 
-	sum += model.D1ParamLoss(model.d1Var.Param) 
+	sum := model.D1ParamLoss(model.d1Var.Param)
 	sum += model.D2ParamLoss(model.d2Var.Param)
 	sum += model.D3ParamLoss(model.d3Var.Param)
 	sum *= float64(n)
@@ -160,6 +150,16 @@ func (model *D1) Accuracy(x, t tensor.D2) (float64, error) {
 		}
 	}
 	return float64(correct) / float64(n), nil
+}
+
+func (model *D1) newBackPropagator(x, t tensor.D1) (*layer.D1BackPropagator, error) {
+	y, backwards, err := model.Forwards.Run(x)
+	if err != nil {
+		return &layer.D1BackPropagator{}, err
+	}
+	_, lossBackward, err := model.LossForward(y, t)
+	bp := layer.NewD1BackPropagator(backwards, lossBackward)
+	return &bp, err
 }
 
 func (model *D1) UpdateGrad(x, t tensor.D1) error {
@@ -257,48 +257,105 @@ func (model *D1) ValidateBackwardAndNumericalGradientDifference(x, t tensor.D1) 
 }
 
 type D2LinearSum struct {
-	w D2Var
-	b D1Var
-	forward layer.D2LinearSumForward
-	OutputForward layer.D1Forward
-	LossForward layer.D1LossForward
+	w tensor.D2
+	b tensor.D1
+	outputFunc func(tensor.D1) tensor.D1
+	outputDerivative func(tensor.D1) tensor.D1
+	lossFunc func(tensor.D1, tensor.D1) (float64, error)
+	lossDerivative func(tensor.D1, tensor.D1) (tensor.D1, error)
 	l2Regularization float64
 }
 
-func NewD2LinearSum(w D2Var, b D1Var, lambda float64) D2LinearSum {
-	forward := layer.NewD2LinearSumForward(w.Param, b.Param, w.GetGrad(), b.GetGrad())
-	return D2LinearSum{w:w, b:b, forward:forward, l2Regularization:lambda}
+func NewD2LinearSum(
+	output,
+	outputPrime func(tensor.D1) tensor.D1,
+	loss func(tensor.D1, tensor.D1) (float64, error),
+	lossPrime func(tensor.D1, tensor.D1) (tensor.D1, error),
+	l2 float64) D2LinearSum {
+
+	return D2LinearSum{
+		outputFunc:output,
+		outputDerivative:outputPrime,
+		lossFunc:loss,
+		lossDerivative:lossPrime,
+		l2Regularization:l2,
+	}
 }
 
-func NewD2LinearSumTanhMSE(w D2Var, b D1Var, lambda float64) D2LinearSum {
-	model := NewD2LinearSum(w, b, lambda)
-	model.OutputForward = layer.NewD1TanhForward()
-	model.LossForward = layer.NewD1MeanSquaredErrorForward()
-	return model
+func NewD2LinearSumTanhMSE(l2 float64) D2LinearSum {
+	return NewD2LinearSum(
+		mlfuncs.D1Tanh,
+		mlfuncs.D1TanhDerivative,
+		mlfuncs.D1MeanSquaredError,
+		mlfuncs.D1MeanSquaredErrorDerivative,
+		l2,
+	)
+}
+
+func (model *D2LinearSum) SetParam(w tensor.D2, b tensor.D1) {
+	model.w = w
+	model.b = b
 }
 
 func (model *D2LinearSum) Predict(x tensor.D2) (tensor.D1, error) {
-	u1, _, err := model.forward(x)
-	if err != nil {
-		return tensor.D1{}, err
-	}
-	y, _, err := model.OutputForward(u1, make(layer.D1Backwards, 0, 1))
+	u, err := mlfuncs.D2LinearSum(x, model.w, model.b)
+	y := model.outputFunc(u)
 	return y, err
+}
+
+func (model *D2LinearSum) Grad(x tensor.D2, t tensor.D1) (tensor.D2, tensor.D2, tensor.D1, error) {
+	y, err := model.Predict(x)
+	if err != nil {
+		return tensor.D2{}, tensor.D2{}, tensor.D1{}, err
+	}
+
+	dLdy, err := model.lossDerivative(y, t)
+	if err != nil {
+		return tensor.D2{}, tensor.D2{}, tensor.D1{}, err
+	}
+
+	dydx, dydw, _, err := mlfuncs.D2LinearSumDerivative(x, model.w)
+	if err != nil {
+		return tensor.D2{}, tensor.D2{}, tensor.D1{}, err
+	}
+
+	dLdx :=  tensor.NewD2ZerosLike(dydx)
+	for i := range dLdx {
+		for j := range dLdx[i] {
+			dLdx[i][j] = dydx[i][j] * dLdy[i]
+		}
+	}
+
+	dLdw := tensor.NewD2ZerosLike(dydw)
+	for i := range dLdw {
+		for j := range dLdw[i] {
+			dLdw[i][j] = dydw[i][j] * dLdy[i]
+		}
+	}
+	dLdb := dLdy
+	return dLdx, dLdw, dLdb, nil
+}
+
+func (model *D2LinearSum) Train(x tensor.D2, t tensor.D1) error {
+	_, dLdw, dLdb, err := model.Grad(x, t)
+	model.w.Copy(dLdw)
+	model.b.Copy(dLdb)
+	return err
 }
 
 func (model *D2LinearSum) MeanLoss(x tensor.D3, t tensor.D2) (float64, error) {
 	n := len(x)
-	if len(x) != len(t) {
+	if n != len(t) {
 		return 0.0, fmt.Errorf("入力と正解ラベルのバッチ数が一致しません。平均誤差を求めるには、バッチ数が一致する必要があります。")
 	}
 
-	sum := mlfuncs.D2L2Regularization(model.w.Param, model.l2Regularization) * float64(n)
+	sum := mlfuncs.D2L2Regularization(model.w, model.l2Regularization) * float64(n)
 	for i := range x {
 		y, err := model.Predict(x[i])
 		if err != nil {
 			return 0.0, err
 		}
-		loss, _, err := model.LossForward(y, t[i])
+		loss, err := model.lossFunc(y, t[i])
 		if err != nil {
 			return 0.0, err
 		}
@@ -326,42 +383,15 @@ func (model *D2LinearSum) Accuracy(x tensor.D3, t tensor.D2) (float64, error) {
 	return float64(correct) / float64(n), nil
 }
 
-func (model *D2LinearSum) UpdateGrad(x tensor.D2, t tensor.D1) error {
-	u1, backward, err := model.forward(x)
-	if err != nil {
-		return err
-	}
-
-	y, yBackwards, err := model.OutputForward(u1, make(layer.D1Backwards, 0, 1))
-	if err != nil {
-		return err
-	}
-	yBackward := yBackwards[0]
-
-	_, lossBackward, err := model.LossForward(y, t)
-	if err != nil {
-		return err
-	}
-
-	chain, err := lossBackward()
-	if err != nil {
-		return err
-	}
-
-	chain, err = yBackward(chain)
-	if err != nil {
-		return err
-	}
-	_, err = backward(chain)
-	return err
-}
-
-func (model *D2LinearSum) Train(lr float64) {
-	model.w.Train(lr)
-	model.b.Train(lr)
-}
-
 func (model *D2LinearSum) ValidateBackwardAndNumericalGradientDifference(x tensor.D2, t tensor.D1) error {
+	lossX := func(x tensor.D2) float64 {
+		loss, err := model.MeanLoss(tensor.D3{x}, tensor.D2{t})
+		if err != nil {
+			panic(err)
+		}
+		return loss
+	}
+
 	lossW := func(w tensor.D2) float64 {
 		loss, err := model.MeanLoss(tensor.D3{x}, tensor.D2{t})
 		if err != nil {
@@ -378,13 +408,19 @@ func (model *D2LinearSum) ValidateBackwardAndNumericalGradientDifference(x tenso
 		return loss
 	}
 
-	numGradW := mlfuncs.D2NumericalDifferentiation(model.w.Param, lossW)
-	numGradB := mlfuncs.D1NumericalDifferentiation(model.b.Param, lossB)
+	numGradX := mlfuncs.D2NumericalDifferentiation(x, lossX)
+	numGradW := mlfuncs.D2NumericalDifferentiation(model.w, lossW)
+	numGradB := mlfuncs.D1NumericalDifferentiation(model.b, lossB)
 
-	model.UpdateGrad(x, t)
-	gradW := model.w.GetGrad()
-	gradB := model.b.GetGrad()
+	gradX, gradW, gradB, err := model.Grad(x, t)
+	if err != nil {
+		return err
+	}
 
+	diffErrX, err := tensor.D2Sub(numGradX, gradX)
+	if err != nil {
+		return err
+	}
 	diffErrW, err := tensor.D2Sub(numGradW, gradW)
 	if err != nil {
 		return err
@@ -393,8 +429,11 @@ func (model *D2LinearSum) ValidateBackwardAndNumericalGradientDifference(x tenso
 	if err != nil {
 		return err
 	}
+
+	maxDiffErrX := diffErrX.MapFunc(math.Abs).MaxAxisRow().Max()
 	maxDiffErrW := diffErrW.MapFunc(math.Abs).MaxAxisRow().Max()
 	maxDiffErrB := diffErrB.MapFunc(math.Abs).Max()
+	fmt.Println("maxDiffErrX =", maxDiffErrX)
 	fmt.Println("maxDiffErrW =", maxDiffErrW)
 	fmt.Println("maxDiffErrB =", maxDiffErrB)
 	return nil

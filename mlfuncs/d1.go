@@ -17,6 +17,10 @@ func D1SigmoidGrad(y tensor.D1) tensor.D1 {
 	return omw.MapFunc[tensor.D1](y, ScalarSigmoidGrad)
 }
 
+func D1SigmoidDerivative(x tensor.D1) tensor.D1 {
+	return omw.MapFunc[tensor.D1](x, ScalarSigmoidDerivative)
+}
+
 func D1SigmoidToTanh(y tensor.D1) tensor.D1 {
 	return omw.MapFunc[tensor.D1](y, ScalarSigmoidToTanh)
 }
@@ -27,6 +31,10 @@ func D1Tanh(x tensor.D1) tensor.D1 {
 
 func D1TanhGrad(y tensor.D1) tensor.D1 {
 	return omw.MapFunc[tensor.D1](y, ScalarTanhGrad)
+}
+
+func D1TanhDerivative(x tensor.D1) tensor.D1 {
+	return omw.MapFunc[tensor.D1](x, ScalarTanhDerivative)
 }
 
 func D1TanhToSigmoid(y tensor.D1) tensor.D1 {

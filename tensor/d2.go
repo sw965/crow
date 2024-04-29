@@ -43,16 +43,6 @@ func (d2 D2) SubScalar(scalar float64) {
     }
 }
 
-func (d2 D2) SubD1(d1 D1) error {
-    for i := range d2 {
-        err := d2[i].Sub(d1)
-        if err != nil {
-            return err
-        }
-    }
-    return nil
-}
-
 func (d2 D2) Sub(other D2) error {
     if len(d2) != len(other) {
         return fmt.Errorf("tensor.D2の行数が一致しないため、減算できません")
@@ -72,16 +62,6 @@ func (d2 D2) MulScalar(scalar float64) {
     }
 }
 
-func (d2 D2) MulD1(d1 D1) error {
-    for i := range d2 {
-        err := d2[i].Mul(d1)
-        if err != nil {
-            return err
-        }
-    }
-    return nil
-}
-
 func (d2 D2) Mul(other D2) error {
     if len(d2) != len(other) {
         return fmt.Errorf("tensor.D2の行数が一致しないため、乗算できません")
@@ -99,16 +79,6 @@ func (d2 D2) DivScalar(scalar float64) {
     for i := range d2 {
         d2[i].DivScalar(scalar)
     }
-}
-
-func (d2 D2) DivD1(d1 D1) error {
-    for i := range d2 {
-        err := d2[i].Div(d1)
-        if err != nil {
-            return err
-        }
-    }
-    return nil
 }
 
 func (d2 D2) Div(other D2) error {
@@ -195,12 +165,6 @@ func D2AddScalar(d2 D2, scalar float64) D2 {
     return y
 }
 
-func D2AddD1(d2 D2, d1 D1) (D2, error) {
-    y := d2.Clone()
-    err := y.AddD1(d1)
-    return y, err
-}
-
 func D2Add(d2, other D2) (D2, error) {
     y := d2.Clone()
     err := y.Add(other)
@@ -211,12 +175,6 @@ func D2SubScalar(d2 D2, scalar float64) D2 {
     y := d2.Clone()
     y.SubScalar(scalar)
     return y
-}
-
-func D2SubD1(d2 D2, d1 D1) (D2, error) {
-    y := d2.Clone()
-    err := y.SubD1(d1)
-    return y, err
 }
 
 func D2Sub(d2, other D2) (D2, error) {
@@ -231,12 +189,6 @@ func D2MulScalar(d2 D2, scalar float64) D2 {
     return y
 }
 
-func D2MulD1(d2 D2, d1 D1) (D2, error) {
-    y := d2.Clone()
-    err := y.MulD1(d1)
-    return y, err
-}
-
 
 func D2Mul(d2, other D2) (D2, error) {
     y := d2.Clone()
@@ -249,12 +201,6 @@ func D2DivScalar(d2 D2, scalar float64) D2 {
     y := d2.Clone()
     y.DivScalar(scalar)
     return y
-}
-
-func D2DivD1(d2 D2, d1 D1) (D2, error) {
-    y := d2.Clone()
-    err := y.DivD1(d1)
-    return y, err
 }
 
 func D2Div(d2, other D2) (D2, error) {
