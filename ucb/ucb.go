@@ -1,30 +1,44 @@
-package pucb
+package ucb
 
 import (
-	"math"
-	"math/rand"
 	"github.com/sw965/omw"
+	"math"
 )
 
-func Calculation(v, p, c float64, totalN, actionN int) float64 {
-	total := float64(totalN)
-	n := float64(actionN+1)
-	return v + (p * c * math.Sqrt(total) / n)
+type Func func(float64, float64, int, int) float64
+
+func New1Func(c float64) Func {
+	return func(v, p float64, total, n int) float64 {
+		t1 := float64(total + 1)
+		n1 := float64(n + 1)
+		exploration := c * p * math.Sqrt(math.Log(t1)/n1)
+		return v + exploration
+	}
+}
+
+func NewAlphaGoFunc(c float64) Func {
+	return func(v, p float64, total, n int) float64 {
+		t := float64(total)
+		n1 := float64(n + 1)
+		exploration := c * p * math.Sqrt(t) / n1
+		return v + exploration
+	}
 }
 
 type Calculator struct {
-	P float64
+	Func       Func
 	TotalValue float64
-	Trial       int
+	P          float64
+	Trial      int
 }
 
 func (c *Calculator) AverageValue() float64 {
 	return float64(c.TotalValue) / float64(c.Trial+1)
 }
 
-func (c *Calculator) Calculation(totalTrial int, C float64) float64 {
+func (c *Calculator) Calculation(totalTrial int) float64 {
 	v := c.AverageValue()
-	return Calculation(v, c.P, C, totalTrial, c.Trial)
+	return c.Func(v, c.P, totalTrial, c.Trial)
 }
 
 type Manager[KS ~[]K, K comparable] map[K]*Calculator
@@ -41,21 +55,21 @@ func (m Manager[KS, K]) TotalTrial() int {
 	return omw.Sum(m.Trials()...)
 }
 
-func (m Manager[KS, K]) Max(c float64) float64 {
+func (m Manager[KS, K]) Max() float64 {
 	total := m.TotalTrial()
-	pucbs := make([]float64, 0, len(m))
+	ucbs := make([]float64, 0, len(m))
 	for _, v := range m {
-		pucbs = append(pucbs, v.Calculation(total, c))
+		ucbs = append(ucbs, v.Calculation(total))
 	}
-	return omw.Max(pucbs...)
+	return omw.Max(ucbs...)
 }
 
-func (m Manager[KS, K]) MaxKeys(c float64) KS {
-	max := m.Max(c)
+func (m Manager[KS, K]) MaxKeys() KS {
+	max := m.Max()
 	total := m.TotalTrial()
 	ks := make(KS, 0, len(m))
 	for k, v := range m {
-		if v.Calculation(total, c) == max {
+		if v.Calculation(total) == max {
 			ks = append(ks, k)
 		}
 	}
@@ -83,19 +97,3 @@ func (m Manager[KS, K]) TrialPercents() map[K]float64 {
 }
 
 type Managers[KS ~[]K, K comparable] []Manager[KS, K]
-
-func (ms Managers[KS, K]) MaxKeys(c float64, r *rand.Rand) KS {
-	ks := make(KS, len(ms))
-	for playerI, m := range ms {
-		ks[playerI] = omw.RandChoice(m.MaxKeys(c), r)
-	}
-	return ks
-}
-
-func (ms Managers[KS, K]) MaxTrialKeys(r *rand.Rand) KS {
-	ks := make(KS, len(ms))
-	for playerI, m := range ms {
-		ks[playerI] = omw.RandChoice(m.MaxTrialKeys(), r)
-	}
-	return ks
-}

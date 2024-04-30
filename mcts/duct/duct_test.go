@@ -1,9 +1,10 @@
-package dpuct_test
+package duct_test
 
 import (
 	"fmt"
 	"github.com/sw965/crow/game/simultaneous"
-	"github.com/sw965/crow/mcts/dpuct"
+	"github.com/sw965/crow/mcts/duct"
+	"github.com/sw965/crow/ucb"
 	"github.com/sw965/omw"
 	"math"
 	"testing"
@@ -56,39 +57,40 @@ func TestDPUCT(t *testing.T) {
 
 	game.SetRandomActionPlayer(r)
 
-	leafNodeEvalsFunc := func(rps *RockPaperScissors) dpuct.LeafNodeEvalYs {
+	leafNodeEvalsFunc := func(rps *RockPaperScissors) duct.LeafNodeEvalYs {
 		if rps.Hand1 == rps.Hand2 {
-			return dpuct.LeafNodeEvalYs{0.5, 0.5}
+			return duct.LeafNodeEvalYs{0.5, 0.5}
 		}
 
-		reward := map[Hand]map[Hand]dpuct.LeafNodeEvalY{
-			ROCK:     map[Hand]dpuct.LeafNodeEvalY{SCISSORS: 1.0, PAPER: 0.0},
-			SCISSORS: map[Hand]dpuct.LeafNodeEvalY{ROCK: 0.0, PAPER: 1.0},
-			PAPER:    map[Hand]dpuct.LeafNodeEvalY{ROCK: 1.0, SCISSORS: 0.0},
+		reward := map[Hand]map[Hand]duct.LeafNodeEvalY{
+			ROCK:     map[Hand]duct.LeafNodeEvalY{SCISSORS: 1.0, PAPER: 0.0},
+			SCISSORS: map[Hand]duct.LeafNodeEvalY{ROCK: 0.0, PAPER: 1.0},
+			PAPER:    map[Hand]duct.LeafNodeEvalY{ROCK: 1.0, SCISSORS: 0.0},
 		}
 
 		y := reward[rps.Hand1][rps.Hand2]
-		return dpuct.LeafNodeEvalYs{y, 1.0 - y}
+		return duct.LeafNodeEvalYs{y, 1.0 - y}
 	}
 
-	mcts := dpuct.MCTS[RockPaperScissors, Handss, Hands, Hand]{
-		Game:      game,
+	mcts := duct.MCTS[RockPaperScissors, Handss, Hands, Hand]{
+		Game:              game,
 		LeafNodeEvalsFunc: leafNodeEvalsFunc,
 	}
 	mcts.SetUniformActionPoliciesFunc()
+	mcts.UCBFunc = ucb.New1Func(math.Sqrt(2))
 
 	fmt.Println(mcts.ActionPoliciesFunc(&RockPaperScissors{}))
 
-	allNodes, err := mcts.Run(196000, RockPaperScissors{}, math.Sqrt(25), r)
+	allNodes, err := mcts.Run(1960, RockPaperScissors{}, r)
 	if err != nil {
 		panic(err)
 	}
-	
-	for i, m := range allNodes[0].PUCBManagers {
+
+	for i, m := range allNodes[0].UCBManagers {
 		for a, pucb := range m {
 			fmt.Println(i, a, pucb.AverageValue(), pucb.Trial)
 		}
 	}
 
-	fmt.Println(allNodes[0].MaxTrialActionsPath(r, 64))
+	fmt.Println(allNodes[0].MaxTrialJointActionPath(r, 64))
 }

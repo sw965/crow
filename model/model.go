@@ -292,7 +292,10 @@ func NewD2LinearSumTanhMSE(l2 float64) D2LinearSum {
 	)
 }
 
-func (model *D2LinearSum) SetParam(w tensor.D2, b tensor.D1) {
+func (model *D2LinearSum) SetParam(w tensor.D2, b tensor.D1) error {
+	if len(w) != len(b) {
+		return fmt.Errorf("wの行数とbの要素数が一致しません{len(w) != len(b)}")
+	}
 	model.w = w
 	model.b = b
 }

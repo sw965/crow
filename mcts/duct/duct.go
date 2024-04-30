@@ -1,14 +1,13 @@
-package dpuct
+package duct
 
 import (
-	"math/rand"
 	"github.com/sw965/crow/game/simultaneous"
-	"github.com/sw965/crow/pucb"
+	"github.com/sw965/crow/ucb"
+	"github.com/sw965/omw"
+	"math/rand"
 )
 
 type ActionPolicy[A comparable] map[A]float64
-type ActionPolicyFunc[S any, A comparable] func(*S) ActionPolicy[A]
-
 type ActionPolicies[A comparable] []ActionPolicy[A]
 type ActionPoliciesFunc[S any, A comparable] func(*S) ActionPolicies[A]
 
@@ -17,22 +16,25 @@ type LeafNodeEvalYs []LeafNodeEvalY
 type LeafNodeEvalsFunc[S any] func(*S) LeafNodeEvalYs
 
 type Node[S any, ASS ~[]AS, AS ~[]A, A comparable] struct {
-	State        S
-	PUCBManagers pucb.Managers[AS, A]
-	NextNodes    Nodes[S, ASS, AS, A]
-	Trial        int
-	SelectCount  int
+	State       S
+	UCBManagers ucb.Managers[AS, A]
+	NextNodes   Nodes[S, ASS, AS, A]
+	Trial       int
 }
 
-func (node *Node[S, ASS, AS, A]) MaxTrialActionsPath(r *rand.Rand, n int) ASS {
+func (node *Node[S, ASS, AS, A]) MaxTrialJointActionPath(r *rand.Rand, n int) ASS {
 	ret := make(ASS, 0, n)
 	for i := 0; i < n; i++ {
-		if len(node.PUCBManagers) == 0 {
+		simultaneousN := len(node.UCBManagers)
+		if simultaneousN == 0 {
 			break
 		}
 
-		actions := node.PUCBManagers.MaxTrialKeys(r)
-		ret = append(ret, actions)
+		jointAction := make(AS, simultaneousN)
+		for playerI, m := range node.UCBManagers {
+			jointAction[playerI] = omw.RandChoice(m.MaxTrialKeys(), r)
+		}
+		ret = append(ret, jointAction)
 
 		if len(node.NextNodes) == 0 {
 			break
@@ -64,36 +66,36 @@ func (nodes Nodes[S, ASS, AS, A]) Find(state *S, eq simultaneous.EqualFunc[S]) (
 	return &Node[S, ASS, AS, A]{}, false
 }
 
-type Select[S any, ASS ~[]AS, AS ~[]A, A comparable] struct {
-	Node    *Node[S, ASS, AS, A]
-	Actions AS
+type nodeSelect[S any, ASS ~[]AS, AS ~[]A, A comparable] struct {
+	node        *Node[S, ASS, AS, A]
+	jointAction AS
 }
 
-type Selects[S any, ASS ~[]AS, AS ~[]A, A comparable] []Select[S, ASS, AS, A]
+type selects[S any, ASS ~[]AS, AS ~[]A, A comparable] []nodeSelect[S, ASS, AS, A]
 
-func (ss Selects[S, ASS, AS, A]) Backward(ys LeafNodeEvalYs) {
+func (ss selects[S, ASS, AS, A]) Backward(ys LeafNodeEvalYs) {
 	for _, s := range ss {
-		node := s.Node
-		actions := s.Actions
-		for playerI, action := range actions {
-			node.PUCBManagers[playerI][action].TotalValue += float64(ys[playerI])
-			node.PUCBManagers[playerI][action].Trial += 1
+		node := s.node
+		jointAction := s.jointAction
+		for playerI, action := range jointAction {
+			node.UCBManagers[playerI][action].TotalValue += float64(ys[playerI])
+			node.UCBManagers[playerI][action].Trial += 1
 		}
-		node.SelectCount = 0
 	}
 }
 
 type MCTS[S any, ASS ~[]AS, AS ~[]A, A comparable] struct {
-	Game      simultaneous.Game[S, ASS, AS, A]
-	ActionPoliciesFunc  ActionPoliciesFunc[S, A]
-	LeafNodeEvalsFunc LeafNodeEvalsFunc[S]
+	Game               simultaneous.Game[S, ASS, AS, A]
+	UCBFunc            ucb.Func
+	ActionPoliciesFunc ActionPoliciesFunc[S, A]
+	LeafNodeEvalsFunc  LeafNodeEvalsFunc[S]
 }
 
 func (mcts *MCTS[S, ASS, AS, A]) SetUniformActionPoliciesFunc() {
 	mcts.ActionPoliciesFunc = func(state *S) ActionPolicies[A] {
-		actionss := mcts.Game.LegalActionss(state)
-		policies := make(ActionPolicies[A], len(actionss))
-		for playerI, as := range actionss {
+		ass := mcts.Game.LegalActionss(state)
+		policies := make(ActionPolicies[A], len(ass))
+		for playerI, as := range ass {
 			policy := ActionPolicy[A]{}
 			n := len(as)
 			p := 1.0 / float64(n)
@@ -108,28 +110,30 @@ func (mcts *MCTS[S, ASS, AS, A]) SetUniformActionPoliciesFunc() {
 
 func (mcts *MCTS[S, ASS, AS, A]) NewNode(state *S) *Node[S, ASS, AS, A] {
 	policies := mcts.ActionPoliciesFunc(state)
-	ms := make(pucb.Managers[AS, A], len(policies))
+	ms := make(ucb.Managers[AS, A], len(policies))
 	for playerI, policy := range policies {
-		m := pucb.Manager[AS, A]{}
+		m := ucb.Manager[AS, A]{}
 		for a, p := range policy {
-			m[a] = &pucb.Calculator{P: p}
+			m[a] = &ucb.Calculator{Func: mcts.UCBFunc, P: p}
 		}
 		ms[playerI] = m
 	}
-	return &Node[S, ASS, AS, A]{State: *state, PUCBManagers: ms}
+	return &Node[S, ASS, AS, A]{State: *state, UCBManagers: ms}
 }
 
-func (mcts *MCTS[S, ASS, AS, A]) SelectExpansionBackward(node *Node[S, ASS, AS, A], allNodes Nodes[S, ASS, AS, A], c float64, r *rand.Rand, cap_ int) (Nodes[S, ASS, AS, A], int, error) {
+func (mcts *MCTS[S, ASS, AS, A]) SelectExpansionBackward(node *Node[S, ASS, AS, A], allNodes Nodes[S, ASS, AS, A], r *rand.Rand, capacity int) (Nodes[S, ASS, AS, A], int, error) {
 	state := node.State
-	selects := make(Selects[S, ASS, AS, A], 0, cap_)
+	selects := make(selects[S, ASS, AS, A], 0, capacity)
 	var err error
 	for {
-		actions := node.PUCBManagers.MaxKeys(c, r)
-		selects = append(selects, Select[S, ASS, AS, A]{Node: node, Actions: actions})
+		jointAction := make(AS, len(node.UCBManagers))
+		for playerI, m := range node.UCBManagers {
+			jointAction[playerI] = omw.RandChoice(m.MaxKeys(), r)
+		}
+		selects = append(selects, nodeSelect[S, ASS, AS, A]{node: node, jointAction: jointAction})
 		node.Trial += 1
-		node.SelectCount += 1
 
-		state, err = mcts.Game.Push(state, actions)
+		state, err = mcts.Game.Push(state, jointAction)
 		if err != nil {
 			return Nodes[S, ASS, AS, A]{}, 0, err
 		}
@@ -159,10 +163,6 @@ func (mcts *MCTS[S, ASS, AS, A]) SelectExpansionBackward(node *Node[S, ASS, AS, 
 				break
 			}
 		}
-
-		if nextNode.SelectCount == 1 {
-			break
-		}
 		node = nextNode
 	}
 
@@ -171,13 +171,13 @@ func (mcts *MCTS[S, ASS, AS, A]) SelectExpansionBackward(node *Node[S, ASS, AS, 
 	return allNodes, len(selects), nil
 }
 
-func (mcts *MCTS[S, ASS, AS, A]) Run(simulation int, rootState S, c float64, r *rand.Rand) (Nodes[S, ASS, AS, A], error) {
+func (mcts *MCTS[S, ASS, AS, A]) Run(simulation int, rootState S, r *rand.Rand) (Nodes[S, ASS, AS, A], error) {
 	rootNode := mcts.NewNode(&rootState)
 	allNodes := Nodes[S, ASS, AS, A]{rootNode}
-	selectNum := 0
+	var selectCount int
 	var err error
 	for i := 0; i < simulation; i++ {
-		allNodes, selectNum, err = mcts.SelectExpansionBackward(rootNode, allNodes, c, r, selectNum+1)
+		allNodes, selectCount, err = mcts.SelectExpansionBackward(rootNode, allNodes, r, selectCount+1)
 		if err != nil {
 			return Nodes[S, ASS, AS, A]{}, err
 		}
