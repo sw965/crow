@@ -29,7 +29,7 @@ type RockPaperScissors struct {
 	Hand2 Hand
 }
 
-func TestDPUCT(t *testing.T) {
+func TestDUCT(t *testing.T) {
 	r := omw.NewMt19937()
 
 	legalActionss := func(rps *RockPaperScissors) Handss {
@@ -77,11 +77,22 @@ func TestDPUCT(t *testing.T) {
 		LeafNodeEvalsFunc: leafNodeEvalsFunc,
 	}
 	mcts.SetUniformActionPoliciesFunc()
-	mcts.UCBFunc = ucb.New1Func(math.Sqrt(2))
+	//mcts.UCBFunc = ucb.New1Func(math.Sqrt(1000))
+	mcts.UCBFunc = ucb.NewAlphaGoFunc(math.Sqrt(2))
 
 	fmt.Println(mcts.ActionPoliciesFunc(&RockPaperScissors{}))
-
-	allNodes, err := mcts.Run(1960, RockPaperScissors{}, r)
+	allNodes := mcts.NewAllNodes(&RockPaperScissors{})
+	allNodes, err := mcts.Run(19600, allNodes, r)
+	if err != nil {
+		panic(err)
+	}
+	for i, m := range allNodes[0].UCBManagers {
+		for a, pucb := range m {
+			fmt.Println(i, a, pucb.AverageValue(), pucb.Trial)
+		}
+	}
+	fmt.Println("")
+	allNodes, err = mcts.Run(19600, allNodes, r)
 	if err != nil {
 		panic(err)
 	}

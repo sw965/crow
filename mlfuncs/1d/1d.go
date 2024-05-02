@@ -1,4 +1,4 @@
-package mlfuncs
+package mlfuncs1d
 
 import (
 	"fmt"
@@ -7,47 +7,48 @@ import (
 
 	"github.com/sw965/omw"
 	"github.com/sw965/crow/tensor"
+	"github.com/sw965/crow/mlfuncs/scalar"
 )
 
-func D1Sigmoid(x tensor.D1) tensor.D1 {
-	return omw.MapFunc[tensor.D1](x, ScalarSigmoid)
+func Sigmoid(x tensor.D1) tensor.D1 {
+	return omw.MapFunc[tensor.D1](x, scalar.Sigmoid)
 }
 
-func D1SigmoidGrad(y tensor.D1) tensor.D1 {
-	return omw.MapFunc[tensor.D1](y, ScalarSigmoidGrad)
+func SigmoidGrad(y tensor.D1) tensor.D1 {
+	return omw.MapFunc[tensor.D1](y, scalar.SigmoidGrad)
 }
 
-func D1SigmoidDerivative(x tensor.D1) tensor.D1 {
-	return omw.MapFunc[tensor.D1](x, ScalarSigmoidDerivative)
+func SigmoidDerivative(x tensor.D1) tensor.D1 {
+	return omw.MapFunc[tensor.D1](x, scalar.SigmoidDerivative)
 }
 
-func D1SigmoidToTanh(y tensor.D1) tensor.D1 {
-	return omw.MapFunc[tensor.D1](y, ScalarSigmoidToTanh)
+func SigmoidToTanh(y tensor.D1) tensor.D1 {
+	return omw.MapFunc[tensor.D1](y, scalar.SigmoidToTanh)
 }
 
-func D1Tanh(x tensor.D1) tensor.D1 {
+func Tanh(x tensor.D1) tensor.D1 {
 	return omw.MapFunc[tensor.D1](x, math.Tanh)
 }
 
-func D1TanhGrad(y tensor.D1) tensor.D1 {
-	return omw.MapFunc[tensor.D1](y, ScalarTanhGrad)
+func TanhGrad(y tensor.D1) tensor.D1 {
+	return omw.MapFunc[tensor.D1](y, scalar.TanhGrad)
 }
 
-func D1TanhDerivative(x tensor.D1) tensor.D1 {
-	return omw.MapFunc[tensor.D1](x, ScalarTanhDerivative)
+func TanhDerivative(x tensor.D1) tensor.D1 {
+	return omw.MapFunc[tensor.D1](x, scalar.TanhDerivative)
 }
 
-func D1TanhToSigmoid(y tensor.D1) tensor.D1 {
-	return omw.MapFunc[tensor.D1](y, ScalarTanhToSigmoid)
+func TanhToSigmoid(y tensor.D1) tensor.D1 {
+	return omw.MapFunc[tensor.D1](y, scalar.TanhToSigmoid)
 }
 
-func D1LinearSum(x, w tensor.D1, b float64) (float64, error) {
+func LinearSum(x, w tensor.D1, b float64) (float64, error) {
 	hadamard, err := tensor.D1Mul(x, w)
 	y := omw.Sum(hadamard...) + b
 	return y, err
 }
 
-func D1LinearSumDerivative(x, w tensor.D1) (tensor.D1, tensor.D1, float64, error) {
+func LinearSumDerivative(x, w tensor.D1) (tensor.D1, tensor.D1, float64, error) {
 	n := len(x)
 	gradX := make(tensor.D1, n)
 	gradW := make(tensor.D1, n)
@@ -59,7 +60,7 @@ func D1LinearSumDerivative(x, w tensor.D1) (tensor.D1, tensor.D1, float64, error
 	return gradX, gradW, gradB, nil
 }
 
-func D1ReLU(x tensor.D1) tensor.D1 {
+func ReLU(x tensor.D1) tensor.D1 {
 	y := make(tensor.D1, len(x))
 	for i := range x {
 		xi := x[i]
@@ -72,7 +73,7 @@ func D1ReLU(x tensor.D1) tensor.D1 {
 	return y
 }
 
-func D1ReLUDerivative(x tensor.D1) tensor.D1 {
+func ReLUDerivative(x tensor.D1) tensor.D1 {
 	grad := make(tensor.D1, len(x))
 	for i := range x {
 		if x[i] > 0 {
@@ -84,7 +85,7 @@ func D1ReLUDerivative(x tensor.D1) tensor.D1 {
 	return grad
 }
 
-func D1LeakyReLU(x tensor.D1, alpha float64) tensor.D1 {
+func LeakyReLU(x tensor.D1, alpha float64) tensor.D1 {
 	y := make(tensor.D1, len(x))
 	for i := range x {
 		xi := x[i]
@@ -97,7 +98,7 @@ func D1LeakyReLU(x tensor.D1, alpha float64) tensor.D1 {
 	return y
 }
 
-func D1LeakyReLUDerivative(x tensor.D1, alpha float64) tensor.D1 {
+func LeakyReLUDerivative(x tensor.D1, alpha float64) tensor.D1 {
 	grad := make(tensor.D1, len(x))
 	for i := range x {
 		xi := x[i]
@@ -110,7 +111,7 @@ func D1LeakyReLUDerivative(x tensor.D1, alpha float64) tensor.D1 {
 	return grad
 }
 
-func D1ParamReLUDerivative(x tensor.D1, alpha float64) (tensor.D1, tensor.D1) {
+func ParamReLUDerivative(x tensor.D1, alpha float64) (tensor.D1, tensor.D1) {
 	gradX := make(tensor.D1, len(x))
 	vectorizedGradAlpha := make(tensor.D1, len(x))
 	for i := range x {
@@ -126,7 +127,7 @@ func D1ParamReLUDerivative(x tensor.D1, alpha float64) (tensor.D1, tensor.D1) {
 	return gradX, vectorizedGradAlpha
 }
 
-func D1RandReLU(x tensor.D1, min, max float64, isTrain bool, r *rand.Rand) (tensor.D1, float64) {
+func RandReLU(x tensor.D1, min, max float64, isTrain bool, r *rand.Rand) (tensor.D1, float64) {
 	y := make(tensor.D1, len(x))
 	var noise float64
 	if isTrain {
@@ -145,7 +146,7 @@ func D1RandReLU(x tensor.D1, min, max float64, isTrain bool, r *rand.Rand) (tens
 	return y, noise
 }
 
-func D1ParamRandReLU(x tensor.D1, alpha, min, max float64, isTrain bool, r *rand.Rand) (tensor.D1, float64) {
+func ParamRandReLU(x tensor.D1, alpha, min, max float64, isTrain bool, r *rand.Rand) (tensor.D1, float64) {
 	y := make(tensor.D1, len(x))
 	var noise float64
 	if isTrain {
@@ -164,7 +165,7 @@ func D1ParamRandReLU(x tensor.D1, alpha, min, max float64, isTrain bool, r *rand
 	return y, noise
 }
 
-func D1ParamRandReLUDerivative(x tensor.D1, alpha, noise float64) (tensor.D1, tensor.D1) {
+func ParamRandReLUDerivative(x tensor.D1, alpha, noise float64) (tensor.D1, tensor.D1) {
 	gradX := make(tensor.D1, len(x))
 	vectorizedGradAlpha := make(tensor.D1, len(x))
 	for i := range x {
@@ -180,7 +181,7 @@ func D1ParamRandReLUDerivative(x tensor.D1, alpha, noise float64) (tensor.D1, te
 	return gradX, vectorizedGradAlpha
 }
 
-func D1Dropout(x tensor.D1, p float64, isTrain bool, r *rand.Rand) (tensor.D1, tensor.D1) {
+func Dropout(x tensor.D1, p float64, isTrain bool, r *rand.Rand) (tensor.D1, tensor.D1) {
 	n := len(x)
 	y := make(tensor.D1, n)
 	mask := make(tensor.D1, n)
@@ -203,7 +204,7 @@ func D1Dropout(x tensor.D1, p float64, isTrain bool, r *rand.Rand) (tensor.D1, t
 	return y, mask
 }
 
-func D1MeanSquaredError(y, t tensor.D1) (float64, error) {
+func MeanSquaredError(y, t tensor.D1) (float64, error) {
 	if len(y) != len(t) {
 		return 0.0, fmt.Errorf("len(y) != len(t) であるため、MeanSquaredErrorを計算できません。")
 	}
@@ -218,7 +219,7 @@ func D1MeanSquaredError(y, t tensor.D1) (float64, error) {
     return 0.5*mean, nil
 }
 
-func D1MeanSquaredErrorDerivative(y, t tensor.D1) (tensor.D1, error) {
+func MeanSquaredErrorDerivative(y, t tensor.D1) (tensor.D1, error) {
 	if len(y) != len(t) {
 		return tensor.D1{}, fmt.Errorf("len(y) != len(t) であるため、MeanSquaredErrorDerivativeを計算できません。")
 	}
@@ -230,24 +231,27 @@ func D1MeanSquaredErrorDerivative(y, t tensor.D1) (tensor.D1, error) {
     return grad, nil
 }
 
-func D1L2Regularization(w tensor.D1, lambda float64) float64 {
-	sqSum := 0.0
-	for i := range w {
-		wi := w[i]
-		sqSum += wi * wi
+func L2Regularization(c float64) func(tensor.D1) float64 {
+	return func(w tensor.D1) float64 {
+		sqSum := 0.0
+		for _, wi := range w {
+			sqSum += wi * wi
+		}
+		return 0.5 * c * sqSum
 	}
-	return 0.5 * lambda * sqSum
 }
 
-func D1L2RegularizationDerivative(w tensor.D1, lambda float64) tensor.D1 {
-	grad := make(tensor.D1, len(w))
-	for i := range grad {
-		grad[i] = lambda * w[i]
+func L2RegularizationDerivative(c float64) func(tensor.D1) tensor.D1 {
+	return func(w tensor.D1) tensor.D1 {
+		grad := make(tensor.D1, len(w))
+		for i, wi := range w {
+			grad[i] = c * wi
+		}
+		return grad
 	}
-	return grad
 }
 
-func D1NumericalDifferentiation(x tensor.D1, f func(tensor.D1)float64) tensor.D1 {
+func NumericalDifferentiation(x tensor.D1, f func(tensor.D1)float64) tensor.D1 {
 	h := 0.001
 	grad := make(tensor.D1, len(x))
 	for i := range x {

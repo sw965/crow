@@ -29,7 +29,7 @@ func (g *Game[S, ASS, AS, A]) Clone() Game[S, ASS, AS, A] {
 	}
 }
 
-func (g *Game[S, ASS, AS, A]) SetRandomActionPlayer(r *rand.Rand) {
+func (g *Game[S, ASS, AS, A]) SetRandActionPlayer(r *rand.Rand) {
 	g.Player = func(state *S) (AS, error) {
 		ass := g.LegalActionss(state)
 		ret := make(AS, len(ass))

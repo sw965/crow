@@ -6,9 +6,9 @@ import (
 
 type D3 []D2
 
-func (d3 D3) AddScalar(scalar float64) {
+func (d3 D3) AddScalar(s float64) {
 	for i := range d3 {
-		d3[i].AddScalar(scalar)
+		d3[i].AddScalar(s)
 	}
 }
 
@@ -25,9 +25,9 @@ func (d3 D3) Add(other D3) error {
 	return nil
 }
 
-func (d3 D3) SubScalar(scalar float64) {
+func (d3 D3) SubScalar(s float64) {
 	for i := range d3 {
-		d3[i].SubScalar(scalar)
+		d3[i].SubScalar(s)
 	}
 }
 
@@ -44,9 +44,9 @@ func (d3 D3) Sub(other D3) error {
 	return nil
 }
 
-func (d3 D3) MulScalar(scalar float64) {
+func (d3 D3) MulScalar(s float64) {
 	for i := range d3 {
-		d3[i].MulScalar(scalar)
+		d3[i].MulScalar(s)
 	}
 }
 
@@ -63,9 +63,9 @@ func (d3 D3) Mul(other D3) error {
 	return nil
 }
 
-func (d3 D3) DivScalar(scalar float64) {
+func (d3 D3) DivScalar(s float64) {
 	for i := range d3 {
-		d3[i].DivScalar(scalar)
+		d3[i].DivScalar(s)
 	}
 }
 
@@ -82,12 +82,6 @@ func (d3 D3) Div(other D3) error {
 	return nil
 }
 
-func (d3 D3) Zeros() {
-	for i := range d3 {
-		d3[i].Zeros()
-	}
-}
-
 func (d3 D3) Copy(other D3) {
 	for i := range d3 {
 		d3[i].Copy(other[i])
@@ -102,10 +96,10 @@ func (d3 D3) Clone() D3 {
 	return y
 }
 
-func (d3 D3) MaxAxisRow() D2 {
+func (d3 D3) MaxRow() D2 {
 	max := make(D2, len(d3))
 	for i := range d3 {
-		max[i] = d3[i].MaxAxisRow()
+		max[i] = d3[i].MaxRow()
 	}
 	return max
 }
@@ -118,32 +112,50 @@ func (d3 D3) MapFunc(f func(float64)float64) D3 {
 	return y
 }
 
-func D3Add(d3, other D3) (D3, error) {
+func D3AddScalar(d3 D3, s float64) D3 {
 	y := d3.Clone()
-	err := y.Add(other)
-	return y, err
-}
-
-func D3Sub(d3, other D3) (D3, error) {
-	y := d3.Clone()
-	err := y.Sub(other)
-	return y, err
-}
-
-func D3MulScalar(d3 D3, scalar float64) D3 {
-	y := d3.Clone()
-	y.MulScalar(scalar)
+	y.AddScalar(s)
 	return y
 }
 
-func D3Mul(d3, other D3) (D3, error) {
-	y := d3.Clone()
-	err := y.Mul(other)
+func D3Add(a, b D3) (D3, error) {
+	y := a.Clone()
+	err := y.Add(b)
 	return y, err
 }
 
-func D3Div(d3, other D3) (D3, error) {
+func D3SubScalar(d3 D3, s float64) D3 {
 	y := d3.Clone()
-	err := y.Div(other)
+	y.SubScalar(s)
+	return y
+}
+
+func D3Sub(a, b D3) (D3, error) {
+	y := a.Clone()
+	err := y.Sub(b)
+	return y, err
+}
+
+func D3MulScalar(d3 D3, s float64) D3 {
+	y := d3.Clone()
+	y.MulScalar(s)
+	return y
+}
+
+func D3Mul(a, b D3) (D3, error) {
+	y := a.Clone()
+	err := y.Mul(b)
+	return y, err
+}
+
+func D3DivScalar(d3 D3, s float64) D3 {
+	y := d3.Clone()
+	y.DivScalar(s)
+	return y
+}
+
+func D3Div(a, b D3) (D3, error) {
+	y := a.Clone()
+	err := y.Div(b)
 	return y, err
 }

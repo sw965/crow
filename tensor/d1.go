@@ -8,9 +8,9 @@ import (
 
 type D1 []float64
 
-func (d1 D1) AddScalar(scalar float64) {
+func (d1 D1) AddScalar(s float64) {
     for i := range d1 {
-        d1[i] += scalar
+        d1[i] += s
     }
 }
 
@@ -25,9 +25,9 @@ func (d1 D1) Add(other D1) error {
     return nil
 }
 
-func (d1 D1) SubScalar(scalar float64) {
+func (d1 D1) SubScalar(s float64) {
     for i := range d1 {
-        d1[i] -= scalar
+        d1[i] -= s
     }
 }
 
@@ -42,9 +42,9 @@ func (d1 D1) Sub(other D1) error {
     return nil
 }
 
-func (d1 D1) MulScalar(scalar float64) {
+func (d1 D1) MulScalar(s float64) {
     for i := range d1 {
-        d1[i] *= scalar
+        d1[i] *= s
     }
 }
 
@@ -59,9 +59,9 @@ func (d1 D1) Mul(other D1) error {
     return nil
 }
 
-func (d1 D1) DivScalar(scalar float64) {
+func (d1 D1) DivScalar(s float64) {
     for i := range d1 {
-        d1[i] /= scalar
+        d1[i] /= s
     }
 }
 
@@ -76,10 +76,6 @@ func (d1 D1) Div(other D1) error {
     return nil
 }
 
-func (d1 D1) MapFunc(f func(float64)float64) D1 {
-    return omw.MapFunc[D1](d1, f)
-}
-
 func (d1 D1) Clone() D1 {
     return slices.Clone(d1)
 }
@@ -90,60 +86,58 @@ func (d1 D1) Copy(other D1) {
     }
 }
 
-func (d1 D1) Zeros() {
-    for i := range d1 {
-        d1[i] = 0
-    }
-}
-
 func (d1 D1) Max() float64 {
     return omw.Max(d1...)
 }
 
-func D1AddScalar(d1 D1, other float64) D1 {
+func (d1 D1) MapFunc(f func(float64)float64) D1 {
+    return omw.MapFunc[D1](d1, f)
+}
+
+func D1AddScalar(d1 D1, s float64) D1 {
     y := slices.Clone(d1)
-    y.AddScalar(other)
+    y.AddScalar(s)
     return y
 }
 
-func D1Add(d1, other D1) (D1, error) {
-    y := slices.Clone(d1)
-    err := y.Add(other)
+func D1Add(a, b D1) (D1, error) {
+    y := slices.Clone(a)
+    err := y.Add(b)
     return y, err
 }
 
-func D1SubScalar(d1 D1, scalar float64) D1 {
+func D1SubScalar(d1 D1, s float64) D1 {
     y := slices.Clone(d1)
-    y.SubScalar(scalar)
+    y.SubScalar(s)
     return y
 }
 
-func D1Sub(d1, other D1) (D1, error) {
-    y := slices.Clone(d1)
-    err := y.Sub(other)
+func D1Sub(a, b D1) (D1, error) {
+    y := slices.Clone(a)
+    err := y.Sub(b)
     return y, err
 }
 
-func D1MulScalar(d1 D1, scalar float64) D1 {
+func D1MulScalar(d1 D1, s float64) D1 {
     y := slices.Clone(d1)
-    y.MulScalar(scalar)
+    y.MulScalar(s)
     return y
 }
 
-func D1Mul(d1, other D1) (D1, error) {
-    y := slices.Clone(d1)
-    err := y.Mul(other)
+func D1Mul(a, b D1) (D1, error) {
+    y := slices.Clone(a)
+    err := y.Mul(b)
     return y, err
 }
 
-func D1DivScalar(d1 D1, scalar float64) D1 {
+func D1DivScalar(d1 D1, s float64) D1 {
     y := slices.Clone(d1)
-    y.DivScalar(scalar)
+    y.DivScalar(s)
     return y
 }
 
-func D1Div(d1, other D1) (D1, error) {
-    y := slices.Clone(d1)
-    err := y.Div(other)
+func D1Div(a, b D1) (D1, error) {
+    y := slices.Clone(a)
+    err := y.Div(b)
     return y, err
 }

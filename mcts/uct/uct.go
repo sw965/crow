@@ -26,7 +26,6 @@ type Node[S any, AS ~[]A, A comparable] struct {
 	State S
 	UCBManager ucb.Manager[AS, A]
 	NextNodes Nodes[S, AS, A]
-	SelectCount     int
 }
 
 func (node *Node[S, AS, A]) Trial() int {
@@ -86,39 +85,38 @@ func (ss Selects[S, AS, A]) Backward(y LeafNodeEvalY, eval EachPlayerEvalFunc[S]
 		action := s.action
 		node.UCBManager[action].TotalValue += float64(eval(y, &node.State))
 		node.UCBManager[action].Trial += 1
-		node.SelectCount = 0
 	}
 }
 
 type MCTS[S any, AS ~[]A, A comparable] struct {
 	Game sequential.Game[S, AS, A]
 	UCBFunc ucb.Func
-	ActionPolicy ActionPolicyFunc[S, A]
+	ActionPolicyFunc ActionPolicyFunc[S, A]
 	EvalFunc EvalFunc[S]
+	NextNodesCap int
 }
 
 func (mcts *MCTS[S, AS, A]) NewNode(state *S) *Node[S, AS, A] {
-	policy := mcts.ActionPolicy(state)
+	policy := mcts.ActionPolicyFunc(state)
 	m := ucb.Manager[AS, A]{}
 	for a, p := range policy {
 		m[a] = &ucb.Calculator{Func:mcts.UCBFunc, P:p}
 	}
-	return &Node[S, AS, A]{State:*state, UCBManager:m}
+	nextNodes := make(Nodes[S, AS, A], 0, mcts.NextNodesCap)
+	return &Node[S, AS, A]{State:*state, UCBManager:m, NextNodes:nextNodes}
 }
 
 func (mcts *MCTS[S, AS, A]) SetUniformActionPolicy() {
-	var f ActionPolicyFunc[S, A]
-	f = func(state *S) ActionPolicy[A] {
-		legals := mcts.Game.LegalActions(state)
+	mcts.ActionPolicyFunc = func(state *S) ActionPolicy[A] {
+		as := mcts.Game.LegalActions(state)
 		n := len(legals)
 		p := 1.0 / float64(n)
 		policy := ActionPolicy[A]{}
-		for _, a := range legals {
+		for _, a := range as {
 			policy[a] = p
 		}
 		return policy
 	}
-	mcts.ActionPolicy = f
 }
 
 func (mcts *MCTS[S, AS, A]) SelectExpansionBackward(node *Node[S, AS, A], allNodes Nodes[S, AS, A], r *rand.Rand, capacity int) (Nodes[S, AS, A], int, error) {
@@ -128,7 +126,6 @@ func (mcts *MCTS[S, AS, A]) SelectExpansionBackward(node *Node[S, AS, A], allNod
 	for {
 		action := omw.RandChoice(node.UCBManager.MaxKeys(), r)
 		selects = append(selects, nodeSelect[S, AS, A]{node:node, action:action})
-		node.SelectCount += 1
 
 		state, err = mcts.Game.Push(state, &action)
 		if err != nil {
@@ -160,10 +157,6 @@ func (mcts *MCTS[S, AS, A]) SelectExpansionBackward(node *Node[S, AS, A], allNod
 				break
 			}
 		}
-
-		if nextNode.SelectCount == 1 {
-			break
-		}
 		node = nextNode
 	}
 	y := mcts.EvalFunc.LeafNode(&state)
@@ -171,13 +164,12 @@ func (mcts *MCTS[S, AS, A]) SelectExpansionBackward(node *Node[S, AS, A], allNod
 	return allNodes, len(selects), nil
 }
 
-func (mcts *MCTS[S, AS, A]) Run(simulation int, rootState S, r *rand.Rand) (Nodes[S, AS, A], error) {
-	rootNode := mcts.NewNode(&rootState)
-	allNodes := Nodes[S, AS, A]{rootNode}
-	selectNum := 0
+func (mcts *MCTS[S, AS, A]) Run(simulation int, allNodes Nodes[S, AS, A], r *rand.Rand) (Nodes[S, AS, A], error) {
+	rootNode := allNodes[0]
+	selectCount := 0
 	var err error
 	for i := 0; i < simulation; i++ {
-		allNodes, selectNum, err = mcts.SelectExpansionBackward(rootNode, allNodes, r, selectNum + 1)
+		allNodes, selectCount, err = mcts.SelectExpansionBackward(rootNode, allNodes, r, selectCount + 1)
 		if err != nil {
 			return Nodes[S, AS, A]{}, err
 		}
@@ -187,13 +179,12 @@ func (mcts *MCTS[S, AS, A]) Run(simulation int, rootState S, r *rand.Rand) (Node
 
 func NewPlayer[S any, AS ~[]A, A comparable](mcts *MCTS[S, AS, A], simulation int, r float64, rng *rand.Rand) sequential.Player[S, A] {
 	player := func(state *S) (A, error) {
-		allNodes, err:= mcts.Run(simulation, *state, rng)
+		rootNode := mcts.NewNode(state)
+		_, err := mcts.Run(simulation, Nodes[S, AS, A]{rootNode}, rng)
 		if err != nil {
 			var a A
 			return a, err
 		}
-		rootNode := allNodes[0]
-	
 		ps := rootNode.UCBManager.TrialPercents()
 		max := omw.Max(maps.Values(ps)...)
 		n := len(ps)

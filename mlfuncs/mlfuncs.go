@@ -5,6 +5,10 @@ import (
 	"github.com/sw965/crow/tensor"
 )
 
+func Identity[X any](x X) X {
+	return x
+}
+
 func L2Norm(d1 tensor.D1, d2 tensor.D2, d3 tensor.D3) float64 {
 	sqSum := 0.0
 	for i := range d1 {

@@ -89,6 +89,7 @@ type MCTS[S any, ASS ~[]AS, AS ~[]A, A comparable] struct {
 	UCBFunc            ucb.Func
 	ActionPoliciesFunc ActionPoliciesFunc[S, A]
 	LeafNodeEvalsFunc  LeafNodeEvalsFunc[S]
+	NextNodesCap int
 }
 
 func (mcts *MCTS[S, ASS, AS, A]) SetUniformActionPoliciesFunc() {
@@ -118,7 +119,12 @@ func (mcts *MCTS[S, ASS, AS, A]) NewNode(state *S) *Node[S, ASS, AS, A] {
 		}
 		ms[playerI] = m
 	}
-	return &Node[S, ASS, AS, A]{State: *state, UCBManagers: ms}
+	nextNodes := make(Nodes[S, ASS, AS, A], 0, mcts.NextNodesCap)
+	return &Node[S, ASS, AS, A]{State: *state, UCBManagers: ms, NextNodes:nextNodes}
+}
+
+func (mcts *MCTS[S, ASS, AS, A]) NewAllNodes(rootState *S) Nodes[S, ASS, AS, A] {
+	return Nodes[S, ASS, AS, A]{mcts.NewNode(rootState)}
 }
 
 func (mcts *MCTS[S, ASS, AS, A]) SelectExpansionBackward(node *Node[S, ASS, AS, A], allNodes Nodes[S, ASS, AS, A], r *rand.Rand, capacity int) (Nodes[S, ASS, AS, A], int, error) {
@@ -171,10 +177,9 @@ func (mcts *MCTS[S, ASS, AS, A]) SelectExpansionBackward(node *Node[S, ASS, AS, 
 	return allNodes, len(selects), nil
 }
 
-func (mcts *MCTS[S, ASS, AS, A]) Run(simulation int, rootState S, r *rand.Rand) (Nodes[S, ASS, AS, A], error) {
-	rootNode := mcts.NewNode(&rootState)
-	allNodes := Nodes[S, ASS, AS, A]{rootNode}
-	var selectCount int
+func (mcts *MCTS[S, ASS, AS, A]) Run(simulation int, allNodes Nodes[S, ASS, AS, A], r *rand.Rand) (Nodes[S, ASS, AS, A], error) {
+	rootNode := allNodes[0]
+	selectCount := 0
 	var err error
 	for i := 0; i < simulation; i++ {
 		allNodes, selectCount, err = mcts.SelectExpansionBackward(rootNode, allNodes, r, selectCount+1)

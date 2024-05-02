@@ -9,19 +9,13 @@ type Func func(float64, float64, int, int) float64
 
 func New1Func(c float64) Func {
 	return func(v, p float64, total, n int) float64 {
-		t1 := float64(total + 1)
-		n1 := float64(n + 1)
-		exploration := c * p * math.Sqrt(math.Log(t1)/n1)
-		return v + exploration
+		return v + c*p*math.Sqrt(math.Log(float64(total+1))/float64(n+1))
 	}
 }
 
 func NewAlphaGoFunc(c float64) Func {
 	return func(v, p float64, total, n int) float64 {
-		t := float64(total)
-		n1 := float64(n + 1)
-		exploration := c * p * math.Sqrt(t) / n1
-		return v + exploration
+		return v + c*p*math.Sqrt(float64(total))/float64(n+1)
 	}
 }
 
