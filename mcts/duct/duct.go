@@ -1,7 +1,6 @@
 package duct
 
 import (
-	"fmt"
 	"github.com/sw965/crow/game/simultaneous"
 	"github.com/sw965/crow/ucb"
 	"github.com/sw965/omw"
@@ -132,7 +131,6 @@ func (mcts *MCTS[S, ASS, AS, A]) SelectExpansionBackward(node *Node[S, ASS, AS, 
 	state := node.State
 	selects := make(selects[S, ASS, AS, A], 0, capacity)
 	var err error
-	fmt.Println("select開始")
 	for {
 		jointAction := make(AS, len(node.UCBManagers))
 		for playerI, m := range node.UCBManagers {
@@ -140,13 +138,11 @@ func (mcts *MCTS[S, ASS, AS, A]) SelectExpansionBackward(node *Node[S, ASS, AS, 
 		}
 		selects = append(selects, nodeSelect[S, ASS, AS, A]{node: node, jointAction: jointAction})
 		node.Trial += 1
-		fmt.Println("jointAction =", jointAction)
 
 		state, err = mcts.Game.Push(state, jointAction)
 		if err != nil {
 			return Nodes[S, ASS, AS, A]{}, 0, err
 		}
-		fmt.Println("state =", state)
 		stateP := &state
 
 		if isEnd := mcts.Game.IsEnd(stateP); isEnd {
@@ -175,8 +171,6 @@ func (mcts *MCTS[S, ASS, AS, A]) SelectExpansionBackward(node *Node[S, ASS, AS, 
 		}
 		node = nextNode
 	}
-
-	fmt.Println("select終了")
 	ys := mcts.LeafNodeEvalsFunc(&state)
 	selects.Backward(ys)
 	return allNodes, len(selects), nil
