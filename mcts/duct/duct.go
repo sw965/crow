@@ -157,13 +157,13 @@ func (mcts *MCTS[S, ASS, AS, A]) SelectExpansionBackward(node *Node[S, ASS, AS, 
 
 		nextNode, ok := node.NextNodes.Find(stateP, mcts.Game.Equal)
 		if !ok {
-			nextNode, ok = allNodes.Find(stateP, mcts.Game.Equal)
-			if ok {
+			//nextNode, ok = allNodes.Find(stateP, mcts.Game.Equal)
+			if false {
 				node.NextNodes = append(node.NextNodes, nextNode)
 			} else {
 				//expansion
 				nextNode = mcts.NewNode(stateP)
-				allNodes = append(allNodes, nextNode)
+				//allNodes = append(allNodes, nextNode)
 				node.NextNodes = append(node.NextNodes, nextNode)
 				//新しくノードを作成したら、処理を終了する
 				break

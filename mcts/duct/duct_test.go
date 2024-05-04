@@ -55,7 +55,7 @@ func TestDUCT(t *testing.T) {
 		IsEnd:         isEnd,
 	}
 
-	game.SetRandomActionPlayer(r)
+	game.SetRandActionPlayer(r)
 
 	leafNodeEvalsFunc := func(rps *RockPaperScissors) duct.LeafNodeEvalYs {
 		if rps.Hand1 == rps.Hand2 {
