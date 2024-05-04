@@ -26,17 +26,18 @@ func (node *Node[S, ASS, AS, A]) MaxTrialJointActionPath(r *rand.Rand, n int) AS
 	ret := make(ASS, 0, n)
 	for i := 0; i < n; i++ {
 		simultaneousN := len(node.UCBManagers)
-		if simultaneousN == 0 {
-			break
-		}
-
 		jointAction := make(AS, simultaneousN)
+		isBreak := false
 		for playerI, m := range node.UCBManagers {
-			jointAction[playerI] = omw.RandChoice(m.MaxTrialKeys(), r)
+			as := m.MaxTrialKeys()
+			if !isBreak && len(as) != 1 {
+				isBreak = true
+			}
+			jointAction[playerI] = omw.RandChoice(as, r)
 		}
 		ret = append(ret, jointAction)
 
-		if len(node.NextNodes) == 0 {
+		if len(node.NextNodes) == 0 || isBreak {
 			break
 		}
 
@@ -127,7 +128,7 @@ func (mcts *MCTS[S, ASS, AS, A]) NewAllNodes(rootState *S) Nodes[S, ASS, AS, A] 
 	return Nodes[S, ASS, AS, A]{mcts.NewNode(rootState)}
 }
 
-func (mcts *MCTS[S, ASS, AS, A]) SelectExpansionBackward(node *Node[S, ASS, AS, A], allNodes Nodes[S, ASS, AS, A], r *rand.Rand, capacity int) (Nodes[S, ASS, AS, A], int, error) {
+func (mcts *MCTS[S, ASS, AS, A]) SelectExpansionBackward(node *Node[S, ASS, AS, A], r *rand.Rand, capacity int) (int, error) {
 	state := node.State
 	selects := make(selects[S, ASS, AS, A], 0, capacity)
 	var err error
@@ -141,11 +142,10 @@ func (mcts *MCTS[S, ASS, AS, A]) SelectExpansionBackward(node *Node[S, ASS, AS, 
 
 		state, err = mcts.Game.Push(state, jointAction)
 		if err != nil {
-			return Nodes[S, ASS, AS, A]{}, 0, err
+			return 0, err
 		}
-		stateP := &state
 
-		if isEnd := mcts.Game.IsEnd(stateP); isEnd {
+		if isEnd := mcts.Game.IsEnd(&state); isEnd {
 			break
 		}
 
@@ -155,36 +155,29 @@ func (mcts *MCTS[S, ASS, AS, A]) SelectExpansionBackward(node *Node[S, ASS, AS, 
 		//nextNodesにもallNodesにも同じstateが存在しないなら、新しくnodeを作り、
 		//nextNodesと、allNodesに追加し、新しく作ったnodeを次のnodeとし、select処理を終了する。
 
-		nextNode, ok := node.NextNodes.Find(stateP, mcts.Game.Equal)
+		nextNode, ok := node.NextNodes.Find(&state, mcts.Game.Equal)
 		if !ok {
-			//nextNode, ok = allNodes.Find(stateP, mcts.Game.Equal)
-			if false {
-				node.NextNodes = append(node.NextNodes, nextNode)
-			} else {
-				//expansion
-				nextNode = mcts.NewNode(stateP)
-				//allNodes = append(allNodes, nextNode)
-				node.NextNodes = append(node.NextNodes, nextNode)
-				//新しくノードを作成したら、処理を終了する
-				break
-			}
+			//expansion
+			nextNode = mcts.NewNode(&state)
+			node.NextNodes = append(node.NextNodes, nextNode)
+			//新しくノードを作成したら、処理を終了する
+			break
 		}
 		node = nextNode
 	}
 	ys := mcts.LeafNodeEvalsFunc(&state)
 	selects.Backward(ys)
-	return allNodes, len(selects), nil
+	return len(selects), nil
 }
 
-func (mcts *MCTS[S, ASS, AS, A]) Run(simulation int, allNodes Nodes[S, ASS, AS, A], r *rand.Rand) (Nodes[S, ASS, AS, A], error) {
-	rootNode := allNodes[0]
+func (mcts *MCTS[S, ASS, AS, A]) Run(simulation int, rootNode *Node[S, ASS, AS, A], r *rand.Rand) error {
 	selectCount := 0
 	var err error
 	for i := 0; i < simulation; i++ {
-		allNodes, selectCount, err = mcts.SelectExpansionBackward(rootNode, allNodes, r, selectCount+1)
+		selectCount, err = mcts.SelectExpansionBackward(rootNode, r, selectCount+1)
 		if err != nil {
-			return Nodes[S, ASS, AS, A]{}, err
+			return err
 		}
 	}
-	return allNodes, nil
+	return nil
 }

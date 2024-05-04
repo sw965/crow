@@ -81,27 +81,27 @@ func TestDUCT(t *testing.T) {
 	mcts.UCBFunc = ucb.NewAlphaGoFunc(math.Sqrt(2))
 
 	fmt.Println(mcts.ActionPoliciesFunc(&RockPaperScissors{}))
-	allNodes := mcts.NewAllNodes(&RockPaperScissors{})
-	allNodes, err := mcts.Run(19600, allNodes, r)
+	rootNode := mcts.NewNode(&RockPaperScissors{})
+	err := mcts.Run(19600, rootNode, r)
 	if err != nil {
 		panic(err)
 	}
-	for i, m := range allNodes[0].UCBManagers {
+	for i, m := range rootNode.UCBManagers {
 		for a, pucb := range m {
 			fmt.Println(i, a, pucb.AverageValue(), pucb.Trial)
 		}
 	}
 	fmt.Println("")
-	allNodes, err = mcts.Run(19600, allNodes, r)
+	err = mcts.Run(19600, rootNode, r)
 	if err != nil {
 		panic(err)
 	}
 
-	for i, m := range allNodes[0].UCBManagers {
+	for i, m := range rootNode.UCBManagers {
 		for a, pucb := range m {
 			fmt.Println(i, a, pucb.AverageValue(), pucb.Trial)
 		}
 	}
 
-	fmt.Println(allNodes[0].MaxTrialJointActionPath(r, 64))
+	fmt.Println(rootNode.MaxTrialJointActionPath(r, 64))
 }
