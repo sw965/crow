@@ -119,7 +119,7 @@ func (mcts *MCTS[S, AS, A]) SetUniformActionPolicy() {
 	}
 }
 
-func (mcts *MCTS[S, AS, A]) SelectExpansionBackward(node *Node[S, AS, A], allNodes Nodes[S, AS, A], r *rand.Rand, capacity int) (Nodes[S, AS, A], int, error) {
+func (mcts *MCTS[S, AS, A]) SelectExpansionBackward(node *Node[S, AS, A], r *rand.Rand, capacity int) (int, error) {
 	state := node.State
 	selects := make(Selects[S, AS, A], 0, capacity)
 	var err error
@@ -129,11 +129,10 @@ func (mcts *MCTS[S, AS, A]) SelectExpansionBackward(node *Node[S, AS, A], allNod
 
 		state, err = mcts.Game.Push(state, &action)
 		if err != nil {
-			return Nodes[S, AS, A]{}, 0, err
+			return 0, err
 		}
-		stateP := &state
 
-		if isEnd := mcts.Game.IsEnd(stateP); isEnd {
+		if isEnd := mcts.Game.IsEnd(&state); isEnd {
 			break
 		}
 
@@ -143,44 +142,37 @@ func (mcts *MCTS[S, AS, A]) SelectExpansionBackward(node *Node[S, AS, A], allNod
 		//nextNodesにもallNodesにも同じstateが存在しないなら、新しくnodeを作り、
 		//nextNodesと、allNodesに追加し、新しく作ったnodeを次のnodeとし、select処理を終了する。
 
-		nextNode, ok := node.NextNodes.Find(stateP, mcts.Game.Equal)
+		nextNode, ok := node.NextNodes.Find(&state, mcts.Game.Equal)
 		if !ok {
-			nextNode, ok = allNodes.Find(stateP, mcts.Game.Equal)
-			if ok {
-				node.NextNodes = append(node.NextNodes, nextNode)
-			} else {
-				//expansion
-				nextNode = mcts.NewNode(stateP)
-				allNodes = append(allNodes, nextNode)
-				node.NextNodes = append(node.NextNodes, nextNode)
-				//新しくノードを作成したら、処理を終了する
-				break
-			}
+			//expansion
+			nextNode = mcts.NewNode(&state)
+			node.NextNodes = append(node.NextNodes, nextNode)
+			//新しくノードを作成したら、処理を終了する
+			break
 		}
 		node = nextNode
 	}
 	y := mcts.EvalFunc.LeafNode(&state)
 	selects.Backward(y, mcts.EvalFunc.EachPlayer)
-	return allNodes, len(selects), nil
+	return len(selects), nil
 }
 
-func (mcts *MCTS[S, AS, A]) Run(simulation int, allNodes Nodes[S, AS, A], r *rand.Rand) (Nodes[S, AS, A], error) {
-	rootNode := allNodes[0]
+func (mcts *MCTS[S, AS, A]) Run(simulation int, rootNode *Node[S, AS, A], r *rand.Rand) error {
 	selectCount := 0
 	var err error
 	for i := 0; i < simulation; i++ {
-		allNodes, selectCount, err = mcts.SelectExpansionBackward(rootNode, allNodes, r, selectCount + 1)
+		selectCount, err = mcts.SelectExpansionBackward(rootNode, r, selectCount+1)
 		if err != nil {
-			return Nodes[S, AS, A]{}, err
+			return err
 		}
 	}
-	return allNodes, nil
+	return nil
 }
 
 func NewPlayer[S any, AS ~[]A, A comparable](mcts *MCTS[S, AS, A], simulation int, r float64, rng *rand.Rand) sequential.Player[S, A] {
 	player := func(state *S) (A, error) {
 		rootNode := mcts.NewNode(state)
-		_, err := mcts.Run(simulation, Nodes[S, AS, A]{rootNode}, rng)
+		err := mcts.Run(simulation, rootNode, rng)
 		if err != nil {
 			var a A
 			return a, err
