@@ -109,7 +109,7 @@ func (mcts *MCTS[S, AS, A]) NewNode(state *S) *Node[S, AS, A] {
 func (mcts *MCTS[S, AS, A]) SetUniformActionPolicy() {
 	mcts.ActionPolicyFunc = func(state *S) ActionPolicy[A] {
 		as := mcts.Game.LegalActions(state)
-		n := len(legals)
+		n := len(as)
 		p := 1.0 / float64(n)
 		policy := ActionPolicy[A]{}
 		for _, a := range as {

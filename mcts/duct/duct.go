@@ -22,8 +22,9 @@ type Node[S any, ASS ~[]AS, AS ~[]A, A comparable] struct {
 	Trial       int
 }
 
-func (node *Node[S, ASS, AS, A]) MaxTrialJointActionPath(r *rand.Rand, n int) ASS {
+func (node *Node[S, ASS, AS, A]) MaxTrialJointActionPath(r *rand.Rand, n int) ([]S, ASS) {
 	ret := make(ASS, 0, n)
+	states := make([]S, 0, n)
 	for i := 0; i < n; i++ {
 		simultaneousN := len(node.UCBManagers)
 		jointAction := make(AS, simultaneousN)
@@ -35,6 +36,7 @@ func (node *Node[S, ASS, AS, A]) MaxTrialJointActionPath(r *rand.Rand, n int) AS
 			}
 			jointAction[playerI] = omw.RandChoice(as, r)
 		}
+		states = append(states, node.State)
 		ret = append(ret, jointAction)
 
 		if len(node.NextNodes) == 0 || isBreak {
@@ -53,7 +55,7 @@ func (node *Node[S, ASS, AS, A]) MaxTrialJointActionPath(r *rand.Rand, n int) AS
 		}
 		node = nextNode
 	}
-	return ret
+	return states, ret
 }
 
 type Nodes[S any, ASS ~[]AS, AS ~[]A, A comparable] []*Node[S, ASS, AS, A]
@@ -122,10 +124,6 @@ func (mcts *MCTS[S, ASS, AS, A]) NewNode(state *S) *Node[S, ASS, AS, A] {
 	}
 	nextNodes := make(Nodes[S, ASS, AS, A], 0, mcts.NextNodesCap)
 	return &Node[S, ASS, AS, A]{State: *state, UCBManagers: ms, NextNodes:nextNodes}
-}
-
-func (mcts *MCTS[S, ASS, AS, A]) NewAllNodes(rootState *S) Nodes[S, ASS, AS, A] {
-	return Nodes[S, ASS, AS, A]{mcts.NewNode(rootState)}
 }
 
 func (mcts *MCTS[S, ASS, AS, A]) SelectExpansionBackward(node *Node[S, ASS, AS, A], r *rand.Rand, capacity int) (int, error) {
