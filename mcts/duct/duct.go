@@ -70,6 +70,29 @@ func (nodes Nodes[S, ASS, AS, A]) Find(state *S, eq simultaneous.EqualFunc[S]) (
 	return &Node[S, ASS, AS, A]{}, false
 }
 
+func (nodes Nodes[S, ASS, AS, A]) Trials() []int {
+	ret := make([]int, len(nodes))
+	for i, node := range nodes {
+		ret[i] = node.Trial
+	}
+	return ret
+}
+
+func (nodes Nodes[S, ASS, AS, A]) MaxTrial() int {
+	return omw.Max(nodes.Trials()...)
+}
+
+func (nodes Nodes[S, ASS, AS, A]) MaxTrialNodes() Nodes[S, ASS, AS, A] {
+	max := nodes.MaxTrial()
+	ret := make(Nodes[S, ASS, AS, A], 0, len(nodes))
+	for _, node := range nodes {
+		if node.Trial == max {
+			ret = append(ret, node)
+		}
+	}
+	return ret
+}
+
 type nodeSelect[S any, ASS ~[]AS, AS ~[]A, A comparable] struct {
 	node        *Node[S, ASS, AS, A]
 	jointAction AS
