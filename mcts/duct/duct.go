@@ -20,6 +20,7 @@ type Node[S any, ASS ~[]AS, AS ~[]A, A comparable] struct {
 	UCBManagers ucb.Managers[AS, A]
 	NextNodes   Nodes[S, ASS, AS, A]
 	Trial       int
+	LastUCBSelectJoinAction AS
 }
 
 func (node *Node[S, ASS, AS, A]) MaxTrialJointActionPath(r *rand.Rand, n int) ([]S, ASS) {
@@ -137,6 +138,7 @@ func (mcts *MCTS[S, ASS, AS, A]) SelectExpansionBackward(node *Node[S, ASS, AS, 
 		}
 		selects = append(selects, nodeSelect[S, ASS, AS, A]{node: node, jointAction: jointAction})
 		node.Trial += 1
+		node.LastUCBSelectJoinAction = jointAction
 
 		state, err = mcts.Game.Push(state, jointAction)
 		if err != nil {
