@@ -25,9 +25,9 @@ type Node[S any, ASS ~[]AS, AS ~[]A, A comparable] struct {
 	LastJointActionsTrials []int
 }
 
-func (node *Node[S, ASS, AS, A]) MaxTrialJointActionPath(r *rand.Rand, n int) ASS {
+func (node *Node[S, ASS, AS, A]) MaxTrialJointActionPath(r *rand.Rand, limit int) ASS {
 	ret := make(ASS, 0, n)
-	for i := 0; i < n; i++ {
+	for i := 0; i < limit; i++ {
 		jointAction := make(AS, len(node.UCBManagers))
 		for playerI, m := range node.UCBManagers {
 			jointAction[playerI] = omw.RandChoice(m.MaxTrialKeys(), r)
@@ -43,19 +43,20 @@ func (node *Node[S, ASS, AS, A]) MaxTrialJointActionPath(r *rand.Rand, n int) AS
 		}
 
 		maxTrial := 0
-		nnl := len(node.NextNodes)
-		nextNodes := make(Nodes[S, ASS, AS, A], 0, nnl)
+		n := len(node.NextNodes)
+		nextNodes := make(Nodes[S, ASS, AS, A], 0, n)
 
 		for _, nn := range node.NextNodes {
 			idx := slices.IndexFunc(nn.LastJointActions, eqJointAction)
 			if idx != -1 {
 				trial := nn.LastJointActionsTrials[idx]
 				if trial == maxTrial {
-					nextNodes = append(nextNodes, nn)
+					nextNodes = append(nextNodes, n)
 				}
 
 				if trial > maxTrial {
-					nextNodes = make(Nodes[S, ASS, AS, A], 0, nnl)
+					nextNodes = make(Nodes[S, ASS, AS, A], 0, n)
+					nextNodes = append(nextNodes, nn)
 					maxTrial = trial
 				}
 			}
