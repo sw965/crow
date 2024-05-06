@@ -22,6 +22,7 @@ type Node[S any, ASS ~[]AS, AS ~[]A, A comparable] struct {
 	NextNodes   Nodes[S, ASS, AS, A]
 	Trial       int
 	LastJointActions ASS
+	LastJointActionsTrials []int
 }
 
 func (node *Node[S, ASS, AS, A]) MaxTrialJointActionPath(r *rand.Rand, n int) ASS {
@@ -33,18 +34,36 @@ func (node *Node[S, ASS, AS, A]) MaxTrialJointActionPath(r *rand.Rand, n int) AS
 		}
 		ret = append(ret, jointAction)
 
-		containsJointAction := func(node *Node[S, ASS, AS, A]) bool {
-			return slices.ContainsFunc(
-				node.LastJointActions,
-				func(as AS) bool { return slices.Equal(as, jointAction) },
-			)
+		if len(node.NextNodes) == 0 {
+			return ret
 		}
 
-		nextNodes := omw.Filter(node.NextNodes, containsJointAction)
-		if len(nextNodes) == 0 {
-			break
+		eqJointAction := func(as AS) bool {
+			return slices.Equal(as, jointAction)
 		}
-		node = omw.RandChoice(nextNodes.MaxTrialNodes(), r)
+
+		maxTrial := 0
+		for _, nn := range node.NextNodes {
+			idx := slices.IndexFunc(nn.LastJointActions, eqJointAction)
+			if idx != -1 {
+				trial := nn.LastJointActionsTrials[idx]
+				if trial > maxTrial {
+					maxTrial = trial
+				}
+			}
+		}
+
+		nextNodes := make(Nodes[S, ASS, AS, A], 0, len(node.NextNodes))
+		for _, nn := range node.NextNodes {
+			idx := slices.IndexFunc(nn.LastJointActions, eqJointAction)
+			if idx != -1 {
+				trial := nn.LastJointActionsTrials[idx]
+				if trial == maxTrial {
+					nextNodes = append(nextNodes, nn)
+				}
+			}
+		}
+		node = omw.RandChoice(nextNodes, r)
 	}
 	return ret
 }
@@ -174,13 +193,20 @@ func (mcts *MCTS[S, ASS, AS, A]) SelectExpansionBackward(node *Node[S, ASS, AS, 
 			node.NextNodes = append(node.NextNodes, nextNode)
 		}
 
-		//直前の行動を記録する
-		if !slices.ContainsFunc(nextNode.LastJointActions, func(jointA AS) bool { return slices.Equal(jointA, jointAction) }) {
-			nextNode.LastJointActions = append(nextNode.LastJointActions, jointAction)
+		eqJointAction := func(as AS) bool {
+			return slices.Equal(as, jointAction)
 		}
 
+		if !slices.ContainsFunc(nextNode.LastJointActions, eqJointAction) {
+			nextNode.LastJointActions = append(nextNode.LastJointActions, jointAction)
+			nextNode.LastJointActionsTrials = append(nextNode.LastJointActionsTrials, 0)
+		}
+
+		idx := slices.IndexFunc(nextNode.LastJointActions, eqJointAction)
+		nextNode.LastJointActionsTrials[idx] += 1
+
+		//新しくノードを作成したら、処理を終了する
 		if !ok {
-			//新しくノードを作成したら、処理を終了する
 			break
 		}
 		node = nextNode
