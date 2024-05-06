@@ -152,10 +152,6 @@ func (mcts *MCTS[S, ASS, AS, A]) SelectExpansionBackward(node *Node[S, ASS, AS, 
 		selects = append(selects, nodeSelect[S, ASS, AS, A]{node: node, jointAction: jointAction})
 		node.Trial += 1
 
-		if !slices.ContainsFunc(node.LastJointActions, func(jointA AS) bool { return slices.Equal(jointA, jointAction) }) {
-			node.LastJointActions = append(node.LastJointActions, jointAction)
-		}
-
 		state, err = mcts.Game.Push(state, jointAction)
 		if err != nil {
 			return 0, err
@@ -176,6 +172,14 @@ func (mcts *MCTS[S, ASS, AS, A]) SelectExpansionBackward(node *Node[S, ASS, AS, 
 			//expansion
 			nextNode = mcts.NewNode(&state)
 			node.NextNodes = append(node.NextNodes, nextNode)
+		}
+
+		//直前の行動を記録する
+		if !slices.ContainsFunc(nextNode.LastJointActions, func(jointA AS) bool { return slices.Equal(jointA, jointAction) }) {
+			nextNode.LastJointActions = append(nextNode.LastJointActions, jointAction)
+		}
+
+		if !ok {
 			//新しくノードを作成したら、処理を終了する
 			break
 		}
