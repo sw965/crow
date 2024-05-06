@@ -61,6 +61,14 @@ func (node *Node[S, ASS, AS, A]) MaxTrialJointActionPath(r *rand.Rand, limit int
 				}
 			}
 		}
+
+		if len(nextNodes) == 0 {
+			fmt.Println("jointAction", jointAction)
+			fmt.Println("maxTrial", maxTrial)
+			for i, nn := range node.NextNodes {
+				fmt.Println("lastJointActions", i, nn.LastJointActions)
+			}
+		}
 		node = omw.RandChoice(nextNodes, r)
 	}
 	return ret
