@@ -1,6 +1,7 @@
 package duct
 
 import (
+	"fmt"
 	"github.com/sw965/crow/game/simultaneous"
 	"github.com/sw965/crow/ucb"
 	"github.com/sw965/omw"
@@ -45,6 +46,7 @@ func (node *Node[S, ASS, AS, A]) MaxTrialJointActionPath(r *rand.Rand, n int) AS
 		maxTrial := 0
 		for _, nn := range node.NextNodes {
 			idx := slices.IndexFunc(nn.LastJointActions, eqJointAction)
+			fmt.Println("maxTrial", idx)
 			if idx != -1 {
 				trial := nn.LastJointActionsTrials[idx]
 				if trial > maxTrial {
@@ -56,6 +58,7 @@ func (node *Node[S, ASS, AS, A]) MaxTrialJointActionPath(r *rand.Rand, n int) AS
 		nextNodes := make(Nodes[S, ASS, AS, A], 0, len(node.NextNodes))
 		for _, nn := range node.NextNodes {
 			idx := slices.IndexFunc(nn.LastJointActions, eqJointAction)
+			fmt.Println("nextNodes", idx)
 			if idx != -1 {
 				trial := nn.LastJointActionsTrials[idx]
 				if trial == maxTrial {
