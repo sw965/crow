@@ -5,6 +5,7 @@ import (
 	"github.com/sw965/crow/ucb"
 	"github.com/sw965/omw"
 	"math/rand"
+	"golang.org/x/exp/slices"
 )
 
 type ActionPolicy[A comparable] map[A]float64
@@ -20,43 +21,32 @@ type Node[S any, ASS ~[]AS, AS ~[]A, A comparable] struct {
 	UCBManagers ucb.Managers[AS, A]
 	NextNodes   Nodes[S, ASS, AS, A]
 	Trial       int
-	LastUCBSelectJoinAction AS
+	LastJointActions ASS
 }
 
-func (node *Node[S, ASS, AS, A]) MaxTrialJointActionPath(r *rand.Rand, n int) ([]S, ASS) {
+func (node *Node[S, ASS, AS, A]) MaxTrialJointActionPath(r *rand.Rand, n int) ASS {
 	ret := make(ASS, 0, n)
-	states := make([]S, 0, n)
 	for i := 0; i < n; i++ {
-		simultaneousN := len(node.UCBManagers)
-		jointAction := make(AS, simultaneousN)
-		isBreak := false
+		jointAction := make(AS, len(node.UCBManagers))
 		for playerI, m := range node.UCBManagers {
-			as := m.MaxTrialKeys()
-			if !isBreak && len(as) != 1 {
-				isBreak = true
-			}
-			jointAction[playerI] = omw.RandChoice(as, r)
+			jointAction[playerI] = omw.RandChoice(m.MaxTrialKeys(), r)
 		}
-		states = append(states, node.State)
 		ret = append(ret, jointAction)
 
-		if len(node.NextNodes) == 0 || isBreak {
+		containsJointAction := func(node *Node[S, ASS, AS, A]) bool {
+			return slices.ContainsFunc(
+				node.LastJointActions,
+				func(as AS) bool { return slices.Equal(as, jointAction) },
+			)
+		}
+
+		nextNodes := omw.Filter(node.NextNodes, containsJointAction)
+		if len(nextNodes) == 0 {
 			break
 		}
-
-		maxTrial := node.NextNodes[0].Trial
-		nextNode := node.NextNodes[0]
-
-		for _, nn := range node.NextNodes[1:] {
-			trial := nn.Trial
-			if trial > maxTrial {
-				maxTrial = trial
-				nextNode = nn
-			}
-		}
-		node = nextNode
+		node = omw.RandChoice(nextNodes.MaxTrialNodes(), r)
 	}
-	return states, ret
+	return ret
 }
 
 type Nodes[S any, ASS ~[]AS, AS ~[]A, A comparable] []*Node[S, ASS, AS, A]
@@ -161,7 +151,10 @@ func (mcts *MCTS[S, ASS, AS, A]) SelectExpansionBackward(node *Node[S, ASS, AS, 
 		}
 		selects = append(selects, nodeSelect[S, ASS, AS, A]{node: node, jointAction: jointAction})
 		node.Trial += 1
-		node.LastUCBSelectJoinAction = jointAction
+
+		if !slices.ContainsFunc(node.LastJointActions, func(jointA AS) bool { return slices.Equal(jointA, jointAction) }) {
+			node.LastJointActions = append(node.LastJointActions, jointAction)
+		}
 
 		state, err = mcts.Game.Push(state, jointAction)
 		if err != nil {
