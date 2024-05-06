@@ -26,7 +26,7 @@ type Node[S any, ASS ~[]AS, AS ~[]A, A comparable] struct {
 }
 
 func (node *Node[S, ASS, AS, A]) MaxTrialJointActionPath(r *rand.Rand, limit int) ASS {
-	ret := make(ASS, 0, n)
+	ret := make(ASS, 0, limit)
 	for i := 0; i < limit; i++ {
 		jointAction := make(AS, len(node.UCBManagers))
 		for playerI, m := range node.UCBManagers {
@@ -51,7 +51,7 @@ func (node *Node[S, ASS, AS, A]) MaxTrialJointActionPath(r *rand.Rand, limit int
 			if idx != -1 {
 				trial := nn.LastJointActionsTrials[idx]
 				if trial == maxTrial {
-					nextNodes = append(nextNodes, n)
+					nextNodes = append(nextNodes, nn)
 				}
 
 				if trial > maxTrial {
