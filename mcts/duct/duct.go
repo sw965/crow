@@ -1,6 +1,7 @@
 package duct
 
 import (
+	"fmt"
 	"github.com/sw965/crow/game/simultaneous"
 	"github.com/sw965/crow/ucb"
 	"github.com/sw965/omw"
