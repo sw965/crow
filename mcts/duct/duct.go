@@ -39,20 +39,19 @@ func (node *Node[S, ASS, AS, A]) MaxTrialJointActionPath(r *rand.Rand, limit int
 			return ret
 		}
 
+		eqToJointAction := omw.EqualSlice(jointAction)
 		maxTrial := 0
 		nextNodes := make(Nodes[S, ASS, AS, A], 0, n)
 		for _, nextNode := range node.NextNodes {
-			eqToJointAction := omw.EqualSlice(jointAction)
 			idx := slices.IndexFunc(nextNode.LastJointActions, eqToJointAction)
 			if idx != -1 {
 				trial := nextNode.LastJointActionsTrials[idx]
-				if trial == maxTrial {
-					nextNodes = append(nextNodes, nextNode)
-				}
 				if trial > maxTrial {
 					nextNodes = make(Nodes[S, ASS, AS, A], 0, n)
 					nextNodes = append(nextNodes, nextNode)
 					maxTrial = trial
+				} else if trial == maxTrial {
+					nextNodes = append(nextNodes, nextNode)
 				}
 			}
 		}

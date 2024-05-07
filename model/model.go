@@ -300,7 +300,7 @@ func (m *LinearSum) Grad(x tensor.D2, t tensor.D1) (tensor.D2, tensor.D2, tensor
 	}
 	//ここまで局所的な微分
 
-	//ここから、損失Lをx, w, bに関して、連鎖律で微分
+	//ここから連鎖律 (損失Lをx, w, b について微分)
 	dLdu, err := tensor.D1Mul(dydu, dLdy)
 	if err != nil {
 		return tensor.D2{}, tensor.D2{}, tensor.D1{}, err
