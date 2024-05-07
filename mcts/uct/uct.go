@@ -77,9 +77,9 @@ type nodeSelect[S any, AS ~[]A,  A comparable] struct {
 	action A
 }
 
-type Selects[S any, AS ~[]A, A comparable] []nodeSelect[S, AS, A]
+type selects[S any, AS ~[]A, A comparable] []nodeSelect[S, AS, A]
 
-func (ss Selects[S, AS, A]) Backward(y LeafNodeEvalY, eval EachPlayerEvalFunc[S]) {
+func (ss selects[S, AS, A]) Backward(y LeafNodeEvalY, eval EachPlayerEvalFunc[S]) {
 	for _, s := range ss {
 		node := s.node
 		action := s.action
@@ -121,7 +121,7 @@ func (mcts *MCTS[S, AS, A]) SetUniformActionPolicy() {
 
 func (mcts *MCTS[S, AS, A]) SelectExpansionBackward(node *Node[S, AS, A], r *rand.Rand, capacity int) (int, error) {
 	state := node.State
-	selects := make(Selects[S, AS, A], 0, capacity)
+	selects := make(selects[S, AS, A], 0, capacity)
 	var err error
 	for {
 		action := omw.RandChoice(node.UCBManager.MaxKeys(), r)

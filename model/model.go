@@ -56,7 +56,11 @@ type SequentialInputOutput1D struct {
 	variable Variable
 
 	Forwards layer1d.Forwards
-	LossForward layer1d.LossForward
+
+	YLossFunc func(tensor.D1, tensor.D1) (float64, error)
+	YLossDerivative func(tensor.D1, tensor.D1) (tensor.D1, error)
+
+	YLossForward layer1d.YLossForward
 
 	Param1DLossFunc func(tensor.D1)float64
 	Param2DLossFunc func(tensor.D2)float64
@@ -82,7 +86,7 @@ func NewSequentialInputOutput1D(variable Variable) SequentialInputOutput1D {
 }
 
 func (m *SequentialInputOutput1D) Predict(x tensor.D1) (tensor.D1, error) {
-	y, _, err := m.Forwards.Run(x)
+	y, _, err := m.Forwards.Propagate(x)
 	return y, err
 }
 
@@ -102,11 +106,11 @@ func (m *SequentialInputOutput1D) MeanLoss(x, t tensor.D2) (float64, error) {
 		if err != nil {
 			return 0.0, err
 		}
-		loss, _, err := m.LossForward(y, t[i])
+		yLoss, err := m.YLossFunc(y, t[i])
 		if err != nil {
 			return 0.0, err
 		}
-		sum += loss
+		sum += yLoss
 	}
 	mean := sum / float64(n)
 	return mean, nil
@@ -130,22 +134,21 @@ func (m *SequentialInputOutput1D) Accuracy(x, t tensor.D2) (float64, error) {
 	return float64(correct) / float64(n), nil
 }
 
-func (m *SequentialInputOutput1D) newBackPropagator(x, t tensor.D1) (*layer1d.BackPropagator, error) {
-	y, backwards, err := m.Forwards.Run(x)
-	if err != nil {
-		return &layer1d.BackPropagator{}, err
-	}
-	_, lossBackward, err := m.LossForward(y, t)
-	bp := layer1d.NewBackPropagator(backwards, lossBackward)
-	return &bp, err
-}
-
 func (m *SequentialInputOutput1D) UpdateGrad(x, t tensor.D1) error {
-	bp, err := m.newBackPropagator(x, t)
+	y, backwards, err := m.Forwards.Propagate(x)
 	if err != nil {
 		return err
 	}
-	_, err = bp.Run()
+
+	dLdy, err := m.YLossDerivative(y, t)
+	if err != nil {
+		return err
+	}
+
+	_, err = backwards.Propagate(dLdy)
+	if err != nil {
+		return err
+	}
 
 	grad1D := m.Param1DLossDerivative(m.variable.Param1D)
 	grad2D := m.Param2DLossDerivative(m.variable.Param2D)
@@ -236,20 +239,20 @@ func (m *SequentialInputOutput1D) ValidateBackwardAndNumericalGradientDifference
 type LinearSum struct {
 	W tensor.D2
 	B tensor.D1
-	OutputFunc func(tensor.D1) tensor.D1
-	OutputDerivative func(tensor.D1) tensor.D1
-	LossFunc func(tensor.D1, tensor.D1) (float64, error)
-	LossDerivative func(tensor.D1, tensor.D1) (tensor.D1, error)
+	YFunc func(tensor.D1) tensor.D1
+	YDerivative func(tensor.D1) tensor.D1
+	YLossFunc func(tensor.D1, tensor.D1) (float64, error)
+	YLossDerivative func(tensor.D1, tensor.D1) (tensor.D1, error)
 	WLossFunc func(tensor.D2) float64
 	WLossDerivative func(tensor.D2) tensor.D2
 }
 
 func NewLinearSumIdentityMSE(c float64) LinearSum {
 	return LinearSum{
-		OutputFunc:mlfuncs.Identity[tensor.D1],
-		OutputDerivative:tensor.NewD1OnesLike,
-		LossFunc:mlfuncs1d.MeanSquaredError,
-		LossDerivative:mlfuncs1d.MeanSquaredErrorDerivative,
+		YFunc:mlfuncs.Identity[tensor.D1],
+		YDerivative:tensor.NewD1OnesLike,
+		YLossFunc:mlfuncs1d.MeanSquaredError,
+		YLossDerivative:mlfuncs1d.MeanSquaredErrorDerivative,
 		WLossFunc:mlfuncs2d.L2Regularization(c),
 		WLossDerivative:mlfuncs2d.L2RegularizationDerivative(c),
 	}
@@ -257,10 +260,10 @@ func NewLinearSumIdentityMSE(c float64) LinearSum {
 
 func NewLinearSumSigmoidMSE(c float64) LinearSum {
 	return LinearSum{
-		OutputFunc:mlfuncs1d.Sigmoid,
-		OutputDerivative:mlfuncs1d.SigmoidDerivative,
-		LossFunc:mlfuncs1d.MeanSquaredError,
-		LossDerivative:mlfuncs1d.MeanSquaredErrorDerivative,
+		YFunc:mlfuncs1d.Sigmoid,
+		YDerivative:mlfuncs1d.SigmoidDerivative,
+		YLossFunc:mlfuncs1d.MeanSquaredError,
+		YLossDerivative:mlfuncs1d.MeanSquaredErrorDerivative,
 		WLossFunc:mlfuncs2d.L2Regularization(c),
 		WLossDerivative:mlfuncs2d.L2RegularizationDerivative(c),
 	}
@@ -268,28 +271,28 @@ func NewLinearSumSigmoidMSE(c float64) LinearSum {
 
 func (m *LinearSum) Predict(x tensor.D2) (tensor.D1, error) {
 	u, err := mlfuncs2d.LinearSum(x, m.W, m.B)
-	y := m.OutputFunc(u)
+	y := m.YFunc(u)
 	return y, err
 }
 
 func (m *LinearSum) Grad(x tensor.D2, t tensor.D1) (tensor.D2, tensor.D2, tensor.D1, error) {
-	y, err := m.Predict(x)
-	if err != nil {
-		return tensor.D2{}, tensor.D2{}, tensor.D1{}, err
-	}
-
 	u, err := mlfuncs2d.LinearSum(x, m.W, m.B)
 	if err != nil {
 		return tensor.D2{}, tensor.D2{}, tensor.D1{}, err
 	}
 
-	//ここから局所的な微分
-	dLdy, err := m.LossDerivative(y, t)
+	y, err := m.Predict(x)
 	if err != nil {
 		return tensor.D2{}, tensor.D2{}, tensor.D1{}, err
 	}
 
-	dydu := m.OutputDerivative(u)
+	//ここから局所的な微分
+	dLdy, err := m.YLossDerivative(y, t)
+	if err != nil {
+		return tensor.D2{}, tensor.D2{}, tensor.D1{}, err
+	}
+
+	dydu := m.YDerivative(u)
 
 	dudx, dudw, _, err := mlfuncs2d.LinearSumDerivative(x, m.W)
 	if err != nil {
@@ -297,7 +300,7 @@ func (m *LinearSum) Grad(x tensor.D2, t tensor.D1) (tensor.D2, tensor.D2, tensor
 	}
 	//ここまで局所的な微分
 
-	//ここから連鎖律
+	//ここから、損失Lをx, w, bに関して、連鎖律で微分
 	dLdu, err := tensor.D1Mul(dydu, dLdy)
 	if err != nil {
 		return tensor.D2{}, tensor.D2{}, tensor.D1{}, err
@@ -343,11 +346,11 @@ func (m *LinearSum) MeanLoss(x tensor.D3, t tensor.D2) (float64, error) {
 		if err != nil {
 			return 0.0, err
 		}
-		loss, err := m.LossFunc(y, t[i])
+		yLoss, err := m.YLossFunc(y, t[i])
 		if err != nil {
 			return 0.0, err
 		}
-		sum += loss
+		sum += yLoss
 	}
 	mean := sum / float64(n)
 	return mean, nil

@@ -1,7 +1,6 @@
 package duct
 
 import (
-	"fmt"
 	"github.com/sw965/crow/game/simultaneous"
 	"github.com/sw965/crow/ucb"
 	"github.com/sw965/omw"
@@ -35,40 +34,31 @@ func (node *Node[S, ASS, AS, A]) MaxTrialJointActionPath(r *rand.Rand, limit int
 		}
 		ret = append(ret, jointAction)
 
-		if len(node.NextNodes) == 0 {
+		n := len(node.NextNodes)
+		if n == 0 {
 			return ret
 		}
 
-		eqJointAction := func(as AS) bool {
-			return slices.Equal(as, jointAction)
-		}
-
 		maxTrial := 0
-		n := len(node.NextNodes)
 		nextNodes := make(Nodes[S, ASS, AS, A], 0, n)
-
-		for _, nn := range node.NextNodes {
-			idx := slices.IndexFunc(nn.LastJointActions, eqJointAction)
+		for _, nextNode := range node.NextNodes {
+			eqToJointAction := omw.EqualSlice(jointAction)
+			idx := slices.IndexFunc(nextNode.LastJointActions, eqToJointAction)
 			if idx != -1 {
-				trial := nn.LastJointActionsTrials[idx]
+				trial := nextNode.LastJointActionsTrials[idx]
 				if trial == maxTrial {
-					nextNodes = append(nextNodes, nn)
+					nextNodes = append(nextNodes, nextNode)
 				}
-
 				if trial > maxTrial {
 					nextNodes = make(Nodes[S, ASS, AS, A], 0, n)
-					nextNodes = append(nextNodes, nn)
+					nextNodes = append(nextNodes, nextNode)
 					maxTrial = trial
 				}
 			}
 		}
 
 		if len(nextNodes) == 0 {
-			fmt.Println("jointAction", jointAction)
-			fmt.Println("maxTrial", maxTrial)
-			for i, nn := range node.NextNodes {
-				fmt.Println("lastJointActions", i, nn.LastJointActions)
-			}
+			break
 		}
 		node = omw.RandChoice(nextNodes, r)
 	}
@@ -86,29 +76,6 @@ func (nodes Nodes[S, ASS, AS, A]) Find(state *S, eq simultaneous.EqualFunc[S]) (
 	return &Node[S, ASS, AS, A]{}, false
 }
 
-func (nodes Nodes[S, ASS, AS, A]) Trials() []int {
-	ret := make([]int, len(nodes))
-	for i, node := range nodes {
-		ret[i] = node.Trial
-	}
-	return ret
-}
-
-func (nodes Nodes[S, ASS, AS, A]) MaxTrial() int {
-	return omw.Max(nodes.Trials()...)
-}
-
-func (nodes Nodes[S, ASS, AS, A]) MaxTrialNodes() Nodes[S, ASS, AS, A] {
-	max := nodes.MaxTrial()
-	ret := make(Nodes[S, ASS, AS, A], 0, len(nodes))
-	for _, node := range nodes {
-		if node.Trial == max {
-			ret = append(ret, node)
-		}
-	}
-	return ret
-}
-
 type nodeSelect[S any, ASS ~[]AS, AS ~[]A, A comparable] struct {
 	node        *Node[S, ASS, AS, A]
 	jointAction AS
@@ -116,13 +83,13 @@ type nodeSelect[S any, ASS ~[]AS, AS ~[]A, A comparable] struct {
 
 type selects[S any, ASS ~[]AS, AS ~[]A, A comparable] []nodeSelect[S, ASS, AS, A]
 
-func (ss selects[S, ASS, AS, A]) Backward(ys LeafNodeEvalYs) {
+func (ss selects[S, ASS, AS, A]) backward(ys LeafNodeEvalYs) {
 	for _, s := range ss {
 		node := s.node
 		jointAction := s.jointAction
-		for playerI, action := range jointAction {
-			node.UCBManagers[playerI][action].TotalValue += float64(ys[playerI])
-			node.UCBManagers[playerI][action].Trial += 1
+		for playerI, a := range jointAction {
+			node.UCBManagers[playerI][a].TotalValue += float64(ys[playerI])
+			node.UCBManagers[playerI][a].Trial += 1
 		}
 	}
 }
@@ -133,6 +100,7 @@ type MCTS[S any, ASS ~[]AS, AS ~[]A, A comparable] struct {
 	ActionPoliciesFunc ActionPoliciesFunc[S, A]
 	LeafNodeEvalsFunc  LeafNodeEvalsFunc[S]
 	NextNodesCap int
+	LastJointActionsCap int
 }
 
 func (mcts *MCTS[S, ASS, AS, A]) SetUniformActionPoliciesFunc() {
@@ -162,8 +130,18 @@ func (mcts *MCTS[S, ASS, AS, A]) NewNode(state *S) *Node[S, ASS, AS, A] {
 		}
 		ms[playerI] = m
 	}
+
 	nextNodes := make(Nodes[S, ASS, AS, A], 0, mcts.NextNodesCap)
-	return &Node[S, ASS, AS, A]{State: *state, UCBManagers: ms, NextNodes:nextNodes}
+	lastJointActions := make(ASS, 0, mcts.LastJointActionsCap)
+	lastJointActionsTrials := make([]int, 0, mcts.LastJointActionsCap)
+
+	return &Node[S, ASS, AS, A]{
+		State: *state,
+		UCBManagers: ms,
+		NextNodes:nextNodes,
+		LastJointActions:lastJointActions,
+		LastJointActionsTrials:lastJointActionsTrials,
+	}
 }
 
 func (mcts *MCTS[S, ASS, AS, A]) SelectExpansionBackward(node *Node[S, ASS, AS, A], r *rand.Rand, capacity int) (int, error) {
@@ -200,16 +178,13 @@ func (mcts *MCTS[S, ASS, AS, A]) SelectExpansionBackward(node *Node[S, ASS, AS, 
 			node.NextNodes = append(node.NextNodes, nextNode)
 		}
 
-		eqJointAction := func(as AS) bool {
-			return slices.Equal(as, jointAction)
-		}
-
-		if !slices.ContainsFunc(nextNode.LastJointActions, eqJointAction) {
+		eqToJointAction := omw.EqualSlice(jointAction)
+		if !slices.ContainsFunc(nextNode.LastJointActions, eqToJointAction) {
 			nextNode.LastJointActions = append(nextNode.LastJointActions, jointAction)
 			nextNode.LastJointActionsTrials = append(nextNode.LastJointActionsTrials, 0)
 		}
 
-		idx := slices.IndexFunc(nextNode.LastJointActions, eqJointAction)
+		idx := slices.IndexFunc(nextNode.LastJointActions, eqToJointAction)
 		nextNode.LastJointActionsTrials[idx] += 1
 
 		//新しくノードを作成したら、処理を終了する
@@ -219,7 +194,7 @@ func (mcts *MCTS[S, ASS, AS, A]) SelectExpansionBackward(node *Node[S, ASS, AS, 
 		node = nextNode
 	}
 	ys := mcts.LeafNodeEvalsFunc(&state)
-	selects.Backward(ys)
+	selects.backward(ys)
 	return len(selects), nil
 }
 

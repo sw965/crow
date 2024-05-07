@@ -131,7 +131,7 @@ func RandReLU(x tensor.D1, min, max float64, isTrain bool, r *rand.Rand) (tensor
 	y := make(tensor.D1, len(x))
 	var noise float64
 	if isTrain {
-		noise = omw.RandFloat64(min, max, r)
+		noise = omw.RandFloat64Uniform(min, max, r)
 	} else {
 		noise = (min + max) / 2.0
 	}
@@ -150,7 +150,7 @@ func ParamRandReLU(x tensor.D1, alpha, min, max float64, isTrain bool, r *rand.R
 	y := make(tensor.D1, len(x))
 	var noise float64
 	if isTrain {
-		noise = omw.RandFloat64(min, max, r)
+		noise = omw.RandFloat64Uniform(min, max, r)
 	} else {
 		noise = (min + max) / 2.0
 	}

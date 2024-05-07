@@ -10,7 +10,7 @@ import (
 type Forward func(tensor.D1, Backwards) (tensor.D1, Backwards, error)
 type Forwards []Forward
 
-func (fs Forwards) Run(x tensor.D1) (tensor.D1, Backwards, error) {
+func (fs Forwards) Propagate(x tensor.D1) (tensor.D1, Backwards, error) {
 	bs := make(Backwards, 0, len(fs))
 	var err error
 	for _, f := range fs {
@@ -26,21 +26,9 @@ func (fs Forwards) Run(x tensor.D1) (tensor.D1, Backwards, error) {
 type Backward func(tensor.D1) (tensor.D1, error)
 type Backwards []Backward
 
-type BackPropagator struct {
-	backwards Backwards
-	lossBackward LossBackward
-}
-
-func NewBackPropagator(backwards Backwards, lossBackward LossBackward) BackPropagator {
-	return BackPropagator{backwards:backwards, lossBackward:lossBackward}
-}
-
-func (bp *BackPropagator) Run() (tensor.D1, error) {
-	chain, err := bp.lossBackward()
-	if err != nil {
-		return tensor.D1{}, err
-	}
-	bs := omw.Reverse(bp.backwards)
+func (bs Backwards) Propagate(chain tensor.D1) (tensor.D1, error) {
+	bs = omw.ReverseElement(bs)
+	var err error
 	for _, b := range bs {
 		chain, err = b(chain)
 		if err != nil {
@@ -160,7 +148,6 @@ func NewParamRandReLUForward(alpha *float64, min, max float64, gradAlpha *float6
 			// ∂L/∂x
 			dx, err := tensor.D1Mul(dydx, chain)
 			return dx, err
-
 		}
 		backwards = append(backwards, backward)
 		return y, backwards, nil
@@ -210,13 +197,13 @@ func NewDropoutForward(p float64, isTrain *bool, r *rand.Rand) Forward {
 	}
 }
 
-type LossForward func(tensor.D1, tensor.D1) (float64, LossBackward, error)
-type LossBackward func() (tensor.D1, error)
+type YLossForward func(tensor.D1, tensor.D1) (float64, YLossBackward, error)
+type YLossBackward func() (tensor.D1, error)
 
-func NewMeanSquaredErrorForward() LossForward {
-	return func(y, t tensor.D1) (float64, LossBackward, error) {
+func NewMeanSquaredErrorForward() YLossForward {
+	return func(y, t tensor.D1) (float64, YLossBackward, error) {
 		loss, err := mlfuncs1d.MeanSquaredError(y, t)
-		var backward LossBackward
+		var backward YLossBackward
 		backward = func() (tensor.D1, error) {
 			dLdy, err := mlfuncs1d.MeanSquaredErrorDerivative(y, t)
 			if err != nil {

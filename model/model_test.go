@@ -8,6 +8,7 @@ import (
 	"github.com/sw965/crow/layer/1d"
 	"github.com/sw965/omw"
 	"github.com/sw965/crow/tensor"
+	"github.com/sw965/crow/mlfuncs/1d"
 	"github.com/sw965/crow/mlfuncs/2d"
 	"github.com/sw965/crow/mlfuncs/3d"
 )
@@ -16,22 +17,22 @@ func TestModel(t *testing.T) {
 	return
 	r := omw.NewMt19937()
 	xn := 784
-	hidden1 := 64
-	hidden2 := 16
+	h1 := 64
+	h2 := 16
 	yn := 10
 
 	isTrain := []bool{true}
 	variable := model.Variable{
 		Param1D:tensor.D1{0.1, 0.1, 0.1},
 		Param2D:tensor.D2{
-			tensor.NewD1Zeros(hidden1),
-			tensor.NewD1Zeros(hidden2),
+			tensor.NewD1Zeros(h1),
+			tensor.NewD1Zeros(h2),
 			tensor.NewD1Zeros(yn),
 		},
 		Param3D:tensor.D3{
-			tensor.NewD2He(xn, hidden1, r),
-			tensor.NewD2He(hidden1, hidden2, r),
-			tensor.NewD2He(hidden2, yn, r),
+			tensor.NewD2He(xn, h1, r),
+			tensor.NewD2He(h1, h2, r),
+			tensor.NewD2He(h2, yn, r),
 		},
 	}
 	variable.Init()
@@ -66,7 +67,9 @@ func TestModel(t *testing.T) {
 	}
 
 	affine.Forwards = forwards
-	affine.LossForward = layer1d.NewMeanSquaredErrorForward()
+	affine.YLossFunc = mlfuncs1d.MeanSquaredError
+	affine.YLossDerivative = mlfuncs1d.MeanSquaredErrorDerivative
+
 	c := 0.001
 	affine.Param3DLossFunc = mlfuncs3d.L2Regularization(c)
 	affine.Param3DLossDerivative = mlfuncs3d.L2RegularizationDerivative(c)
@@ -88,8 +91,8 @@ func TestModel(t *testing.T) {
 		idx := r.Intn(trainImgNum)
 		affine.SGD(mnist.TrainImg[idx], mnist.TrainLabel[idx], 0.01)
 		if i%196 == 0 {
-			//affine.ValidateBackwardAndNumericalGradientDifference(mnist.TrainImg[idx], mnist.TrainLabel[idx])
-			idxs := omw.RandIntns(testSize, testImgNum, r)
+			affine.ValidateBackwardAndNumericalGradientDifference(mnist.TrainImg[idx], mnist.TrainLabel[idx])
+			idxs := omw.RandIntsUniform(testSize, 0, testImgNum, r)
 			miniBatchTestImg := omw.ElementsAtIndices(mnist.TestImg, idxs...)
 			miniBatchTestLabel := omw.ElementsAtIndices(mnist.TestLabel, idxs...)
 			isTrain[0] = false
