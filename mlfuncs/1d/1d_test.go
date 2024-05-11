@@ -16,7 +16,7 @@ func TestParamReLUDerivative(test *testing.T) {
 	min, max := -5.0, 5.0
 	x := tensor.NewD1RandUniform(n, min, max, r)
 	t := tensor.NewD1RandUniform(n, min, max, r)
-	alpha := omw.RandFloat64(min, max, r)
+	alpha := omw.RandFloat64Uniform(min, max, r)
 
 	loss := func(x tensor.D1, alpha float64) float64 {
 		y := mlfuncs1d.LeakyReLU(x, alpha)
@@ -32,16 +32,16 @@ func TestParamReLUDerivative(test *testing.T) {
 	numGradX := mlfuncs1d.NumericalDifferentiation(x, lossX)
 	numGradAlpha := scalar.NumericalDifferentiation(alpha, lossAlpha)
 
+	dLdy, err := mlfuncs1d.MeanSquaredErrorDerivative(mlfuncs1d.LeakyReLU(x, alpha), t)
+	if err != nil {
+		panic(err)
+	}
 	dydx, dydVectorizedGradAlpha := mlfuncs1d.ParamReLUDerivative(x, alpha)
-	chain, err := mlfuncs1d.MeanSquaredErrorDerivative(mlfuncs1d.LeakyReLU(x, alpha), t)
+ 	vectorizedGradAlpha, err := tensor.D1Mul(dydVectorizedGradAlpha, dLdy)
 	if err != nil {
 		panic(err)
 	}
- 	vectorizedGradAlpha, err := tensor.D1Mul(dydVectorizedGradAlpha, chain)
-	if err != nil {
-		panic(err)
-	}
-	gradX, err := tensor.D1Mul(dydx, chain)
+	gradX, err := tensor.D1Mul(dydx, dLdy)
 	if err != nil {
 		panic(err)
 	}

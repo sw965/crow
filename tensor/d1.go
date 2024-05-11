@@ -80,9 +80,9 @@ func (d1 D1) Clone() D1 {
     return slices.Clone(d1)
 }
 
-func (d1 D1) Copy(other D1) {
+func (d1 D1) Copy(src D1) {
     for i := range d1 {
-        d1[i] = other[i]
+        d1[i] = src[i]
     }
 }
 

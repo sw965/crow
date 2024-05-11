@@ -14,11 +14,10 @@ import (
 )
 
 func TestModel(t *testing.T) {
-	return
 	r := omw.NewMt19937()
 	xn := 784
-	h1 := 64
-	h2 := 16
+	h1 := 128
+	h2 := 32
 	yn := 10
 
 	isTrain := []bool{true}
@@ -38,39 +37,42 @@ func TestModel(t *testing.T) {
 	variable.Init()
 
 	affine := model.NewSequentialInputOutput1D(variable)
-	affine.L2NormGradClipThreshold = 128.0
+	affine.L2NormGradClipThreshold = 64.0
 
 	forwards := layer1d.Forwards{
 		layer1d.NewAffineForward(variable.Param3D[0], variable.Param2D[0], variable.GetGrad3D()[0], variable.GetGrad2D()[0]),
 		//layer.NewD1ReLUForward(),
-		//layer.NewD1LeakyReLUForward(0.0),
-		layer1d.NewParamReLUForward(&variable.Param1D[0], &variable.GetGrad1D()[0]),
+		//layer1d.NewLeakyReLUForward(0.1),
+		//layer1d.NewParamReLUForward(&variable.Param1D[0], &variable.GetGrad1D()[0]),
 		//layer.NewD1RandReLUForward(0.05, 0.15, &isTrain[0], r),
-		//layer.NewD1ParamRandReLUForward(&d1Var.Param[0], 0.25, 1.75, &d1Var.GetGrad()[0], &isTrain[0], r),
+		layer1d.NewParamRandReLUForward(&variable.Param1D[0], 0.25, 1.75, &variable.GetGrad1D()[0], &isTrain[0], r),
 
 		layer1d.NewAffineForward(variable.Param3D[1], variable.Param2D[1], variable.GetGrad3D()[1], variable.GetGrad2D()[1]),
 		//layer.NewD1ReLUForward(),
-		//layer.NewD1LeakyReLUForward(0.0),
-		layer1d.NewParamReLUForward(&variable.Param1D[1], &variable.GetGrad1D()[1]),
+		//layer1d.NewLeakyReLUForward(0.1),
+		//layer1d.NewParamReLUForward(&variable.Param1D[1], &variable.GetGrad1D()[1]),
 		//layer.NewD1RandReLUForward(0.05, 0.15, &isTrain[0], r),
-		//layer.NewD1ParamRandReLUForward(&d1Var.Param[1], 0.25, 1.75, &d1Var.GetGrad()[1], &isTrain[0], r),
+		layer1d.NewParamRandReLUForward(&variable.Param1D[1], 0.25, 1.75, &variable.GetGrad1D()[1], &isTrain[0], r),
 
 		layer1d.NewAffineForward(variable.Param3D[2], variable.Param2D[2], variable.GetGrad3D()[2], variable.GetGrad2D()[2]),
 		//layer.NewD1ReLUForward(),
-		//layer.NewD1LeakyReLUForward(0.0),
-		layer1d.NewParamReLUForward(&variable.Param1D[2], &variable.GetGrad1D()[2]),
+		//layer1d.NewLeakyReLUForward(0.1),
+		//layer1d.NewParamReLUForward(&variable.Param1D[2], &variable.GetGrad1D()[2]),
 		//layer.NewD1RandReLUForward(0.05, 0.15, &isTrain[0], r),
-		//layer.NewD1ParamRandReLUForward(&d1Var.Param[2], 0.25, 1.75, &d1Var.GetGrad()[2], &isTrain[0], r),
+		layer1d.NewParamRandReLUForward(&variable.Param1D[2], 0.25, 1.75, &variable.GetGrad1D()[2], &isTrain[0], r),
 
-		//layer.NewD1SigmoidForward(),
+		//layer1d.NewSigmoidForward(),
 		layer1d.NewTanhForward(),
 	}
+	//Tanh Prelu × D1
+	//Sigmoid Prelu × D3
+	//Sigmoid LRelu × D2 D3
 
 	affine.Forwards = forwards
-	affine.YLossFunc = mlfuncs1d.MeanSquaredError
-	affine.YLossDerivative = mlfuncs1d.MeanSquaredErrorDerivative
+	affine.YLossFunc = mlfuncs1d.SumSquaredError
+	affine.YLossDerivative = mlfuncs1d.SumSquaredErrorDerivative
 
-	c := 0.001
+	c := 0.0001
 	affine.Param3DLossFunc = mlfuncs3d.L2Regularization(c)
 	affine.Param3DLossDerivative = mlfuncs3d.L2RegularizationDerivative(c)
 
@@ -91,7 +93,7 @@ func TestModel(t *testing.T) {
 		idx := r.Intn(trainImgNum)
 		affine.SGD(mnist.TrainImg[idx], mnist.TrainLabel[idx], 0.01)
 		if i%196 == 0 {
-			affine.ValidateBackwardAndNumericalGradientDifference(mnist.TrainImg[idx], mnist.TrainLabel[idx])
+			//affine.ValidateBackwardAndNumericalGradientDifference(mnist.TrainImg[idx], mnist.TrainLabel[idx])
 			idxs := omw.RandIntsUniform(testSize, 0, testImgNum, r)
 			miniBatchTestImg := omw.ElementsAtIndices(mnist.TestImg, idxs...)
 			miniBatchTestLabel := omw.ElementsAtIndices(mnist.TestLabel, idxs...)

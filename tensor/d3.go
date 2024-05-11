@@ -82,9 +82,9 @@ func (d3 D3) Div(other D3) error {
 	return nil
 }
 
-func (d3 D3) Copy(other D3) {
+func (d3 D3) Copy(src D3) {
 	for i := range d3 {
-		d3[i].Copy(other[i])
+		d3[i].Copy(src[i])
 	}
 }
 

@@ -54,13 +54,10 @@ func (v *Variable) SGD() {
 
 type SequentialInputOutput1D struct {
 	variable Variable
-
 	Forwards layer1d.Forwards
 
 	YLossFunc func(tensor.D1, tensor.D1) (float64, error)
 	YLossDerivative func(tensor.D1, tensor.D1) (tensor.D1, error)
-
-	YLossForward layer1d.YLossForward
 
 	Param1DLossFunc func(tensor.D1)float64
 	Param2DLossFunc func(tensor.D2)float64
@@ -198,7 +195,7 @@ func (m *SequentialInputOutput1D) ValidateBackwardAndNumericalGradientDifference
 		return loss
 	}
 
-	lossD3 := func(d2Params tensor.D3) float64 {
+	lossD3 := func(_ tensor.D3) float64 {
 		loss, err := m.MeanLoss(tensor.D2{x}, tensor.D2{t})
 		if err != nil {
 			panic(err)
@@ -209,7 +206,9 @@ func (m *SequentialInputOutput1D) ValidateBackwardAndNumericalGradientDifference
 	numGradD1 := mlfuncs1d.NumericalDifferentiation(m.variable.Param1D, lossD1)
 	numGradD2 := mlfuncs2d.NumericalDifferentiation(m.variable.Param2D, lossD2)
 	numGradD3 := mlfuncs3d.NumericalDifferentiation(m.variable.Param3D, lossD3)
-	mlfuncs.ClipL2Norm(numGradD1, numGradD2, numGradD3, m.L2NormGradClipThreshold)
+	if m.L2NormGradClipThreshold > 0.0 {
+		mlfuncs.ClipL2Norm(numGradD1, numGradD2, numGradD3, m.L2NormGradClipThreshold)
+	}
 	m.UpdateGrad(x, t)
 
 	diffD1, err := tensor.D1Sub(m.variable.grad1D, numGradD1)

@@ -189,9 +189,9 @@ func (d2 D2) DotProduct(other D2) D2 {
     return y
 }
 
-func (d2 D2) Copy(other D2) {
+func (d2 D2) Copy(src D2) {
     for i := range d2 {
-        d2[i].Copy(other[i])
+        d2[i].Copy(src[i])
     }
 }
 

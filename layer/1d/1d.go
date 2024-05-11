@@ -196,21 +196,3 @@ func NewDropoutForward(p float64, isTrain *bool, r *rand.Rand) Forward {
 		return y, backwards, nil
 	}
 }
-
-type YLossForward func(tensor.D1, tensor.D1) (float64, YLossBackward, error)
-type YLossBackward func() (tensor.D1, error)
-
-func NewMeanSquaredErrorForward() YLossForward {
-	return func(y, t tensor.D1) (float64, YLossBackward, error) {
-		loss, err := mlfuncs1d.MeanSquaredError(y, t)
-		var backward YLossBackward
-		backward = func() (tensor.D1, error) {
-			dLdy, err := mlfuncs1d.MeanSquaredErrorDerivative(y, t)
-			if err != nil {
-				return tensor.D1{}, err
-			}
-			return dLdy, err
-		}
-		return loss, backward, err
-	}
-}

@@ -204,31 +204,41 @@ func Dropout(x tensor.D1, p float64, isTrain bool, r *rand.Rand) (tensor.D1, ten
 	return y, mask
 }
 
-func MeanSquaredError(y, t tensor.D1) (float64, error) {
+func SumSquaredError(y, t tensor.D1) (float64, error) {
 	if len(y) != len(t) {
-		return 0.0, fmt.Errorf("len(y) != len(t) であるため、MeanSquaredErrorを計算できません。")
+		return 0.0, fmt.Errorf("len(y) != len(t) であるため、SumSquaredErrorを計算できません。")
 	}
-
     sqSum := 0.0
     for i := range y {
         diff := y[i] - t[i]
         sqSum += (diff * diff)
     }
-    n := len(y)
-	mean := sqSum/float64(n)
-    return 0.5*mean, nil
+    return 0.5*sqSum, nil
 }
 
-func MeanSquaredErrorDerivative(y, t tensor.D1) (tensor.D1, error) {
+func SumSquaredErrorDerivative(y, t tensor.D1) (tensor.D1, error) {
 	if len(y) != len(t) {
-		return tensor.D1{}, fmt.Errorf("len(y) != len(t) であるため、MeanSquaredErrorDerivativeを計算できません。")
+		return tensor.D1{}, fmt.Errorf("len(y) != len(t) であるため、SumSquaredErrorDerivativeを計算できません。")
 	}
 	n := len(y)
     grad := make(tensor.D1, n)
     for i := range y {
-        grad[i] = (y[i] - t[i]) / float64(n)
+        grad[i] = y[i] - t[i]
     }
     return grad, nil
+}
+
+func MeanSquaredError(y, t tensor.D1) (float64, error) {
+	sqSum, err := SumSquaredError(y, t)
+	n := len(y)
+	return sqSum / float64(n), err
+}
+
+func MeanSquaredErrorDerivative(y, t tensor.D1) (tensor.D1, error) {
+	n := len(y)
+	grad, err := SumSquaredErrorDerivative(y, t)
+	grad.DivScalar(float64(n))
+	return grad, err
 }
 
 func L2Regularization(c float64) func(tensor.D1) float64 {
