@@ -5,9 +5,9 @@ import (
 	"github.com/sw965/crow/tensor"
 )
 
-func NewMultiHotTensor(bss ...[]bool) (tensor.D1, error) {
+func NewMultiHotTensor(bss ...[]bool) (tensor.D1, []int, error) {
 	if len(bss) == 0 {
-		return tensor.D1{}, nil
+		return tensor.D1{}, []int{}, nil
 	}
 
 	bssN := len(bss)
@@ -40,7 +40,7 @@ func NewMultiHotTensor(bss ...[]bool) (tensor.D1, error) {
 	for _, idx := range hotIdxs {
 		ret[idx] = 1.0
 	}
-	return ret, nil
+	return ret, hotIdxs, nil
 }
 
 func Identity[X any](x X) X {
