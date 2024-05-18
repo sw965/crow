@@ -2,7 +2,7 @@ package ucb
 
 import (
 	"math"
-	oMath "github.com/sw965/omw/math"
+	omath "github.com/sw965/omw/math"
 )
 
 type Func func(float64, float64, int, int) float64
@@ -55,7 +55,7 @@ func (m Manager[KS, K]) Max() float64 {
 	for _, v := range m {
 		ucbs = append(ucbs, v.Calculation(total))
 	}
-	return omw.Max(ucbs...)
+	return omath.Max(ucbs...)
 }
 
 func (m Manager[KS, K]) MaxKeys() KS {
@@ -71,7 +71,7 @@ func (m Manager[KS, K]) MaxKeys() KS {
 }
 
 func (m Manager[KS, K]) MaxTrialKeys() KS {
-	max := omw.Max(m.Trials()...)
+	max := omath.Max(m.Trials()...)
 	ks := make(KS, 0, len(m))
 	for k, v := range m {
 		if v.Trial == max {
