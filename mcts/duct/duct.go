@@ -3,7 +3,8 @@ package duct
 import (
 	"github.com/sw965/crow/game/simultaneous"
 	"github.com/sw965/crow/ucb"
-	"github.com/sw965/omw"
+	oslices "github.com/sw965/omw/slices"
+	orand "github.com/sw965/omw/rand"
 	"math/rand"
 	"golang.org/x/exp/slices"
 )
@@ -39,7 +40,7 @@ func (node *Node[S, ASS, AS, A]) MaxTrialJointActionPath(r *rand.Rand, limit int
 			return ret
 		}
 
-		eqToJointAction := omw.EqualSlice(jointAction)
+		eqToJointAction := oslices.Equal(jointAction)
 		maxTrial := 0
 		nextNodes := make(Nodes[S, ASS, AS, A], 0, n)
 		for _, nextNode := range node.NextNodes {
@@ -59,7 +60,7 @@ func (node *Node[S, ASS, AS, A]) MaxTrialJointActionPath(r *rand.Rand, limit int
 		if len(nextNodes) == 0 {
 			break
 		}
-		node = omw.RandChoice(nextNodes, r)
+		node = orand.Choice(nextNodes, r)
 	}
 	return ret
 }

@@ -1,17 +1,18 @@
 package mlfuncs2d
 
 import (
-	"github.com/sw965/omw"
+	"github.com/sw965/omw/fn"
+	omath "github.com/sw965/omw/math"
 	"github.com/sw965/crow/tensor"
 	"github.com/sw965/crow/mlfuncs/1d"
 )
 
 func SigmoidToTanh(y tensor.D2) tensor.D2 {
-	return omw.MapFunc[tensor.D2](y, mlfuncs1d.SigmoidToTanh)
+	return fn.Map[tensor.D2](y, mlfuncs1d.SigmoidToTanh)
 }
 
 func TanhToSigmoid(y tensor.D2) tensor.D2 {
-	return omw.MapFunc[tensor.D2](y, mlfuncs1d.TanhToSigmoid)
+	return fn.Map[tensor.D2](y, mlfuncs1d.TanhToSigmoid)
 }
 
 func LinearSum(x, w tensor.D2, b tensor.D1) (tensor.D1, error) {
@@ -45,13 +46,13 @@ func LinearSumDerivative(x, w tensor.D2) (tensor.D2, tensor.D2, tensor.D1, error
 
 func L2Regularization(c float64) func(tensor.D2) float64 {
 	return func(w tensor.D2) float64 {
-		return omw.Sum(omw.MapFunc[tensor.D1](w, mlfuncs1d.L2Regularization(c))...)
+		return omath.Sum(fn.Map[tensor.D1](w, mlfuncs1d.L2Regularization(c))...)
 	}
 }
 
 func L2RegularizationDerivative(c float64) func(tensor.D2) tensor.D2 {
 	return func(w tensor.D2) tensor.D2 {
-		return omw.MapFunc[tensor.D2](w, mlfuncs1d.L2RegularizationDerivative(c))
+		return fn.Map[tensor.D2](w, mlfuncs1d.L2RegularizationDerivative(c))
 	}
 }
 

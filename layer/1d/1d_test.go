@@ -4,7 +4,7 @@ import (
 	"testing"
 	"fmt"
 	"math"
-	"github.com/sw965/omw"
+	orand "github.com/sw965/omw/rand"
 	"github.com/sw965/crow/tensor"
 	"github.com/sw965/crow/layer/1d"
 	"github.com/sw965/crow/mlfuncs/1d"
@@ -12,7 +12,7 @@ import (
 )
 
 func TestAffineForward(test *testing.T) {
-	random := omw.NewMt19937()
+	random := orand.NewMt19937()
 	r := 10
 	c := 5
 

@@ -2,7 +2,7 @@ package tensor
 
 import (
 	"math/rand"
-	"github.com/sw965/omw"
+	"github.com/sw965/omw/fn"
 )
 
 func NewD2Zeros(r, c int) D2 {
@@ -14,7 +14,7 @@ func NewD2Zeros(r, c int) D2 {
 }
 
 func NewD2ZerosLike(d2 D2) D2 {
-	return omw.MapFunc[D2](d2, NewD1ZerosLike)
+	return fn.Map[D2](d2, NewD1ZerosLike)
 }
 
 func NewD2Ones(r, c int) D2 {
@@ -26,7 +26,7 @@ func NewD2Ones(r, c int) D2 {
 }
 
 func NewD2OnesLike(x D2) D2 {
-	return omw.MapFunc[D2](x, NewD1OnesLike)
+	return fn.Map[D2](x, NewD1OnesLike)
 }
 
 func NewD2RandUniform(r, c int, min, max float64, rng *rand.Rand) D2 {

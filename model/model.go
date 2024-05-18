@@ -9,7 +9,7 @@ import (
 	"github.com/sw965/crow/mlfuncs/1d"
 	"github.com/sw965/crow/mlfuncs/2d"
 	"github.com/sw965/crow/mlfuncs/3d"
-	"github.com/sw965/omw"
+	oslices "github.com/sw965/omw/slices"
 )
 
 type Variable struct {
@@ -124,7 +124,7 @@ func (m *SequentialInputOutput1D) Accuracy(x, t tensor.D2) (float64, error) {
 		if err != nil {
 			return 0.0, err
 		}
-		if omw.MaxIndex(y) == omw.MaxIndex(t[i]) {
+		if oslices.MaxIndex(y) == oslices.MaxIndex(t[i]) {
 			correct += 1
 		}
 	}
@@ -366,7 +366,7 @@ func (m *LinearSum) Accuracy(x tensor.D3, t tensor.D2) (float64, error) {
 		if err != nil {
 			return 0.0, err
 		}
-		if omw.MaxIndex(y) == omw.MaxIndex(t[i]) {
+		if oslices.MaxIndex(y) == oslices.MaxIndex(t[i]) {
 			correct += 1
 		}
 	}

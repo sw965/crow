@@ -1,8 +1,8 @@
 package ucb
 
 import (
-	"github.com/sw965/omw"
 	"math"
+	oMath "github.com/sw965/omw/math"
 )
 
 type Func func(float64, float64, int, int) float64
@@ -46,7 +46,7 @@ func (m Manager[KS, K]) Trials() []int {
 }
 
 func (m Manager[KS, K]) TotalTrial() int {
-	return omw.Sum(m.Trials()...)
+	return omath.Sum(m.Trials()...)
 }
 
 func (m Manager[KS, K]) Max() float64 {

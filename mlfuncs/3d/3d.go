@@ -1,20 +1,21 @@
 package mlfuncs3d
 
 import (
-	"github.com/sw965/omw"
+	"github.com/sw965/omw/fn"
+	omath "github.com/sw965/omw/math"
 	"github.com/sw965/crow/tensor"
 	"github.com/sw965/crow/mlfuncs/2d"
 )
 
 func L2Regularization(c float64) func(tensor.D3) float64 {
 	return func(w tensor.D3) float64 {
-		return omw.Sum(omw.MapFunc[tensor.D1](w, mlfuncs2d.L2Regularization(c))...)
+		return omath.Sum(fn.Map[tensor.D1](w, mlfuncs2d.L2Regularization(c))...)
 	}
 }
 
 func L2RegularizationDerivative(c float64) func(tensor.D3) tensor.D3 {
 	return func(w tensor.D3) tensor.D3 {
-		return omw.MapFunc[tensor.D3](w, mlfuncs2d.L2RegularizationDerivative(c))
+		return fn.Map[tensor.D3](w, mlfuncs2d.L2RegularizationDerivative(c))
 	}
 }
 

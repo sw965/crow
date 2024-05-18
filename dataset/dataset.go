@@ -1,11 +1,12 @@
 package dataset
 
 import (
-	"github.com/sw965/omw"
+	opath "github.com/sw965/omw/path"
+	ojson "github.com/sw965/omw/json"
 	"github.com/sw965/crow/tensor"
 )
 
-var FLAT_MNIST_PATH = omw.SW965_PATH + "crow/flat_mnist_json/"
+var FLAT_MNIST_PATH = opath.SW965 + "crow/flat_mnist_json/"
 
 type FlatMnist struct {
 	TrainImg tensor.D2
@@ -15,21 +16,21 @@ type FlatMnist struct {
 }
 
 func LoadFlatMnist() (FlatMnist, error) {
-	trainImg, err := omw.LoadJSON[tensor.D2](FLAT_MNIST_PATH + "train_img" + omw.JSON_EXTENSION)
+	trainImg, err := ojson.Load[tensor.D2](FLAT_MNIST_PATH + "train_img" + ojson.EXTENSION)
 	if err != nil {
 		return FlatMnist{}, err
 	}
 
-	trainLabel, err := omw.LoadJSON[tensor.D2](FLAT_MNIST_PATH + "train_label" + omw.JSON_EXTENSION)
+	trainLabel, err := ojson.Load[tensor.D2](FLAT_MNIST_PATH + "train_label" + ojson.EXTENSION)
 	if err != nil {
 		return FlatMnist{}, err
 	}
 
-	testImg, err := omw.LoadJSON[tensor.D2](FLAT_MNIST_PATH + "test_img" + omw.JSON_EXTENSION)
+	testImg, err := ojson.Load[tensor.D2](FLAT_MNIST_PATH + "test_img" + ojson.EXTENSION)
 	if err != nil {
 		return FlatMnist{}, err
 	}
 
-	testLabel, err := omw.LoadJSON[tensor.D2](FLAT_MNIST_PATH + "test_label" + omw.JSON_EXTENSION)
+	testLabel, err := ojson.Load[tensor.D2](FLAT_MNIST_PATH + "test_label" + ojson.EXTENSION)
 	return FlatMnist{TrainImg:trainImg, TrainLabel:trainLabel, TestImg:testImg, TestLabel:testLabel}, err
 }

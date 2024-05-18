@@ -5,7 +5,7 @@ import (
 	"github.com/sw965/crow/game/simultaneous"
 	"github.com/sw965/crow/mcts/duct"
 	"github.com/sw965/crow/ucb"
-	"github.com/sw965/omw"
+	orand "github.com/sw965/omw/rand"
 	"math"
 	"testing"
 )
@@ -30,7 +30,7 @@ type RockPaperScissors struct {
 }
 
 func TestDUCT(t *testing.T) {
-	r := omw.NewMt19937()
+	r := orand.NewMt19937()
 
 	legalActionss := func(rps *RockPaperScissors) Handss {
 		return Handss{HANDS, Hands{ROCK, PAPER, SCISSORS}}

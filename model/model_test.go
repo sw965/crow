@@ -6,7 +6,8 @@ import (
 	"github.com/sw965/crow/dataset"
 	"github.com/sw965/crow/model"
 	"github.com/sw965/crow/layer/1d"
-	"github.com/sw965/omw"
+	orand "github.com/sw965/omw/rand"
+	oslices "github.com/sw965/omw/slices"
 	"github.com/sw965/crow/tensor"
 	"github.com/sw965/crow/mlfuncs/1d"
 	"github.com/sw965/crow/mlfuncs/2d"
@@ -14,7 +15,7 @@ import (
 )
 
 func TestModel(t *testing.T) {
-	r := omw.NewMt19937()
+	r := orand.NewMt19937()
 	xn := 784
 	h1 := 128
 	h2 := 32
@@ -94,9 +95,9 @@ func TestModel(t *testing.T) {
 		affine.SGD(mnist.TrainImg[idx], mnist.TrainLabel[idx], 0.01)
 		if i%196 == 0 {
 			//affine.ValidateBackwardAndNumericalGradientDifference(mnist.TrainImg[idx], mnist.TrainLabel[idx])
-			idxs := omw.RandIntsUniform(testSize, 0, testImgNum, r)
-			miniBatchTestImg := omw.ElementsAtIndices(mnist.TestImg, idxs...)
-			miniBatchTestLabel := omw.ElementsAtIndices(mnist.TestLabel, idxs...)
+			idxs := orand.IntsUniform(testSize, 0, testImgNum, r)
+			miniBatchTestImg := oslices.IndicesAccess(mnist.TestImg, idxs...)
+			miniBatchTestLabel := oslices.IndicesAccess(mnist.TestLabel, idxs...)
 			isTrain[0] = false
 			loss, err := affine.MeanLoss(miniBatchTestImg, miniBatchTestLabel)
 			if err != nil {
@@ -114,7 +115,7 @@ func TestModel(t *testing.T) {
 }
 
 func TestLinearSumGrad(test *testing.T) {
-	rng := omw.NewMt19937()
+	rng := orand.NewMt19937()
 	linear := model.NewLinearSumIdentityMSE(0.001)
 	//linear := model.NewLinearSumSigmoidMSE(0.001)
 	r, c := 10, 5

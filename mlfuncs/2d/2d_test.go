@@ -7,11 +7,11 @@ import (
 	"github.com/sw965/crow/mlfuncs/1d"
 	"github.com/sw965/crow/mlfuncs/2d"
 	"github.com/sw965/crow/tensor"
-	"github.com/sw965/omw"
+	orand "github.com/sw965/omw/rand"
 )
 
 func TestLinearSumDerivative(test *testing.T) {
-	rng := omw.NewMt19937()
+	rng := orand.NewMt19937()
 	r, c := 10, 5
 	min, max := -5.0, 5.0
 	x := tensor.NewD2RandUniform(r, c, min, max, rng)

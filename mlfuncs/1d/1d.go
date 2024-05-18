@@ -5,46 +5,48 @@ import (
 	"math"
 	"math/rand"
 
-	"github.com/sw965/omw"
+	"github.com/sw965/omw/fn"
+	orand "github.com/sw965/omw/rand"
+	omath "github.com/sw965/omw/math"
 	"github.com/sw965/crow/tensor"
 	"github.com/sw965/crow/mlfuncs/scalar"
 )
 
 func Sigmoid(x tensor.D1) tensor.D1 {
-	return omw.MapFunc[tensor.D1](x, scalar.Sigmoid)
+	return fn.Map[tensor.D1](x, scalar.Sigmoid)
 }
 
 func SigmoidGrad(y tensor.D1) tensor.D1 {
-	return omw.MapFunc[tensor.D1](y, scalar.SigmoidGrad)
+	return fn.Map[tensor.D1](y, scalar.SigmoidGrad)
 }
 
 func SigmoidDerivative(x tensor.D1) tensor.D1 {
-	return omw.MapFunc[tensor.D1](x, scalar.SigmoidDerivative)
+	return fn.Map[tensor.D1](x, scalar.SigmoidDerivative)
 }
 
 func SigmoidToTanh(y tensor.D1) tensor.D1 {
-	return omw.MapFunc[tensor.D1](y, scalar.SigmoidToTanh)
+	return fn.Map[tensor.D1](y, scalar.SigmoidToTanh)
 }
 
 func Tanh(x tensor.D1) tensor.D1 {
-	return omw.MapFunc[tensor.D1](x, math.Tanh)
+	return fn.Map[tensor.D1](x, math.Tanh)
 }
 
 func TanhGrad(y tensor.D1) tensor.D1 {
-	return omw.MapFunc[tensor.D1](y, scalar.TanhGrad)
+	return fn.Map[tensor.D1](y, scalar.TanhGrad)
 }
 
 func TanhDerivative(x tensor.D1) tensor.D1 {
-	return omw.MapFunc[tensor.D1](x, scalar.TanhDerivative)
+	return fn.Map[tensor.D1](x, scalar.TanhDerivative)
 }
 
 func TanhToSigmoid(y tensor.D1) tensor.D1 {
-	return omw.MapFunc[tensor.D1](y, scalar.TanhToSigmoid)
+	return fn.Map[tensor.D1](y, scalar.TanhToSigmoid)
 }
 
 func LinearSum(x, w tensor.D1, b float64) (float64, error) {
 	hadamard, err := tensor.D1Mul(x, w)
-	y := omw.Sum(hadamard...) + b
+	y := omath.Sum(hadamard...) + b
 	return y, err
 }
 
@@ -131,7 +133,7 @@ func RandReLU(x tensor.D1, min, max float64, isTrain bool, r *rand.Rand) (tensor
 	y := make(tensor.D1, len(x))
 	var noise float64
 	if isTrain {
-		noise = omw.RandFloat64Uniform(min, max, r)
+		noise = orand.Float64Uniform(min, max, r)
 	} else {
 		noise = (min + max) / 2.0
 	}
@@ -150,7 +152,7 @@ func ParamRandReLU(x tensor.D1, alpha, min, max float64, isTrain bool, r *rand.R
 	y := make(tensor.D1, len(x))
 	var noise float64
 	if isTrain {
-		noise = omw.RandFloat64Uniform(min, max, r)
+		noise = orand.Float64Uniform(min, max, r)
 	} else {
 		noise = (min + max) / 2.0
 	}

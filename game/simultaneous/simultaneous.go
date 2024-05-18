@@ -2,7 +2,7 @@ package simultaneous
 
 import (
 	"math/rand"
-	"github.com/sw965/omw"
+	orand "github.com/sw965/omw/rand"
 )
 
 type Player[S any, AS ~[]A, A comparable] func(*S) (AS, error)
@@ -34,7 +34,7 @@ func (g *Game[S, ASS, AS, A]) SetRandActionPlayer(r *rand.Rand) {
 		ass := g.LegalActionss(state)
 		ret := make(AS, len(ass))
 		for playerI, as := range ass {
-			ret[playerI] = omw.RandChoice(as, r)
+			ret[playerI] = orand.Choice(as, r)
 		} 
 		return ret, nil
 	}

@@ -3,7 +3,7 @@ package mlfuncs1d_test
 import (
 	"testing"
 	"fmt"
-	"github.com/sw965/omw"
+	orand "github.com/sw965/omw/rand"
 	"github.com/sw965/crow/tensor"
 	"github.com/sw965/crow/mlfuncs/1d"
 	"github.com/sw965/crow/mlfuncs/scalar"
@@ -11,7 +11,7 @@ import (
 )
 
 func TestParamReLUDerivative(test *testing.T) {
-	r := omw.NewMt19937()
+	r := orand.NewMt19937()
 	n := 10
 	min, max := -5.0, 5.0
 	x := tensor.NewD1RandUniform(n, min, max, r)

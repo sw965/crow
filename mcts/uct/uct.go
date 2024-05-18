@@ -3,7 +3,7 @@ package uct
 import (
 	"math/rand"
 	"github.com/sw965/crow/ucb"
-	"github.com/sw965/omw"
+	oslices "github.com/sw965/omw/slices"
 	"github.com/sw965/crow/game/sequential"
 	"golang.org/x/exp/maps"
 )
@@ -189,8 +189,7 @@ func NewPlayer[S any, AS ~[]A, A comparable](mcts *MCTS[S, AS, A], simulation in
 				ws = append(ws, p)
 			}
 		}
-
-		idx := omw.RandIntByWeight(ws, rng)
+		idx := randomw.IntByWeight(ws, rng)
 		return actions[idx], nil
 	}
 	return player
