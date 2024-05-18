@@ -31,7 +31,7 @@ func (node *Node[S, ASS, AS, A]) MaxTrialJointActionPath(r *rand.Rand, limit int
 	for i := 0; i < limit; i++ {
 		jointAction := make(AS, len(node.UCBManagers))
 		for playerI, m := range node.UCBManagers {
-			jointAction[playerI] = omw.RandChoice(m.MaxTrialKeys(), r)
+			jointAction[playerI] = orand.Choice(m.MaxTrialKeys(), r)
 		}
 		ret = append(ret, jointAction)
 
@@ -151,7 +151,7 @@ func (mcts *MCTS[S, ASS, AS, A]) SelectExpansionBackward(node *Node[S, ASS, AS, 
 	for {
 		jointAction := make(AS, len(node.UCBManagers))
 		for playerI, m := range node.UCBManagers {
-			jointAction[playerI] = omw.RandChoice(m.MaxKeys(), r)
+			jointAction[playerI] = orand.Choice(m.MaxKeys(), r)
 		}
 		selects = append(selects, nodeSelect[S, ASS, AS, A]{node: node, jointAction: jointAction})
 		node.Trial += 1
@@ -178,7 +178,7 @@ func (mcts *MCTS[S, ASS, AS, A]) SelectExpansionBackward(node *Node[S, ASS, AS, 
 			node.NextNodes = append(node.NextNodes, nextNode)
 		}
 
-		eqToJointAction := omw.EqualSlice(jointAction)
+		eqToJointAction := oslices.Equal(jointAction)
 		if !slices.ContainsFunc(nextNode.LastJointActions, eqToJointAction) {
 			nextNode.LastJointActions = append(nextNode.LastJointActions, jointAction)
 			nextNode.LastJointActionsTrials = append(nextNode.LastJointActionsTrials, 0)

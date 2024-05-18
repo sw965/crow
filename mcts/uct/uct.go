@@ -4,6 +4,7 @@ import (
 	"math/rand"
 	"github.com/sw965/crow/ucb"
 	oslices "github.com/sw965/omw/slices"
+	orand "github.com/sw965/omw/rand"
 	"github.com/sw965/crow/game/sequential"
 	"golang.org/x/exp/maps"
 )
@@ -39,7 +40,7 @@ func (node *Node[S, AS, A]) MaxTrialActionPath(r *rand.Rand, n int) AS {
 			break
 		}
 
-		action := omw.RandChoice(node.UCBManager.MaxTrialKeys(), r)
+		action := orand.Choice(node.UCBManager.MaxTrialKeys(), r)
 		ret = append(ret, action)
 
 		if len(node.NextNodes) == 0 {
@@ -124,7 +125,7 @@ func (mcts *MCTS[S, AS, A]) SelectExpansionBackward(node *Node[S, AS, A], r *ran
 	selects := make(selects[S, AS, A], 0, capacity)
 	var err error
 	for {
-		action := omw.RandChoice(node.UCBManager.MaxKeys(), r)
+		action := orand.Choice(node.UCBManager.MaxKeys(), r)
 		selects = append(selects, nodeSelect[S, AS, A]{node:node, action:action})
 
 		state, err = mcts.Game.Push(state, &action)
@@ -178,7 +179,7 @@ func NewPlayer[S any, AS ~[]A, A comparable](mcts *MCTS[S, AS, A], simulation in
 			return a, err
 		}
 		ps := rootNode.UCBManager.TrialPercents()
-		max := omw.Max(maps.Values(ps)...)
+		max := omath.Max(maps.Values(ps)...)
 		n := len(ps)
 		ws := make([]float64, 0, n)
 		actions := make(AS, 0, n)
@@ -189,7 +190,7 @@ func NewPlayer[S any, AS ~[]A, A comparable](mcts *MCTS[S, AS, A], simulation in
 				ws = append(ws, p)
 			}
 		}
-		idx := randomw.IntByWeight(ws, rng)
+		idx := orand.IntByWeight(ws, rng)
 		return actions[idx], nil
 	}
 	return player
