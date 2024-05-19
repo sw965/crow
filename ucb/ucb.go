@@ -2,7 +2,9 @@ package ucb
 
 import (
 	"math"
+	"math/rand"
 	omath "github.com/sw965/omw/math"
+	orand "github.com/sw965/omw/rand"
 )
 
 type Func func(float64, float64, int, int) float64
@@ -37,6 +39,18 @@ func (c *Calculator) Calculation(totalTrial int) float64 {
 
 type Manager[KS ~[]K, K comparable] map[K]*Calculator
 
+func (m Manager[KS, K]) TotalValues() []float64 {
+	ret := make([]float64, 0, len(m))
+	for _, v := range m {
+		ret = append(ret, v.TotalValue)
+	}
+	return ret
+}
+
+func (m Manager[KS, K]) TotalValue() float64 {
+	return omath.Sum(m.TotalValues()...)
+}
+
 func (m Manager[KS, K]) Trials() []int {
 	ret := make([]int, 0, len(m))
 	for _, v := range m {
@@ -47,6 +61,14 @@ func (m Manager[KS, K]) Trials() []int {
 
 func (m Manager[KS, K]) TotalTrial() int {
 	return omath.Sum(m.Trials()...)
+}
+
+func (m Manager[KS, K]) AverageValues() []float64 {
+	ret := make([]float64, 0, len(m))
+	for _, v := range m {
+		ret = append(ret, v.AverageValue())
+	}
+	return ret
 }
 
 func (m Manager[KS, K]) Max() float64 {
@@ -70,6 +92,10 @@ func (m Manager[KS, K]) MaxKeys() KS {
 	return ks
 }
 
+func (m Manager[KS, K]) ActionByMax(r *rand.Rand) K {
+	return orand.Choice(m.MaxKeys(), r)
+}
+
 func (m Manager[KS, K]) MaxTrialKeys() KS {
 	max := omath.Max(m.Trials()...)
 	ks := make(KS, 0, len(m))
@@ -81,6 +107,10 @@ func (m Manager[KS, K]) MaxTrialKeys() KS {
 	return ks
 }
 
+func (m Manager[KS, K]) ActionByMaxTrial(r *rand.Rand) K {
+	return orand.Choice(m.MaxTrialKeys(), r)
+}
+
 func (m Manager[KS, K]) TrialPercents() map[K]float64 {
 	total := m.TotalTrial()
 	ret := map[K]float64{}
@@ -90,4 +120,33 @@ func (m Manager[KS, K]) TrialPercents() map[K]float64 {
 	return ret
 }
 
+func (m Manager[KS, K]) AverageValue() float64 {
+	totalTrial := m.TotalTrial()
+	if totalTrial == 0 {
+		return 0.0
+	}
+	totalValue := m.TotalValue()
+	return float64(totalValue) / float64(totalTrial)
+}
+
+func (m Manager[KS, K]) MaxAverageValue() float64 {
+	return omath.Max(m.AverageValues()...)
+}
+
 type Managers[KS ~[]K, K comparable] []Manager[KS, K]
+
+func (ms Managers[KS, K]) JointActionByMax(r *rand.Rand) KS {
+	ret := make(KS, len(ms))
+	for i, m := range ms {
+		ret[i] = m.ActionByMax(r)
+	}
+	return ret
+}
+
+func (ms Managers[KS, K]) JointActionByMaxTrial(r *rand.Rand) KS {
+	ret := make(KS, len(ms))
+	for i, m := range ms {
+		ret[i] = m.ActionByMaxTrial(r)
+	}
+	return ret
+}

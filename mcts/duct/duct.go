@@ -29,10 +29,7 @@ type Node[S any, ASS ~[]AS, AS ~[]A, A comparable] struct {
 func (node *Node[S, ASS, AS, A]) MaxTrialJointActionPath(r *rand.Rand, limit int) ASS {
 	ret := make(ASS, 0, limit)
 	for i := 0; i < limit; i++ {
-		jointAction := make(AS, len(node.UCBManagers))
-		for playerI, m := range node.UCBManagers {
-			jointAction[playerI] = orand.Choice(m.MaxTrialKeys(), r)
-		}
+		jointAction := node.UCBManagers.JointActionByMaxTrial(r)
 		ret = append(ret, jointAction)
 
 		n := len(node.NextNodes)
@@ -149,10 +146,7 @@ func (mcts *MCTS[S, ASS, AS, A]) SelectExpansionBackward(node *Node[S, ASS, AS, 
 	selects := make(selects[S, ASS, AS, A], 0, capacity)
 	var err error
 	for {
-		jointAction := make(AS, len(node.UCBManagers))
-		for playerI, m := range node.UCBManagers {
-			jointAction[playerI] = orand.Choice(m.MaxKeys(), r)
-		}
+		jointAction := node.UCBManagers.JointActionByMax(r)
 		selects = append(selects, nodeSelect[S, ASS, AS, A]{node: node, jointAction: jointAction})
 		node.Trial += 1
 
