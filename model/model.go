@@ -3,6 +3,7 @@ package model
 import (
 	"fmt"
 	"math"
+	"math/rand"
 	"github.com/sw965/crow/layer/1d"
 	"github.com/sw965/crow/tensor"
 	"github.com/sw965/crow/mlfuncs"
@@ -80,6 +81,43 @@ func NewSequentialInputOutput1D(variable Variable) SequentialInputOutput1D {
 		Param3DLossFunc:func(_ tensor.D3) float64 { return 0.0 },
 		Param3DLossDerivative:tensor.NewD3ZerosLike,
 	}
+}
+
+func NewThreeLayerAffineLeakyReLUInput1DOutputSigmoid1D(xn, h1, h2, yn int, c, threshold float64, r *rand.Rand) (SequentialInputOutput1D, Variable) {
+	variable := Variable{
+		Param2D:tensor.D2{
+			tensor.NewD1Zeros(h1),
+			tensor.NewD1Zeros(h2),
+			tensor.NewD1Zeros(yn),
+		},
+		Param3D:tensor.D3{
+			tensor.NewD2He(xn, h1, r),
+			tensor.NewD2He(h1, h2, r),
+			tensor.NewD2He(h2, yn, r),
+		},
+	}
+	variable.Init()
+
+	alpha := 0.1
+	forwards := layer1d.Forwards{
+		layer1d.NewAffineForward(variable.Param3D[0], variable.Param2D[0], variable.GetGrad3D()[0], variable.GetGrad2D()[0]),
+		layer1d.NewLeakyReLUForward(alpha),
+
+		layer1d.NewAffineForward(variable.Param3D[1], variable.Param2D[1], variable.GetGrad3D()[1], variable.GetGrad2D()[1]),
+		layer1d.NewLeakyReLUForward(alpha),
+
+		layer1d.NewAffineForward(variable.Param3D[2], variable.Param2D[2], variable.GetGrad3D()[2], variable.GetGrad2D()[2]),
+		layer1d.NewSigmoidForward(),
+	}
+
+	affine := NewSequentialInputOutput1D(variable)
+	affine.Forwards = forwards
+	affine.YLossFunc = mlfuncs1d.SumSquaredError
+	affine.YLossDerivative = mlfuncs1d.SumSquaredErrorDerivative
+	affine.Param3DLossFunc = mlfuncs3d.L2Regularization(c)
+	affine.Param3DLossDerivative = mlfuncs3d.L2RegularizationDerivative(c)
+	affine.L2NormGradClipThreshold = threshold
+	return affine, variable
 }
 
 func (m *SequentialInputOutput1D) Predict(x tensor.D1) (tensor.D1, error) {

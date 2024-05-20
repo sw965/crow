@@ -63,12 +63,13 @@ func (m Manager[KS, K]) TotalTrial() int {
 	return omath.Sum(m.Trials()...)
 }
 
-func (m Manager[KS, K]) AverageValues() []float64 {
-	ret := make([]float64, 0, len(m))
-	for _, v := range m {
-		ret = append(ret, v.AverageValue())
+func (m Manager[KS, K]) AverageValue() float64 {
+	totalTrial := m.TotalTrial()
+	if totalTrial == 0 {
+		return 0.0
 	}
-	return ret
+	totalValue := m.TotalValue()
+	return float64(totalValue) / float64(totalTrial)
 }
 
 func (m Manager[KS, K]) Max() float64 {
@@ -118,19 +119,6 @@ func (m Manager[KS, K]) TrialPercents() map[K]float64 {
 		ret[k] = float64(v.Trial) / float64(total)
 	}
 	return ret
-}
-
-func (m Manager[KS, K]) AverageValue() float64 {
-	totalTrial := m.TotalTrial()
-	if totalTrial == 0 {
-		return 0.0
-	}
-	totalValue := m.TotalValue()
-	return float64(totalValue) / float64(totalTrial)
-}
-
-func (m Manager[KS, K]) MaxAverageValue() float64 {
-	return omath.Max(m.AverageValues()...)
 }
 
 type Managers[KS ~[]K, K comparable] []Manager[KS, K]
