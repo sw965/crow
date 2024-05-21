@@ -40,8 +40,8 @@ func (g *Game[S, ASS, AS, A]) SetRandActionPlayer(r *rand.Rand) {
 	}
 }
 
-func (g *Game[S, ASS, AS, A]) Playout(state S) (S, error) {
-	for {
+func (g *Game[S, ASS, AS, A]) Play(state S, n int) (S, error) {
+	for i := 0; i < n; i++ {
 		isEnd := g.IsEnd(&state)
 		if isEnd {
 			break
@@ -58,4 +58,20 @@ func (g *Game[S, ASS, AS, A]) Playout(state S) (S, error) {
 		}
 	}
 	return state, nil
+}
+
+func (g *Game[S, ASS, AS, A]) Playout(state S) (S, error) {
+	return g.Play(state, -1)
+}
+
+func (g *Game[S, ASS, AS, A]) RepeatedPlayout(state S, n int) ([]S, error) {
+	ret := make([]S, n)
+	for i := 0; i < n; i++ {
+		endS, err := g.Playout(state)
+		if err != nil {
+			return []S{}, err
+		}
+		ret[i] = endS
+	}
+	return ret, nil
 }
