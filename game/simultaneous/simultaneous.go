@@ -41,7 +41,7 @@ func (g *Game[S, ASS, AS, A]) SetRandActionPlayer(r *rand.Rand) {
 }
 
 func (g *Game[S, ASS, AS, A]) Play(state S, n int) (S, error) {
-	for i := 0; i < n; i++ {
+	for i := 0; i < n || n < 0; i++ {
 		isEnd := g.IsEnd(&state)
 		if isEnd {
 			break
@@ -79,7 +79,7 @@ func (g *Game[S, ASS, AS, A]) RepeatedPlayout(state S, n int) ([]S, error) {
 func (g *Game[S, ASS, AS, A]) PlayWithHistory(state S, n, c int) (S, []S, ASS, error) {
 	stateHistory := make([]S, 0, c)
 	jointActionHistory := make(ASS, 0, c)
-	for i := 0; i < n; i++ {
+	for i := 0; i < n || n < 0; i++ {
 		isEnd := g.IsEnd(&state)
 		if isEnd {
 			break
