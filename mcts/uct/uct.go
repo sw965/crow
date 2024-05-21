@@ -169,29 +169,3 @@ func (mcts *MCTS[S, AS, A]) Run(simulation int, rootNode *Node[S, AS, A], r *ran
 	}
 	return nil
 }
-
-func NewPlayer[S any, AS ~[]A, A comparable](mcts *MCTS[S, AS, A], simulation int, r float64, rng *rand.Rand) sequential.Player[S, A] {
-	player := func(state *S) (A, error) {
-		rootNode := mcts.NewNode(state)
-		err := mcts.Run(simulation, rootNode, rng)
-		if err != nil {
-			var a A
-			return a, err
-		}
-		ps := rootNode.UCBManager.TrialPercents()
-		max := omath.Max(maps.Values(ps)...)
-		n := len(ps)
-		ws := make([]float64, 0, n)
-		actions := make(AS, 0, n)
-
-		for a, p := range ps {
-			if max*r <= p {
-				actions = append(actions, a)
-				ws = append(ws, p)
-			}
-		}
-		idx := orand.IntByWeight(ws, rng)
-		return actions[idx], nil
-	}
-	return player
-}

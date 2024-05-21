@@ -75,3 +75,27 @@ func (g *Game[S, ASS, AS, A]) RepeatedPlayout(state S, n int) ([]S, error) {
 	}
 	return ret, nil
 }
+
+func (g *Game[S, ASS, AS, A]) PlayWithHistory(state S, n, c int) ([]S, error) {
+	stateHistory := make([]S, 0, c)
+	for i := 0; i < n; i++ {
+		isEnd := g.IsEnd(&state)
+		if isEnd {
+			break
+		}
+		actions, err := g.Player(&state)
+		if err != nil {
+			return []S{}, err
+		}
+		state, err = g.Push(state, actions)
+		if err != nil {
+			return []S{}, err
+		}
+		stateHistory = append(stateHistory, state)
+	}
+	return stateHistory, nil
+}
+
+func (g *Game[S, ASS, AS, A]) PlayoutWithHistory(state S, c int) ([]S, error) {
+	return g.PlayWithHistory(state, -1, c)
+}
