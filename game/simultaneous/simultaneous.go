@@ -46,12 +46,12 @@ func (g *Game[S, ASS, AS, A]) Play(state S, n int) (S, error) {
 		if isEnd {
 			break
 		}
-		actions, err := g.Player(&state)
+		jointAction, err := g.Player(&state)
 		if err != nil {
 			var s S
 			return s, err
 		}
-		state, err = g.Push(state, actions)
+		state, err = g.Push(state, jointAction)
 		if err != nil {
 			var s S
 			return s, err
@@ -76,26 +76,32 @@ func (g *Game[S, ASS, AS, A]) RepeatedPlayout(state S, n int) ([]S, error) {
 	return ret, nil
 }
 
-func (g *Game[S, ASS, AS, A]) PlayWithHistory(state S, n, c int) ([]S, error) {
+func (g *Game[S, ASS, AS, A]) PlayWithHistory(state S, n, c int) (S, []S, ASS, error) {
 	stateHistory := make([]S, 0, c)
+	jointActionHistory := make(ASS, 0, c)
 	for i := 0; i < n; i++ {
 		isEnd := g.IsEnd(&state)
 		if isEnd {
 			break
 		}
-		actions, err := g.Player(&state)
+		jointAction, err := g.Player(&state)
 		if err != nil {
-			return []S{}, err
+			var s S
+			return s, []S{}, ASS{}, err
 		}
-		state, err = g.Push(state, actions)
-		if err != nil {
-			return []S{}, err
-		}
+
 		stateHistory = append(stateHistory, state)
+		jointActionHistory = append(jointActionHistory, jointAction)
+
+		state, err = g.Push(state, jointAction)
+		if err != nil {
+			var s S
+			return s, []S{}, ASS{}, err
+		}
 	}
-	return stateHistory, nil
+	return state, stateHistory, jointActionHistory, nil
 }
 
-func (g *Game[S, ASS, AS, A]) PlayoutWithHistory(state S, c int) ([]S, error) {
+func (g *Game[S, ASS, AS, A]) PlayoutWithHistory(state S, c int) (S, []S, ASS, error) {
 	return g.PlayWithHistory(state, -1, c)
 }
