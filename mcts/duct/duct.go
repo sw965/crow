@@ -26,15 +26,18 @@ type Node[S any, ASS ~[]AS, AS ~[]A, A comparable] struct {
 	LastJointActionsTrials []int
 }
 
-func (node *Node[S, ASS, AS, A]) MaxTrialJointActionPath(r *rand.Rand, limit int) ASS {
-	ret := make(ASS, 0, limit)
+func (node *Node[S, ASS, AS, A]) MaxTrialJointActionPath(r *rand.Rand, limit int) (ASS, [][]float64) {
+	ass := make(ASS, 0, limit)
+	avgss := make([][]float64, 0, limit)
+
 	for i := 0; i < limit; i++ {
 		jointAction := node.UCBManagers.JointActionByMaxTrial(r)
-		ret = append(ret, jointAction)
+		ass = append(ass, jointAction)
+		avgss = append(avgss, node.UCBManagers.AverageValues())
 
 		n := len(node.NextNodes)
 		if n == 0 {
-			return ret
+			return ass, avgss
 		}
 
 		eqToJointAction := oslices.Equal(jointAction)
@@ -59,7 +62,7 @@ func (node *Node[S, ASS, AS, A]) MaxTrialJointActionPath(r *rand.Rand, limit int
 		}
 		node = orand.Choice(nextNodes, r)
 	}
-	return ret
+	return ass, avgss
 }
 
 type Nodes[S any, ASS ~[]AS, AS ~[]A, A comparable] []*Node[S, ASS, AS, A]
