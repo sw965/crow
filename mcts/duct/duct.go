@@ -26,7 +26,7 @@ type Node[S any, ASS ~[]AS, AS ~[]A, A comparable] struct {
 	LastJointActionsTrials []int
 }
 
-func (node *Node[S, ASS, AS, A]) MaxTrialJointActionPath(r *rand.Rand, limit int) (ASS, [][]float64) {
+func (node *Node[S, ASS, AS, A]) Predict(r *rand.Rand, limit int) (ASS, [][]float64) {
 	ass := make(ASS, 0, limit)
 	avgss := make([][]float64, 0, limit)
 
