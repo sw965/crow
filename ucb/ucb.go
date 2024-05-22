@@ -138,3 +138,11 @@ func (ms Managers[KS, K]) JointActionByMaxTrial(r *rand.Rand) KS {
 	}
 	return ret
 }
+
+func (ms Managers[KS, K]) AverageValues() []float64 {
+	ret := make([]float64, len(ms))
+	for i, m := range ms {
+		ret[i] = m.AverageValue()
+	}
+	return ret
+}
