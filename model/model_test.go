@@ -16,7 +16,7 @@ func TestModel(t *testing.T) {
 	h1 := 128
 	h2 := 32
 	yn := 10
-	affine, _ := model.NewThreeLayerAffineLeakyReLUInput1DOutputSigmoid1D(xn, h1, h2, yn, 0.0001, 64.0, r)
+	affine, _ := model.NewThreeLayerAffineParamReLUInput1DOutputSigmoid1D(xn, h1, h2, yn, 0.0001, 64.0, r)
 
 	mnist, err := dataset.LoadFlatMnist()
 	if err != nil {

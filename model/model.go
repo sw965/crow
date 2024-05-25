@@ -83,8 +83,13 @@ func NewSequentialInputOutput1D(variable Variable) SequentialInputOutput1D {
 	}
 }
 
-func NewThreeLayerAffineLeakyReLUInput1DOutputSigmoid1D(xn, h1, h2, yn int, c, threshold float64, r *rand.Rand) (SequentialInputOutput1D, Variable) {
+func NewThreeLayerAffineParamReLUInput1DOutputSigmoid1D(xn, h1, h2, yn int, c, threshold float64, r *rand.Rand) (SequentialInputOutput1D, Variable) {
 	variable := Variable{
+		Param1D:tensor.D1{
+			0.1,
+			0.1,
+		},
+
 		Param2D:tensor.D2{
 			tensor.NewD1Zeros(h1),
 			tensor.NewD1Zeros(h2),
@@ -98,13 +103,12 @@ func NewThreeLayerAffineLeakyReLUInput1DOutputSigmoid1D(xn, h1, h2, yn int, c, t
 	}
 	variable.Init()
 
-	alpha := 0.1
 	forwards := layer1d.Forwards{
 		layer1d.NewAffineForward(variable.Param3D[0], variable.Param2D[0], variable.GetGrad3D()[0], variable.GetGrad2D()[0]),
-		layer1d.NewLeakyReLUForward(alpha),
+		layer1d.NewParamReLUForward(&variable.Param1D[0], &variable.GetGrad1D()[0]),
 
 		layer1d.NewAffineForward(variable.Param3D[1], variable.Param2D[1], variable.GetGrad3D()[1], variable.GetGrad2D()[1]),
-		layer1d.NewLeakyReLUForward(alpha),
+		layer1d.NewParamReLUForward(&variable.Param1D[1], &variable.GetGrad1D()[1]),
 
 		layer1d.NewAffineForward(variable.Param3D[2], variable.Param2D[2], variable.GetGrad3D()[2], variable.GetGrad2D()[2]),
 		layer1d.NewSigmoidForward(),
