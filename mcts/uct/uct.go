@@ -31,15 +31,17 @@ func (node *Node[S, AS, A]) Trial() int {
 	return node.UCBManager.TotalTrial()
 }
 
-func (node *Node[S, AS, A]) MaxTrialActionPath(r *rand.Rand, n int) AS {
-	ret := make([]A, 0, n)
+func (node *Node[S, AS, A]) MaxTrialActionPath(r *rand.Rand, limit int) AS {
+	actions := make(AS, 0, limit)
+	avgs := make([]float64, 0, limit)
+
 	for i := 0; i < n; i++ {
 		if len(node.UCBManager) == 0 {
 			break
 		}
 
 		action := omwrand.Choice(node.UCBManager.MaxTrialKeys(), r)
-		ret = append(ret, action)
+		actions = append(actions, action)
 
 		if len(node.NextNodes) == 0 {
 			break
