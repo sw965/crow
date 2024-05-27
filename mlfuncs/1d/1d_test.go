@@ -3,7 +3,8 @@ package mlfuncs1d_test
 import (
 	"testing"
 	"fmt"
-	orand "github.com/sw965/omw/rand"
+	omwmath "github.com/sw965/omw/math"
+	omwrand "github.com/sw965/omw/math/rand"
 	"github.com/sw965/crow/tensor"
 	"github.com/sw965/crow/mlfuncs/1d"
 	"github.com/sw965/crow/mlfuncs/scalar"
@@ -11,12 +12,12 @@ import (
 )
 
 func TestParamReLUDerivative(test *testing.T) {
-	r := orand.NewMt19937()
+	r := omwrand.NewMt19937()
 	n := 10
 	min, max := -5.0, 5.0
 	x := tensor.NewD1RandUniform(n, min, max, r)
 	t := tensor.NewD1RandUniform(n, min, max, r)
-	alpha := omw.RandFloat64Uniform(min, max, r)
+	alpha := omwrand.Float64Uniform(min, max, r)
 
 	loss := func(x tensor.D1, alpha float64) float64 {
 		y := mlfuncs1d.LeakyReLU(x, alpha)
@@ -45,19 +46,19 @@ func TestParamReLUDerivative(test *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	gradAlpha := omw.Sum(vectorizedGradAlpha...)
+	gradAlpha := omwmath.Sum(vectorizedGradAlpha...)
 
 	diffX, err := tensor.D1Sub(numGradX, gradX)
 	if err != nil {
 		panic(err)
 	}
-	maxDiffX := omw.Max(diffX...)
+	maxDiffX := omwmath.Max(diffX...)
 	diffAlpha := math.Abs(numGradAlpha-gradAlpha)
 	fmt.Println("maxDiffX =", maxDiffX, "diffAlpha =", diffAlpha)
 }
 
 func TestL2RegularizationDerivative(test *testing.T) {
-	r := omw.NewMt19937()
+	r := omwrand.NewMt19937()
 	n := 10
 	min, max := -5.0, 5.0
 	w := tensor.NewD1RandUniform(n, min, max, r)
@@ -69,6 +70,6 @@ func TestL2RegularizationDerivative(test *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	maxDiff := omw.Max(diff...)
+	maxDiff := omwmath.Max(diff...)
 	fmt.Println("maxDiff =", maxDiff)
 }

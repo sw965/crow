@@ -2,7 +2,7 @@ package simultaneous
 
 import (
 	"math/rand"
-	orand "github.com/sw965/omw/rand"
+	omwrand "github.com/sw965/omw/math/rand"
 )
 
 type Player[S any, AS ~[]A, A comparable] func(*S) (AS, error)
@@ -34,18 +34,19 @@ func (g *Game[S, ASS, AS, A]) SetRandActionPlayer(r *rand.Rand) {
 		ass := g.LegalActionss(state)
 		ret := make(AS, len(ass))
 		for playerI, as := range ass {
-			ret[playerI] = orand.Choice(as, r)
+			ret[playerI] = omwrand.Choice(as, r)
 		} 
 		return ret, nil
 	}
 }
 
-func (g *Game[S, ASS, AS, A]) Play(state S, n int) (S, error) {
-	for i := 0; i < n || n < 0; i++ {
-		isEnd := g.IsEnd(&state)
-		if isEnd {
+func (g *Game[S, ASS, AS, A]) Play(state S, f func(*S, int) bool) (S, error) {
+	i := 0
+	for {
+		if g.IsEnd(&state) || f(&state, i) {
 			break
 		}
+
 		jointAction, err := g.Player(&state)
 		if err != nil {
 			var s S
@@ -56,34 +57,20 @@ func (g *Game[S, ASS, AS, A]) Play(state S, n int) (S, error) {
 			var s S
 			return s, err
 		}
+		i += 1
 	}
 	return state, nil
 }
 
-func (g *Game[S, ASS, AS, A]) Playout(state S) (S, error) {
-	return g.Play(state, -1)
-}
-
-func (g *Game[S, ASS, AS, A]) RepeatedPlayout(state S, n int) ([]S, error) {
-	ret := make([]S, n)
-	for i := 0; i < n; i++ {
-		endS, err := g.Playout(state)
-		if err != nil {
-			return []S{}, err
-		}
-		ret[i] = endS
-	}
-	return ret, nil
-}
-
-func (g *Game[S, ASS, AS, A]) PlayWithHistory(state S, n, c int) (S, []S, ASS, error) {
+func (g *Game[S, ASS, AS, A]) PlayWithHistory(state S, f func(*S, int) bool, c int) (S, []S, ASS, error) {
+	i := 0
 	stateHistory := make([]S, 0, c)
 	jointActionHistory := make(ASS, 0, c)
-	for i := 0; i < n || n < 0; i++ {
-		isEnd := g.IsEnd(&state)
-		if isEnd {
+	for {
+		if g.IsEnd(&state) || f(&state, i) {
 			break
 		}
+
 		jointAction, err := g.Player(&state)
 		if err != nil {
 			var s S
@@ -98,10 +85,15 @@ func (g *Game[S, ASS, AS, A]) PlayWithHistory(state S, n, c int) (S, []S, ASS, e
 			var s S
 			return s, []S{}, ASS{}, err
 		}
+		i += 1
 	}
 	return state, stateHistory, jointActionHistory, nil
 }
 
+func (g *Game[S, ASS, AS, A]) Playout(state S) (S, error) {
+	return g.Play(state, func(_ *S, _ int) bool { return false })
+}
+
 func (g *Game[S, ASS, AS, A]) PlayoutWithHistory(state S, c int) (S, []S, ASS, error) {
-	return g.PlayWithHistory(state, -1, c)
+	return g.PlayWithHistory(state, func(_ *S, _ int) bool { return false }, c)
 }

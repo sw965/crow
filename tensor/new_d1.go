@@ -3,7 +3,7 @@ package tensor
 import (
 	"math"
 	"math/rand"
-	orand "github.com/sw965/omw/rand"
+	omwrand "github.com/sw965/omw/math/rand"
 )
 
 func NewD1Zeros(n int) D1 {
@@ -30,7 +30,7 @@ func NewD1OnesLike(d1 D1) D1 {
 func NewD1RandUniform(n int, min, max float64, r *rand.Rand) D1 {
 	ret := make(D1, n)
 	for i := range ret {
-		ret[i] = orand.Float64Uniform(min, max, r)
+		ret[i] = omwrand.Float64Uniform(min, max, r)
 	}
 	return ret
 }

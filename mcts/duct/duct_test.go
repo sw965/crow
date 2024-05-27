@@ -5,7 +5,7 @@ import (
 	"github.com/sw965/crow/game/simultaneous"
 	"github.com/sw965/crow/mcts/duct"
 	"github.com/sw965/crow/ucb"
-	orand "github.com/sw965/omw/rand"
+	omwrand "github.com/sw965/omw/math/rand"
 	"math"
 	"testing"
 )
@@ -30,7 +30,7 @@ type RockPaperScissors struct {
 }
 
 func TestDUCT(t *testing.T) {
-	r := orand.NewMt19937()
+	r := omwrand.NewMt19937()
 
 	legalActionss := func(rps *RockPaperScissors) Handss {
 		return Handss{HANDS, Hands{ROCK, PAPER, SCISSORS}}
@@ -103,5 +103,5 @@ func TestDUCT(t *testing.T) {
 		}
 	}
 
-	fmt.Println(rootNode.MaxTrialJointActionPath(r, 64))
+	fmt.Println(rootNode.Predict(r, 64))
 }

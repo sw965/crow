@@ -6,8 +6,8 @@ import (
 	"math/rand"
 
 	"github.com/sw965/omw/fn"
-	orand "github.com/sw965/omw/rand"
-	omath "github.com/sw965/omw/math"
+	omwrand "github.com/sw965/omw/math/rand"
+	omwmath "github.com/sw965/omw/math"
 	"github.com/sw965/crow/tensor"
 	"github.com/sw965/crow/mlfuncs/scalar"
 )
@@ -46,7 +46,7 @@ func TanhToSigmoid(y tensor.D1) tensor.D1 {
 
 func LinearSum(x, w tensor.D1, b float64) (float64, error) {
 	hadamard, err := tensor.D1Mul(x, w)
-	y := omath.Sum(hadamard...) + b
+	y := omwmath.Sum(hadamard...) + b
 	return y, err
 }
 
@@ -133,7 +133,7 @@ func RandReLU(x tensor.D1, min, max float64, isTrain bool, r *rand.Rand) (tensor
 	y := make(tensor.D1, len(x))
 	var noise float64
 	if isTrain {
-		noise = orand.Float64Uniform(min, max, r)
+		noise = omwrand.Float64Uniform(min, max, r)
 	} else {
 		noise = (min + max) / 2.0
 	}
@@ -152,7 +152,7 @@ func ParamRandReLU(x tensor.D1, alpha, min, max float64, isTrain bool, r *rand.R
 	y := make(tensor.D1, len(x))
 	var noise float64
 	if isTrain {
-		noise = orand.Float64Uniform(min, max, r)
+		noise = omwrand.Float64Uniform(min, max, r)
 	} else {
 		noise = (min + max) / 2.0
 	}

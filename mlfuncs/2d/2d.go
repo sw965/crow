@@ -2,7 +2,7 @@ package mlfuncs2d
 
 import (
 	"github.com/sw965/omw/fn"
-	omath "github.com/sw965/omw/math"
+	omwmath "github.com/sw965/omw/math"
 	"github.com/sw965/crow/tensor"
 	"github.com/sw965/crow/mlfuncs/1d"
 )
@@ -46,7 +46,7 @@ func LinearSumDerivative(x, w tensor.D2) (tensor.D2, tensor.D2, tensor.D1, error
 
 func L2Regularization(c float64) func(tensor.D2) float64 {
 	return func(w tensor.D2) float64 {
-		return omath.Sum(fn.Map[tensor.D1](w, mlfuncs1d.L2Regularization(c))...)
+		return omwmath.Sum(fn.Map[tensor.D1](w, mlfuncs1d.L2Regularization(c))...)
 	}
 }
 

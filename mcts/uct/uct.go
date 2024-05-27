@@ -3,7 +3,7 @@ package uct
 import (
 	"math/rand"
 	"github.com/sw965/crow/ucb"
-	orand "github.com/sw965/omw/rand"
+	omwrand "github.com/sw965/omw/math/rand"
 	"github.com/sw965/crow/game/sequential"
 )
 
@@ -38,7 +38,7 @@ func (node *Node[S, AS, A]) MaxTrialActionPath(r *rand.Rand, n int) AS {
 			break
 		}
 
-		action := orand.Choice(node.UCBManager.MaxTrialKeys(), r)
+		action := omwrand.Choice(node.UCBManager.MaxTrialKeys(), r)
 		ret = append(ret, action)
 
 		if len(node.NextNodes) == 0 {
@@ -123,7 +123,7 @@ func (mcts *MCTS[S, AS, A]) SelectExpansionBackward(node *Node[S, AS, A], r *ran
 	selects := make(selects[S, AS, A], 0, capacity)
 	var err error
 	for {
-		action := orand.Choice(node.UCBManager.MaxKeys(), r)
+		action := omwrand.Choice(node.UCBManager.MaxKeys(), r)
 		selects = append(selects, nodeSelect[S, AS, A]{node:node, action:action})
 
 		state, err = mcts.Game.Push(state, &action)

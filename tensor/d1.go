@@ -3,7 +3,7 @@ package tensor
 import (
     "fmt"
     "golang.org/x/exp/slices"
-    omath "github.com/sw965/omw/math"
+    omwmath "github.com/sw965/omw/math"
     "github.com/sw965/omw/fn"
 )
 
@@ -88,7 +88,7 @@ func (d1 D1) Copy(src D1) {
 }
 
 func (d1 D1) Max() float64 {
-    return omath.Max(d1...)
+    return omwmath.Max(d1...)
 }
 
 func (d1 D1) MapFunc(f func(float64)float64) D1 {

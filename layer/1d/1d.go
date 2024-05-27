@@ -2,8 +2,8 @@ package layer1d
 
 import (
 	"math/rand"
-	omath "github.com/sw965/omw/math"
-	oslices "github.com/sw965/omw/slices"
+	omwmath "github.com/sw965/omw/math"
+	omwslices "github.com/sw965/omw/slices"
 	"github.com/sw965/crow/mlfuncs/1d"
 	"github.com/sw965/crow/tensor"
 )
@@ -28,7 +28,7 @@ type Backward func(tensor.D1) (tensor.D1, error)
 type Backwards []Backward
 
 func (bs Backwards) Propagate(chain tensor.D1) (tensor.D1, error) {
-	bs = oslices.Reverse(bs)
+	bs = omwslices.Reverse(bs)
 	var err error
 	for _, b := range bs {
 		chain, err = b(chain)
@@ -105,7 +105,7 @@ func NewParamReLUForward(alpha, gradAlpha *float64) Forward {
 				return tensor.D1{}, err
 			}
 			// ∂L/∂alpha
-			*gradAlpha = omath.Sum(dVectorizedAlpha...)
+			*gradAlpha = omwmath.Sum(dVectorizedAlpha...)
 
 			// ∂L/∂x
 			dx, err := tensor.D1Mul(dydx, chain)
@@ -144,7 +144,7 @@ func NewParamRandReLUForward(alpha *float64, min, max float64, gradAlpha *float6
 				return tensor.D1{}, err
 			}
 			// ∂L/∂alpha
-			*gradAlpha = omath.Sum(dVectorizedAlpha...)
+			*gradAlpha = omwmath.Sum(dVectorizedAlpha...)
 
 			// ∂L/∂x
 			dx, err := tensor.D1Mul(dydx, chain)

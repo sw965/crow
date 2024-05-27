@@ -3,8 +3,8 @@ package ucb
 import (
 	"math"
 	"math/rand"
-	omath "github.com/sw965/omw/math"
-	orand "github.com/sw965/omw/rand"
+	omwmath "github.com/sw965/omw/math"
+	omwrand "github.com/sw965/omw/math/rand"
 )
 
 type Func func(float64, float64, int, int) float64
@@ -48,7 +48,7 @@ func (m Manager[KS, K]) TotalValues() []float64 {
 }
 
 func (m Manager[KS, K]) TotalValue() float64 {
-	return omath.Sum(m.TotalValues()...)
+	return omwmath.Sum(m.TotalValues()...)
 }
 
 func (m Manager[KS, K]) Trials() []int {
@@ -60,7 +60,7 @@ func (m Manager[KS, K]) Trials() []int {
 }
 
 func (m Manager[KS, K]) TotalTrial() int {
-	return omath.Sum(m.Trials()...)
+	return omwmath.Sum(m.Trials()...)
 }
 
 func (m Manager[KS, K]) AverageValue() float64 {
@@ -78,7 +78,7 @@ func (m Manager[KS, K]) Max() float64 {
 	for _, v := range m {
 		ucbs = append(ucbs, v.Calculation(total))
 	}
-	return omath.Max(ucbs...)
+	return omwmath.Max(ucbs...)
 }
 
 func (m Manager[KS, K]) MaxKeys() KS {
@@ -94,11 +94,11 @@ func (m Manager[KS, K]) MaxKeys() KS {
 }
 
 func (m Manager[KS, K]) ActionByMax(r *rand.Rand) K {
-	return orand.Choice(m.MaxKeys(), r)
+	return omwrand.Choice(m.MaxKeys(), r)
 }
 
 func (m Manager[KS, K]) MaxTrialKeys() KS {
-	max := omath.Max(m.Trials()...)
+	max := omwmath.Max(m.Trials()...)
 	ks := make(KS, 0, len(m))
 	for k, v := range m {
 		if v.Trial == max {
@@ -109,7 +109,7 @@ func (m Manager[KS, K]) MaxTrialKeys() KS {
 }
 
 func (m Manager[KS, K]) ActionByMaxTrial(r *rand.Rand) K {
-	return orand.Choice(m.MaxTrialKeys(), r)
+	return omwrand.Choice(m.MaxTrialKeys(), r)
 }
 
 func (m Manager[KS, K]) TrialPercents() map[K]float64 {

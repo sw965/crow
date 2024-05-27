@@ -4,7 +4,7 @@ import (
 	"testing"
 	"fmt"
 	"math"
-	orand "github.com/sw965/omw/rand"
+	omwrand "github.com/sw965/omw/math/rand"
 	"github.com/sw965/crow/tensor"
 	"github.com/sw965/crow/layer/1d"
 	"github.com/sw965/crow/mlfuncs/1d"
@@ -12,16 +12,16 @@ import (
 )
 
 func TestAffineForward(test *testing.T) {
-	random := orand.NewMt19937()
+	rg := omwrand.NewMt19937()
 	r := 10
 	c := 5
 
-	x := tensor.NewD1RandomUniform(r, -1.0, 1.0, random)
-	w := tensor.NewD2He(r, c, random)
-	b := tensor.NewD1RandomUniform(c, -1.0, 1.0, random)
+	x := tensor.NewD1RandUniform(r, -1.0, 1.0, rg)
+	w := tensor.NewD2He(r, c, rg)
+	b := tensor.NewD1RandUniform(c, -1.0, 1.0, rg)
 	gradW := tensor.NewD2ZerosLike(w)
 	gradB := make(tensor.D1, len(b))
-	t := tensor.NewD1RandomUniform(c, -1.0, 1.0, random)
+	t := tensor.NewD1RandUniform(c, -1.0, 1.0, rg)
 
 	loss := func(x tensor.D1, w tensor.D2, b tensor.D1) float64 {
 		dot := tensor.D2{x}.DotProduct(w)
@@ -39,6 +39,7 @@ func TestAffineForward(test *testing.T) {
 	lossX := func(x tensor.D1) float64 { return loss(x, w, b) }
 	lossW := func(w tensor.D2) float64 { return loss(x, w, b) }
 	lossB := func(b tensor.D1) float64 { return loss(x, w, b) }
+
 	numGradX := mlfuncs1d.NumericalDifferentiation(x, lossX)
 	numGradW := mlfuncs2d.NumericalDifferentiation(w, lossW)
 	numGradB := mlfuncs1d.NumericalDifferentiation(b, lossB)
@@ -46,18 +47,17 @@ func TestAffineForward(test *testing.T) {
 	forwards := layer1d.Forwards{
 		layer1d.NewAffineForward(w, b, gradW, gradB),
 	}
-	y, backwards, err := forwards.Run(x)
+	y, backwards, err := forwards.Propagate(x)
 	if err != nil {
 		panic(err)
 	}
-	lossForward := layer1d.NewMeanSquaredErrorForward()
-	_, lossBackward, err := lossForward(y, t)
+
+	chain, err := mlfuncs1d.MeanSquaredErrorDerivative(y, t)
 	if err != nil {
 		panic(err)
 	}
-	
-	bp := layer1d.NewBackPropagator(backwards, lossBackward)
-	gradX, err := bp.Run()
+
+	gradX, err := backwards.Propagate(chain)
 	if err != nil {
 		panic(err)
 	}
@@ -72,7 +72,7 @@ func TestAffineForward(test *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	maxDiffNumGradW := diffNumGradW.MapFunc(math.Abs).MaxAxisRow().Max()
+	maxDiffNumGradW := diffNumGradW.MapFunc(math.Abs).MaxRow().Max()
 
 	diffNumGradB, err := tensor.D1Sub(numGradB, gradB)
 	if err != nil {

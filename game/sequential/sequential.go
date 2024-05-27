@@ -2,7 +2,7 @@ package sequential
 
 import (
 	"math/rand"
-	orand "github.com/sw965/omw/rand"
+	omwrand "github.com/sw965/omw/math/rand"
 )
 
 type Player[S any, A comparable] func(*S) (A, error)
@@ -32,26 +32,65 @@ func (g *Game[S, AS, A]) Clone() Game[S, AS, A] {
 func (g *Game[S, AS, A]) SetRandActionPlayer(r *rand.Rand) {
 	g.Player = func(state *S) (A, error) {
 		as := g.LegalActions(state)
-		return orand.Choice(as, r), nil
+		return omwrand.Choice(as, r), nil
 	}
 }
 
-func (g *Game[S, AS, A]) Playout(state S) (S, error) {
+func (g *Game[S, AS, A]) Play(state S, f func(*S, int) bool) (S, error) {
+	i := 0
 	for {
-		isEnd := g.IsEnd(&state)
-		if isEnd {
+		if g.IsEnd(&state) || f(&state, i) {
 			break
 		}
+
 		action, err := g.Player(&state)
 		if err != nil {
 			var s S
 			return s, err
 		}
+
 		state, err = g.Push(state, &action)
 		if err != nil {
 			var s S
 			return s, err
 		}
+		i += 1
 	}
 	return state, nil
+}
+
+func (g *Game[S, AS, A]) PlayWithHistory(state S, f func(*S, int) bool, c int) (S, []S, AS, error) {
+	i := 0
+	stateHistory := make([]S, 0, c)
+	actionHistory := make(AS, 0, c)
+	for {
+		if g.IsEnd(&state) || f(&state, i) {
+			break
+		}
+
+		action, err := g.Player(&state)
+		if err != nil {
+			var s S
+			return s, []S{}, AS{}, err
+		}
+
+		stateHistory = append(stateHistory, state)
+		actionHistory = append(actionHistory, action)
+
+		state, err = g.Push(state, &action)
+		if err != nil {
+			var s S
+			return s, []S{}, AS{}, err
+		}
+		i += 1
+	}
+	return state, stateHistory, actionHistory, nil
+}
+
+func (g *Game[S, AS, A]) Playout(state S) (S, error) {
+	return g.Play(state, func(_ *S, _ int) bool { return false})
+}
+
+func (g *Game[S, AS, A]) PlayoutWithHistory(state S, c int) (S, []S, AS, error) {
+	return g.PlayWithHistory(state, func(_ *S, _ int) bool { return false}, c)
 }

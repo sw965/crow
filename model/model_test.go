@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"github.com/sw965/crow/dataset"
 	"github.com/sw965/crow/model"
-	orand "github.com/sw965/omw/rand"
-	oslices "github.com/sw965/omw/slices"
+	omwrand "github.com/sw965/omw/math/rand"
+	omwslices "github.com/sw965/omw/slices"
 	"github.com/sw965/crow/tensor"
 )
 
 func TestModel(t *testing.T) {
-	r := orand.NewMt19937()
+	r := omwrand.NewMt19937()
 	xn := 784
 	h1 := 128
 	h2 := 32
@@ -33,9 +33,9 @@ func TestModel(t *testing.T) {
 		affine.SGD(mnist.TrainImg[idx], mnist.TrainLabel[idx], 0.01)
 		if i%196 == 0 {
 			//affine.ValidateBackwardAndNumericalGradientDifference(mnist.TrainImg[idx], mnist.TrainLabel[idx])
-			idxs := orand.IntsUniform(testSize, 0, testImgNum, r)
-			miniBatchTestImg := oslices.IndicesAccess(mnist.TestImg, idxs...)
-			miniBatchTestLabel := oslices.IndicesAccess(mnist.TestLabel, idxs...)
+			idxs := omwrand.IntsUniform(testSize, 0, testImgNum, r)
+			miniBatchTestImg := omwslices.IndicesAccess(mnist.TestImg, idxs...)
+			miniBatchTestLabel := omwslices.IndicesAccess(mnist.TestLabel, idxs...)
 			loss, err := affine.MeanLoss(miniBatchTestImg, miniBatchTestLabel)
 			if err != nil {
 				panic(err)
@@ -51,7 +51,7 @@ func TestModel(t *testing.T) {
 }
 
 func TestLinearSumGrad(test *testing.T) {
-	rng := orand.NewMt19937()
+	rng := omwrand.NewMt19937()
 	linear := model.NewLinearSumIdentityMSE(0.001)
 	//linear := model.NewLinearSumSigmoidMSE(0.001)
 	r, c := 10, 5

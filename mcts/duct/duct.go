@@ -3,8 +3,8 @@ package duct
 import (
 	"github.com/sw965/crow/game/simultaneous"
 	"github.com/sw965/crow/ucb"
-	oslices "github.com/sw965/omw/slices"
-	orand "github.com/sw965/omw/rand"
+	omwslices "github.com/sw965/omw/slices"
+	omwrand "github.com/sw965/omw/math/rand"
 	"math/rand"
 	"golang.org/x/exp/slices"
 )
@@ -40,7 +40,7 @@ func (node *Node[S, ASS, AS, A]) Predict(r *rand.Rand, limit int) (ASS, [][]floa
 			return ass, avgss
 		}
 
-		eqToJointAction := oslices.Equal(jointAction)
+		eqToJointAction := omwslices.Equal(jointAction)
 		maxTrial := 0
 		nextNodes := make(Nodes[S, ASS, AS, A], 0, n)
 		for _, nextNode := range node.NextNodes {
@@ -60,7 +60,7 @@ func (node *Node[S, ASS, AS, A]) Predict(r *rand.Rand, limit int) (ASS, [][]floa
 		if len(nextNodes) == 0 {
 			break
 		}
-		node = orand.Choice(nextNodes, r)
+		node = omwrand.Choice(nextNodes, r)
 	}
 	return ass, avgss
 }
@@ -175,7 +175,7 @@ func (mcts *MCTS[S, ASS, AS, A]) SelectExpansionBackward(node *Node[S, ASS, AS, 
 			node.NextNodes = append(node.NextNodes, nextNode)
 		}
 
-		eqToJointAction := oslices.Equal(jointAction)
+		eqToJointAction := omwslices.Equal(jointAction)
 		if !slices.ContainsFunc(nextNode.LastJointActions, eqToJointAction) {
 			nextNode.LastJointActions = append(nextNode.LastJointActions, jointAction)
 			nextNode.LastJointActionsTrials = append(nextNode.LastJointActionsTrials, 0)
