@@ -3,10 +3,8 @@ package uct
 import (
 	"math/rand"
 	"github.com/sw965/crow/ucb"
-	oslices "github.com/sw965/omw/slices"
 	orand "github.com/sw965/omw/rand"
 	"github.com/sw965/crow/game/sequential"
-	"golang.org/x/exp/maps"
 )
 
 type ActionPolicy[A comparable] map[A]float64
