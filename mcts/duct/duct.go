@@ -15,7 +15,7 @@ type ActionPoliciesFunc[S any, A comparable] func(*S) ActionPolicies[A]
 
 type LeafNodeEvalY float64
 type LeafNodeEvalYs []LeafNodeEvalY
-type LeafNodeEvalsFunc[S any] func(*S) LeafNodeEvalYs
+type LeafNodeEvalsFunc[S any] func(*S) (LeafNodeEvalYs, error)
 
 type Node[S any, ASS ~[]AS, AS ~[]A, A comparable] struct {
 	State       S
@@ -190,9 +190,9 @@ func (mcts *MCTS[S, ASS, AS, A]) SelectExpansionBackward(node *Node[S, ASS, AS, 
 		}
 		node = nextNode
 	}
-	ys := mcts.LeafNodeEvalsFunc(&state)
+	ys, err := mcts.LeafNodeEvalsFunc(&state)
 	selects.backward(ys)
-	return len(selects), nil
+	return len(selects), err
 }
 
 func (mcts *MCTS[S, ASS, AS, A]) Run(simulation int, rootNode *Node[S, ASS, AS, A], r *rand.Rand) error {

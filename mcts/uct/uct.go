@@ -31,7 +31,7 @@ func (node *Node[S, AS, A]) Trial() int {
 	return node.UCBManager.TotalTrial()
 }
 
-func (node *Node[S, AS, A]) MaxTrialActionPath(r *rand.Rand, limit int) AS {
+func (node *Node[S, AS, A]) Predict(r *rand.Rand, limit int) AS {
 	actions := make(AS, 0, limit)
 	avgs := make([]float64, 0, limit)
 

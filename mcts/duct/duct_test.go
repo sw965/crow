@@ -57,9 +57,9 @@ func TestDUCT(t *testing.T) {
 
 	game.SetRandActionPlayer(r)
 
-	leafNodeEvalsFunc := func(rps *RockPaperScissors) duct.LeafNodeEvalYs {
+	leafNodeEvalsFunc := func(rps *RockPaperScissors) (duct.LeafNodeEvalYs, error) {
 		if rps.Hand1 == rps.Hand2 {
-			return duct.LeafNodeEvalYs{0.5, 0.5}
+			return duct.LeafNodeEvalYs{0.5, 0.5}, nil
 		}
 
 		reward := map[Hand]map[Hand]duct.LeafNodeEvalY{
@@ -69,7 +69,7 @@ func TestDUCT(t *testing.T) {
 		}
 
 		y := reward[rps.Hand1][rps.Hand2]
-		return duct.LeafNodeEvalYs{y, 1.0 - y}
+		return duct.LeafNodeEvalYs{y, 1.0 - y}, nil
 	}
 
 	mcts := duct.MCTS[RockPaperScissors, Handss, Hands, Hand]{
