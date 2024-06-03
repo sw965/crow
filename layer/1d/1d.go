@@ -197,3 +197,28 @@ func NewDropoutForward(p float64, isTrain *bool, r *rand.Rand) Forward {
 		return y, backwards, nil
 	}
 }
+
+func NewLinearSum(w tensor.D1, b float64, gradW tensor.D1, gradB *float64) Forward {
+	return func(x tensor.D1, backwards Backwards) (tensor.D1, Backwards, error) {
+		y, err := mlfuncs1d.LinearSum(x, w, b)
+		if err != nil {
+			return tensor.D1{}, Backwards{}, err
+		}
+
+		var backward Backward
+		backward = func(chain tensor.D1) (tensor.D1, error) {
+			dydx, dydw, err := mlfuncs1d.LinearSumDerivative(x, w)
+			if err != nil {
+				return tensor.D1{}, err
+			}
+
+			dx := tensor.D1MulScalar(dydx, chain[0])
+			dw := tensor.D1MulScalar(dydw, chain[0])
+			gradW.Copy(dw)
+			*gradB = chain[0]
+			return dx, err
+		}
+		backwards = append(backwards, backward)
+		return tensor.D1{y}, backwards, nil
+	}
+}

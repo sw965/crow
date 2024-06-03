@@ -15,35 +15,6 @@ func TanhToSigmoid(y tensor.D2) tensor.D2 {
 	return fn.Map[tensor.D2](y, mlfuncs1d.TanhToSigmoid)
 }
 
-func LinearSum(x, w tensor.D2, b tensor.D1) (tensor.D1, error) {
-	var err error
-	y := make(tensor.D1, len(x))
-	for i := range y {
-		y[i], err = mlfuncs1d.LinearSum(x[i], w[i], b[i])
-		if err != nil {
-			return tensor.D1{}, err
-		}
-	}
-	return y, nil
-}
-
-func LinearSumDerivative(x, w tensor.D2) (tensor.D2, tensor.D2, tensor.D1, error) {
-	n := len(x)
-	gradX := make(tensor.D2, n)
-	gradW := make(tensor.D2, n)
-	gradB := make(tensor.D1, n)
-	for i := range x {
-		gradXi, gradWi, gradBi, err := mlfuncs1d.LinearSumDerivative(x[i], w[i])
-		if err != nil {
-			return tensor.D2{}, tensor.D2{}, tensor.D1{}, err
-		}
-		gradX[i] = gradXi
-		gradW[i] = gradWi
-		gradB[i] = gradBi
-	}
-	return gradX, gradW, gradB, nil
-}
-
 func L2Regularization(c float64) func(tensor.D2) float64 {
 	return func(w tensor.D2) float64 {
 		return omwmath.Sum(fn.Map[tensor.D1](w, mlfuncs1d.L2Regularization(c))...)

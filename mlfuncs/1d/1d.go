@@ -50,16 +50,15 @@ func LinearSum(x, w tensor.D1, b float64) (float64, error) {
 	return y, err
 }
 
-func LinearSumDerivative(x, w tensor.D1) (tensor.D1, tensor.D1, float64, error) {
+func LinearSumDerivative(x, w tensor.D1) (tensor.D1, tensor.D1, error) {
 	n := len(x)
 	gradX := make(tensor.D1, n)
 	gradW := make(tensor.D1, n)
-	gradB := 1.0
 	for i := range x {
 		gradX[i] = w[i]
 		gradW[i] = x[i]
 	}
-	return gradX, gradW, gradB, nil
+	return gradX, gradW, nil
 }
 
 func ReLU(x tensor.D1) tensor.D1 {

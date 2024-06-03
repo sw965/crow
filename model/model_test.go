@@ -7,7 +7,6 @@ import (
 	"github.com/sw965/crow/model"
 	omwrand "github.com/sw965/omw/math/rand"
 	omwslices "github.com/sw965/omw/slices"
-	"github.com/sw965/crow/tensor"
 )
 
 func TestModel(t *testing.T) {
@@ -16,7 +15,7 @@ func TestModel(t *testing.T) {
 	h1 := 128
 	h2 := 32
 	yn := 10
-	affine, _ := model.NewThreeLayerAffineParamReLUInput1DOutputSigmoid1D(xn, h1, h2, yn, 0.0001, 64.0, r)
+	affine, _ := model.NewStandardAffineD1(xn, h1, h2, yn, 0.0001, 64.0, r)
 
 	mnist, err := dataset.LoadFlatMnist()
 	if err != nil {
@@ -47,21 +46,5 @@ func TestModel(t *testing.T) {
 
 			fmt.Println("i =", i, "loss =", loss, "accuracy =", accuracy)
 		}
-	}
-}
-
-func TestLinearSumGrad(test *testing.T) {
-	rng := omwrand.NewMt19937()
-	linear := model.NewLinearSumIdentityMSE(0.001)
-	//linear := model.NewLinearSumSigmoidMSE(0.001)
-	r, c := 10, 5
-	min, max := -5.0, 5.0
-	linear.W = tensor.NewD2RandUniform(r, c, min, max, rng)
-	linear.B = tensor.NewD1RandUniform(r, min, max, rng)
-	x := tensor.NewD2RandUniform(r, c, min, max, rng)
-	t := tensor.NewD1RandUniform(r, min, max, rng)
-	err := linear.ValidateBackwardAndNumericalGradientDifference(x, t)
-	if err != nil {
-		panic(err)
 	}
 }
