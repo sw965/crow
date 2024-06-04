@@ -1,6 +1,7 @@
 package layer1d
 
 import (
+	"fmt"
 	"math/rand"
 	omwmath "github.com/sw965/omw/math"
 	omwslices "github.com/sw965/omw/slices"
@@ -198,20 +199,23 @@ func NewDropoutForward(p float64, isTrain *bool, r *rand.Rand) Forward {
 	}
 }
 
-func NewLinearSum(w tensor.D1, b float64, gradW tensor.D1, gradB *float64) Forward {
+func NewLinearSumForward(w tensor.D1, b *float64, gradW tensor.D1, gradB *float64) Forward {
 	return func(x tensor.D1, backwards Backwards) (tensor.D1, Backwards, error) {
-		y, err := mlfuncs1d.LinearSum(x, w, b)
+		y, err := mlfuncs1d.LinearSum(x, w, *b)
 		if err != nil {
 			return tensor.D1{}, Backwards{}, err
 		}
 
 		var backward Backward
 		backward = func(chain tensor.D1) (tensor.D1, error) {
+			if len(chain) != 1 {
+				return tensor.D1{}, fmt.Errorf("LinearSumForward len(chain) != 1")
+			}
+
 			dydx, dydw, err := mlfuncs1d.LinearSumDerivative(x, w)
 			if err != nil {
 				return tensor.D1{}, err
 			}
-
 			dx := tensor.D1MulScalar(dydx, chain[0])
 			dw := tensor.D1MulScalar(dydw, chain[0])
 			gradW.Copy(dw)

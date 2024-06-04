@@ -1,4 +1,4 @@
-package model
+package model1d
 
 import (
 	"fmt"
@@ -53,7 +53,7 @@ func (v *Variable) SGD() {
 	v.Param3D.Sub(v.grad3D)
 }
 
-type Sequential1D struct {
+type Sequential struct {
 	variable Variable
 	Forwards layer1d.Forwards
 
@@ -71,8 +71,8 @@ type Sequential1D struct {
 	L2NormGradClipThreshold float64
 }
 
-func NewSequential1D(variable Variable) Sequential1D {
-	return Sequential1D{
+func NewSequential(variable Variable) Sequential {
+	return Sequential{
 		variable:variable,
 		Param1DLossFunc:func(_ tensor.D1) float64 { return 0.0 },
 		Param1DLossDerivative:tensor.NewD1ZerosLike,
@@ -83,7 +83,7 @@ func NewSequential1D(variable Variable) Sequential1D {
 	}
 }
 
-func NewStandardAffineD1(xn, h1, h2, yn int, c, threshold float64, r *rand.Rand) (Sequential1D, Variable) {
+func NewStandardAffine(xn, h1, h2, yn int, c, threshold float64, r *rand.Rand) (Sequential, Variable) {
 	variable := Variable{
 		Param1D:tensor.D1{
 			0.1,
@@ -115,7 +115,7 @@ func NewStandardAffineD1(xn, h1, h2, yn int, c, threshold float64, r *rand.Rand)
 		layer1d.NewSigmoidForward(),
 	}
 
-	affine := NewSequential1D(variable)
+	affine := NewSequential(variable)
 	affine.Forwards = forwards
 	affine.YLossFunc = mlfuncs1d.SumSquaredError
 	affine.YLossDerivative = mlfuncs1d.SumSquaredErrorDerivative
@@ -125,12 +125,34 @@ func NewStandardAffineD1(xn, h1, h2, yn int, c, threshold float64, r *rand.Rand)
 	return affine, variable
 }
 
-func (m *Sequential1D) Predict(x tensor.D1) (tensor.D1, error) {
+func NewStandardLinearSum(xn int, c, threshold float64) (Sequential, Variable) {
+	variable := Variable{
+		Param1D:tensor.D1{0.0},
+		Param2D:tensor.D2{tensor.NewD1Zeros(xn)},
+	}
+	variable.Init()
+
+	forwards := layer1d.Forwards{
+		layer1d.NewLinearSumForward(variable.Param2D[0], &variable.Param1D[0], variable.GetGrad2D()[0], &variable.GetGrad1D()[0]),
+		layer1d.NewSigmoidForward(),
+	}
+
+	linearSum := NewSequential(variable)
+	linearSum.Forwards = forwards
+	linearSum.YLossFunc = mlfuncs1d.SumSquaredError
+	linearSum.YLossDerivative = mlfuncs1d.SumSquaredErrorDerivative
+	linearSum.Param2DLossFunc = mlfuncs2d.L2Regularization(c)
+	linearSum.Param2DLossDerivative = mlfuncs2d.L2RegularizationDerivative(c)
+	linearSum.L2NormGradClipThreshold = threshold
+	return linearSum, variable
+}
+
+func (m *Sequential) Predict(x tensor.D1) (tensor.D1, error) {
 	y, _, err := m.Forwards.Propagate(x)
 	return y, err
 }
 
-func (m *Sequential1D) MeanLoss(x, t tensor.D2) (float64, error) {
+func (m *Sequential) MeanLoss(x, t tensor.D2) (float64, error) {
 	n := len(x)
 	if n != len(t) {
 		return 0.0, fmt.Errorf("入力値と正解ラベルのバッチ数が一致しません。")
@@ -156,7 +178,7 @@ func (m *Sequential1D) MeanLoss(x, t tensor.D2) (float64, error) {
 	return mean, nil
 }
 
-func (m *Sequential1D) Accuracy(x, t tensor.D2) (float64, error) {
+func (m *Sequential) Accuracy(x, t tensor.D2) (float64, error) {
 	n := len(x)
 	if n != len(t) {
 		return 0.0, fmt.Errorf("入力と正解ラベルのバッチ数が一致しません。")
@@ -174,7 +196,7 @@ func (m *Sequential1D) Accuracy(x, t tensor.D2) (float64, error) {
 	return float64(correct) / float64(n), nil
 }
 
-func (m *Sequential1D) UpdateGrad(x, t tensor.D1) error {
+func (m *Sequential) UpdateGrad(x, t tensor.D1) error {
 	y, backwards, err := m.Forwards.Propagate(x)
 	if err != nil {
 		return err
@@ -215,13 +237,13 @@ func (m *Sequential1D) UpdateGrad(x, t tensor.D1) error {
 	return err
 }
 
-func (m *Sequential1D) SGD(x, t tensor.D1, lr float64) {
+func (m *Sequential) SGD(x, t tensor.D1, lr float64) {
 	m.UpdateGrad(x, t)
 	m.variable.GradMulScaler(lr)
 	m.variable.SGD()
 }
 
-func (m *Sequential1D) ValidateBackwardAndNumericalGradientDifference(x, t tensor.D1) error {
+func (m *Sequential) ValidateBackwardAndNumericalGradientDifference(x, t tensor.D1) error {
 	lossD1 := func(_ tensor.D1) float64 {
 		loss, err := m.MeanLoss(tensor.D2{x}, tensor.D2{t})
 		if err != nil {
@@ -270,7 +292,11 @@ func (m *Sequential1D) ValidateBackwardAndNumericalGradientDifference(x, t tenso
 	if err != nil {
 		return err
 	}
-	maxDiffD3 := diffD3.MapFunc(math.Abs).MaxRow().MaxRow().Max()
+
+	var maxDiffD3 float64
+	if len(diffD3) != 0 {
+		maxDiffD3 = diffD3.MapFunc(math.Abs).MaxRow().MaxRow().Max()
+	}
 
 	fmt.Println("maxDiffD1 =", maxDiffD1)
 	fmt.Println("maxDiffD2 =", maxDiffD2)
