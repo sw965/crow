@@ -31,11 +31,11 @@ func (node *Node[S, AS, A]) Trial() int {
 	return node.UCBManager.TotalTrial()
 }
 
-func (node *Node[S, AS, A]) Predict(r *rand.Rand, limit int) AS {
+func (node *Node[S, AS, A]) Predict(r *rand.Rand, limit int) (AS, []float64) {
 	actions := make(AS, 0, limit)
 	avgs := make([]float64, 0, limit)
 
-	for i := 0; i < n; i++ {
+	for i := 0; i < limit; i++ {
 		if len(node.UCBManager) == 0 {
 			break
 		}
@@ -59,7 +59,7 @@ func (node *Node[S, AS, A]) Predict(r *rand.Rand, limit int) AS {
 		}
 		node = nextNode
 	}
-	return ret
+	return actions, avgs
 }
 
 type Nodes[S any, AS ~[]A, A comparable] []*Node[S, AS, A]
@@ -107,7 +107,7 @@ func (mcts *MCTS[S, AS, A]) NewNode(state *S) *Node[S, AS, A] {
 	return &Node[S, AS, A]{State:*state, UCBManager:m, NextNodes:nextNodes}
 }
 
-func (mcts *MCTS[S, AS, A]) SetUniformActionPolicy() {
+func (mcts *MCTS[S, AS, A]) SetUniformActionPolicyFunc() {
 	mcts.ActionPolicyFunc = func(state *S) ActionPolicy[A] {
 		as := mcts.Game.LegalActions(state)
 		n := len(as)
