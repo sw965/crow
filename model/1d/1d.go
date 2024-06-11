@@ -20,14 +20,14 @@ type Param struct {
 	D3 tensor.D3
 }
 
+func LoadParamJSON(path string) (Param, error) {
+	param, err := omwjson.Load[Param](path)
+	return param, err
+}
+
 func (p *Param) WriteJSON(path string) error {
 	err := omwjson.Write[Param](p, path)
 	return err
-}
-
-func (p *Param) LoadJSON(path string) (Param, error) {
-	param, err := omwjson.Load[Param](path)
-	return param, err
 }
 
 type Variable struct {
