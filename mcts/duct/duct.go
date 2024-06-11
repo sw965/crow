@@ -28,16 +28,16 @@ type Node[S any, ASS ~[]AS, AS ~[]A, A comparable] struct {
 
 func (node *Node[S, ASS, AS, A]) Predict(r *rand.Rand, limit int) (ASS, [][]float64) {
 	ass := make(ASS, 0, limit)
-	avgss := make([][]float64, 0, limit)
+	jointAvgs := make([][]float64, 0, limit)
 
 	for i := 0; i < limit; i++ {
 		jointAction := node.UCBManagers.JointActionByMaxTrial(r)
 		ass = append(ass, jointAction)
-		avgss = append(avgss, node.UCBManagers.AverageValues())
+		jointAvgs = append(jointAvgs, node.UCBManagers.JointAverageValue())
 
 		n := len(node.NextNodes)
 		if n == 0 {
-			return ass, avgss
+			return ass, jointAvgs
 		}
 
 		eqToJointAction := omwslices.Equal(jointAction)
@@ -62,7 +62,7 @@ func (node *Node[S, ASS, AS, A]) Predict(r *rand.Rand, limit int) (ASS, [][]floa
 		}
 		node = omwrand.Choice(nextNodes, r)
 	}
-	return ass, avgss
+	return ass, jointAvgs
 }
 
 type Nodes[S any, ASS ~[]AS, AS ~[]A, A comparable] []*Node[S, ASS, AS, A]
