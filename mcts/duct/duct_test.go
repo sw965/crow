@@ -50,10 +50,10 @@ func TestDUCT(t *testing.T) {
 			ROCK:     map[Hand]float64{SCISSORS: 1.0, PAPER: 0.0},
 			SCISSORS: map[Hand]float64{ROCK: 0.0, PAPER: 1.0},
 			PAPER:    map[Hand]float64{ROCK: 1.0, SCISSORS: 0.0},
-			"":       map[Hand]:float64{"":-1.0},
+			"":       map[Hand]float64{"":-1.0},
 		}
 		p1Reward := reward[rps.Hand1][rps.Hand2]
-		return isGameEnd, []float64{p1Reward, 1.0-p2Reward}
+		return isGameEnd, []float64{p1Reward, 1.0-p1Reward}
 	}
 
 	game := simultaneous.Game[RockPaperScissors, Handss, Hands, Hand]{

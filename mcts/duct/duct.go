@@ -207,10 +207,10 @@ func (mcts *MCTS[S, ASS, AS, A]) Run(simulation int, rootNode *Node[S, ASS, AS, 
 	return nil
 }
 
-func (mcts *MCTS[S, ASS, AS, A]) NewPlayer[S, ASS, AS, A](simulation int, r *rand.Rand) simultaneous.Player {
-	return func(state *S) (AS, []float64, nil) {
-		rootNode := NewNode(state)
-		err := mcts.Run(simultaneous, rootNode, r)
+func (mcts *MCTS[S, ASS, AS, A]) NewPlayer(simulation int, r *rand.Rand) simultaneous.Player[S, AS, A] {
+	return func(state *S) (AS, []float64, error) {
+		rootNode := mcts.NewNode(state)
+		err := mcts.Run(simulation, rootNode, r)
 		jointAction := rootNode.SeparateUCBManager.JointActionByMaxTrial(r)
 		jointAvg := rootNode.SeparateUCBManager.JointAverageValue()
 		return jointAction, jointAvg, err
