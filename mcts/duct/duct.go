@@ -10,16 +10,15 @@ import (
 )
 
 type ActionPolicy[A comparable] map[A]float64
-type ActionPolicies[A comparable] []ActionPolicy[A]
-type ActionPoliciesFunc[S any, A comparable] func(*S) ActionPolicies[A]
+type SeparateActionPolicy[A comparable] []ActionPolicy[A]
+type SeparateActionPolicyFunc[S any, A comparable] func(*S) SeparateActionPolicy[A]
 
-type LeafNodeEvalY float64
-type LeafNodeEvalYs []LeafNodeEvalY
-type LeafNodeEvalsFunc[S any] func(*S) (LeafNodeEvalYs, error)
+type LeafNodeJointEvalY []float64
+type LeafNodeJointEvalFunc[S any] func(*S) (LeafNodeJointEvalY, error)
 
 type Node[S any, ASS ~[]AS, AS ~[]A, A comparable] struct {
 	State       S
-	UCBManagers ucb.Managers[AS, A]
+	SeparateUCBManager ucb.SeparateManager[AS, A]
 	NextNodes   Nodes[S, ASS, AS, A]
 	Trial       int
 	LastJointActions ASS
@@ -27,22 +26,23 @@ type Node[S any, ASS ~[]AS, AS ~[]A, A comparable] struct {
 }
 
 func (node *Node[S, ASS, AS, A]) Predict(r *rand.Rand, limit int) (ASS, [][]float64) {
-	ass := make(ASS, 0, limit)
+	jointActions := make(ASS, 0, limit)
 	jointAvgs := make([][]float64, 0, limit)
 
 	for i := 0; i < limit; i++ {
-		jointAction := node.UCBManagers.JointActionByMaxTrial(r)
-		ass = append(ass, jointAction)
-		jointAvgs = append(jointAvgs, node.UCBManagers.JointAverageValue())
+		jointAction := node.SeparateUCBManager.JointActionByMaxTrial(r)
+		jointActions = append(jointActions, jointAction)
+		jointAvgs = append(jointAvgs, node.SeparateUCBManager.JointAverageValue())
 
 		n := len(node.NextNodes)
 		if n == 0 {
-			return ass, jointAvgs
+			return jointActions, jointAvgs
 		}
 
 		eqToJointAction := omwslices.Equal(jointAction)
 		maxTrial := 0
 		nextNodes := make(Nodes[S, ASS, AS, A], 0, n)
+
 		for _, nextNode := range node.NextNodes {
 			idx := slices.IndexFunc(nextNode.LastJointActions, eqToJointAction)
 			if idx != -1 {
@@ -62,7 +62,7 @@ func (node *Node[S, ASS, AS, A]) Predict(r *rand.Rand, limit int) (ASS, [][]floa
 		}
 		node = omwrand.Choice(nextNodes, r)
 	}
-	return ass, jointAvgs
+	return jointActions, jointAvgs
 }
 
 type Nodes[S any, ASS ~[]AS, AS ~[]A, A comparable] []*Node[S, ASS, AS, A]
@@ -83,13 +83,13 @@ type nodeSelect[S any, ASS ~[]AS, AS ~[]A, A comparable] struct {
 
 type selects[S any, ASS ~[]AS, AS ~[]A, A comparable] []nodeSelect[S, ASS, AS, A]
 
-func (ss selects[S, ASS, AS, A]) backward(ys LeafNodeEvalYs) {
+func (ss selects[S, ASS, AS, A]) backward(jointEval LeafNodeJointEvalY) {
 	for _, s := range ss {
 		node := s.node
 		jointAction := s.jointAction
-		for playerI, a := range jointAction {
-			node.UCBManagers[playerI][a].TotalValue += float64(ys[playerI])
-			node.UCBManagers[playerI][a].Trial += 1
+		for playerI, action := range jointAction {
+			node.SeparateUCBManager[playerI][action].TotalValue += float64(jointEval[playerI])
+			node.SeparateUCBManager[playerI][action].Trial += 1
 		}
 	}
 }
@@ -97,16 +97,16 @@ func (ss selects[S, ASS, AS, A]) backward(ys LeafNodeEvalYs) {
 type MCTS[S any, ASS ~[]AS, AS ~[]A, A comparable] struct {
 	Game               simultaneous.Game[S, ASS, AS, A]
 	UCBFunc            ucb.Func
-	ActionPoliciesFunc ActionPoliciesFunc[S, A]
-	LeafNodeEvalsFunc  LeafNodeEvalsFunc[S]
+	SeparateActionPolicyFunc SeparateActionPolicyFunc[S, A]
+	LeafNodeJointEvalFunc  LeafNodeJointEvalFunc[S]
 	NextNodesCap int
 	LastJointActionsCap int
 }
 
-func (mcts *MCTS[S, ASS, AS, A]) SetUniformActionPoliciesFunc() {
-	mcts.ActionPoliciesFunc = func(state *S) ActionPolicies[A] {
-		ass := mcts.Game.LegalActionss(state)
-		policies := make(ActionPolicies[A], len(ass))
+func (mcts *MCTS[S, ASS, AS, A]) SetUniformSeparateActionPolicyFunc() {
+	mcts.SeparateActionPolicyFunc = func(state *S) SeparateActionPolicy[A] {
+		ass := mcts.Game.LegalSeparateActions(state)
+		policies := make(SeparateActionPolicy[A], len(ass))
 		for playerI, as := range ass {
 			policy := ActionPolicy[A]{}
 			n := len(as)
@@ -121,8 +121,8 @@ func (mcts *MCTS[S, ASS, AS, A]) SetUniformActionPoliciesFunc() {
 }
 
 func (mcts *MCTS[S, ASS, AS, A]) NewNode(state *S) *Node[S, ASS, AS, A] {
-	policies := mcts.ActionPoliciesFunc(state)
-	ms := make(ucb.Managers[AS, A], len(policies))
+	policies := mcts.SeparateActionPolicyFunc(state)
+	ms := make(ucb.SeparateManager[AS, A], len(policies))
 	for playerI, policy := range policies {
 		m := ucb.Manager[AS, A]{}
 		for a, p := range policy {
@@ -137,7 +137,7 @@ func (mcts *MCTS[S, ASS, AS, A]) NewNode(state *S) *Node[S, ASS, AS, A] {
 
 	return &Node[S, ASS, AS, A]{
 		State: *state,
-		UCBManagers: ms,
+		SeparateUCBManager: ms,
 		NextNodes:nextNodes,
 		LastJointActions:lastJointActions,
 		LastJointActionsTrials:lastJointActionsTrials,
@@ -149,7 +149,7 @@ func (mcts *MCTS[S, ASS, AS, A]) SelectExpansionBackward(node *Node[S, ASS, AS, 
 	selects := make(selects[S, ASS, AS, A], 0, capacity)
 	var err error
 	for {
-		jointAction := node.UCBManagers.JointActionByMax(r)
+		jointAction := node.SeparateUCBManager.JointActionByMax(r)
 		selects = append(selects, nodeSelect[S, ASS, AS, A]{node: node, jointAction: jointAction})
 		node.Trial += 1
 
@@ -158,7 +158,7 @@ func (mcts *MCTS[S, ASS, AS, A]) SelectExpansionBackward(node *Node[S, ASS, AS, 
 			return 0, err
 		}
 
-		if isEnd := mcts.Game.IsEnd(&state); isEnd {
+		if isEnd, _ := mcts.Game.IsEnd(&state); isEnd {
 			break
 		}
 
@@ -190,8 +190,8 @@ func (mcts *MCTS[S, ASS, AS, A]) SelectExpansionBackward(node *Node[S, ASS, AS, 
 		}
 		node = nextNode
 	}
-	ys, err := mcts.LeafNodeEvalsFunc(&state)
-	selects.backward(ys)
+	jointEval, err := mcts.LeafNodeJointEvalFunc(&state)
+	selects.backward(jointEval)
 	return len(selects), err
 }
 
@@ -205,4 +205,14 @@ func (mcts *MCTS[S, ASS, AS, A]) Run(simulation int, rootNode *Node[S, ASS, AS, 
 		}
 	}
 	return nil
+}
+
+func (mcts *MCTS[S, ASS, AS, A]) NewPlayer[S, ASS, AS, A](simulation int, r *rand.Rand) simultaneous.Player {
+	return func(state *S) (AS, []float64, nil) {
+		rootNode := NewNode(state)
+		err := mcts.Run(simultaneous, rootNode, r)
+		jointAction := rootNode.SeparateUCBManager.JointActionByMaxTrial(r)
+		jointAvg := rootNode.SeparateUCBManager.JointAverageValue()
+		return jointAction, jointAvg, err
+	}
 }

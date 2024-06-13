@@ -32,7 +32,7 @@ type RockPaperScissors struct {
 func TestDUCT(t *testing.T) {
 	r := omwrand.NewMt19937()
 
-	legalActionss := func(rps *RockPaperScissors) Handss {
+	legalSeparateActions := func(rps *RockPaperScissors) Handss {
 		return Handss{HANDS, Hands{ROCK, PAPER, SCISSORS}}
 	}
 
@@ -44,12 +44,20 @@ func TestDUCT(t *testing.T) {
 		return *rps1 == *rps2
 	}
 
-	isEnd := func(rps *RockPaperScissors) bool {
-		return rps.Hand1 != "" && rps.Hand2 != ""
+	isEnd := func(rps *RockPaperScissors) (bool, []float64) {
+		isGameEnd := rps.Hand1 != "" && rps.Hand2 != ""
+		reward := map[Hand]map[Hand]float64{
+			ROCK:     map[Hand]float64{SCISSORS: 1.0, PAPER: 0.0},
+			SCISSORS: map[Hand]float64{ROCK: 0.0, PAPER: 1.0},
+			PAPER:    map[Hand]float64{ROCK: 1.0, SCISSORS: 0.0},
+			"":       map[Hand]:float64{"":-1.0},
+		}
+		p1Reward := reward[rps.Hand1][rps.Hand2]
+		return isGameEnd, []float64{p1Reward, 1.0-p2Reward}
 	}
 
 	game := simultaneous.Game[RockPaperScissors, Handss, Hands, Hand]{
-		LegalActionss: legalActionss,
+		LegalSeparateActions: legalSeparateActions,
 		Push:          push,
 		Equal:         equal,
 		IsEnd:         isEnd,
@@ -57,36 +65,37 @@ func TestDUCT(t *testing.T) {
 
 	game.SetRandActionPlayer(r)
 
-	leafNodeEvalsFunc := func(rps *RockPaperScissors) (duct.LeafNodeEvalYs, error) {
+	leafNodeJointEvalFunc := func(rps *RockPaperScissors) (duct.LeafNodeJointEvalY, error) {
 		if rps.Hand1 == rps.Hand2 {
-			return duct.LeafNodeEvalYs{0.5, 0.5}, nil
+			return duct.LeafNodeJointEvalY{0.5, 0.5}, nil
 		}
 
-		reward := map[Hand]map[Hand]duct.LeafNodeEvalY{
-			ROCK:     map[Hand]duct.LeafNodeEvalY{SCISSORS: 1.0, PAPER: 0.0},
-			SCISSORS: map[Hand]duct.LeafNodeEvalY{ROCK: 0.0, PAPER: 1.0},
-			PAPER:    map[Hand]duct.LeafNodeEvalY{ROCK: 1.0, SCISSORS: 0.0},
+		reward := map[Hand]map[Hand]float64{
+			ROCK:     map[Hand]float64{SCISSORS: 1.0, PAPER: 0.0},
+			SCISSORS: map[Hand]float64{ROCK: 0.0, PAPER: 1.0},
+			PAPER:    map[Hand]float64{ROCK: 1.0, SCISSORS: 0.0},
 		}
 
 		y := reward[rps.Hand1][rps.Hand2]
-		return duct.LeafNodeEvalYs{y, 1.0 - y}, nil
+		return duct.LeafNodeJointEvalY{y, 1.0 - y}, nil
 	}
 
 	mcts := duct.MCTS[RockPaperScissors, Handss, Hands, Hand]{
 		Game:              game,
-		LeafNodeEvalsFunc: leafNodeEvalsFunc,
+		LeafNodeJointEvalFunc: leafNodeJointEvalFunc,
 	}
-	mcts.SetUniformActionPoliciesFunc()
+
+	mcts.SetUniformSeparateActionPolicyFunc()
 	//mcts.UCBFunc = ucb.New1Func(math.Sqrt(1000))
 	mcts.UCBFunc = ucb.NewAlphaGoFunc(math.Sqrt(2))
 
-	fmt.Println(mcts.ActionPoliciesFunc(&RockPaperScissors{}))
+	fmt.Println(mcts.SeparateActionPolicyFunc(&RockPaperScissors{}))
 	rootNode := mcts.NewNode(&RockPaperScissors{})
 	err := mcts.Run(19600, rootNode, r)
 	if err != nil {
 		panic(err)
 	}
-	for i, m := range rootNode.UCBManagers {
+	for i, m := range rootNode.SeparateUCBManager {
 		for a, pucb := range m {
 			fmt.Println(i, a, pucb.AverageValue(), pucb.Trial)
 		}
@@ -97,7 +106,7 @@ func TestDUCT(t *testing.T) {
 		panic(err)
 	}
 
-	for i, m := range rootNode.UCBManagers {
+	for i, m := range rootNode.SeparateUCBManager {
 		for a, pucb := range m {
 			fmt.Println(i, a, pucb.AverageValue(), pucb.Trial)
 		}

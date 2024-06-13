@@ -25,6 +25,7 @@ type Node[S any, AS ~[]A, A comparable] struct {
 	State S
 	UCBManager ucb.Manager[AS, A]
 	NextNodes Nodes[S, AS, A]
+	LastActionTrials map[A]int
 }
 
 func (node *Node[S, AS, A]) Trial() int {
@@ -36,28 +37,34 @@ func (node *Node[S, AS, A]) Predict(r *rand.Rand, limit int) (AS, []float64) {
 	avgs := make([]float64, 0, limit)
 
 	for i := 0; i < limit; i++ {
-		if len(node.UCBManager) == 0 {
-			break
-		}
-
-		action := omwrand.Choice(node.UCBManager.MaxTrialKeys(), r)
+		action := node.UCBManager.ActionByMaxTrial(r)
 		actions = append(actions, action)
+		avgs = append(avgs, node.UCBManager.AverageValue())
 
-		if len(node.NextNodes) == 0 {
+		n := len(node.NextNodes)
+		if n == 0 {
 			break
 		}
 
-		maxTrial := node.NextNodes[0].Trial()
-		nextNode := node.NextNodes[0]
-
-		for _, nn := range node.NextNodes[1:] {
-			trial := nn.Trial()
-			if trial > maxTrial {
-				maxTrial = trial
-				nextNode = nn
+		maxTrial := 0
+		nextNodes := make(Nodes[S, AS, A], 0, n)
+		for _, nextNode := range node.NextNodes {
+			trial, ok := node.LastActionTrials[action]
+			if ok {
+				if trial > maxTrial {
+					nextNodes = make(Nodes[S, AS, A], 0, n)
+					nextNodes = append(nextNodes, nextNode)
+					maxTrial = trial
+				} else if trial == maxTrial {
+					nextNodes = append(nextNodes, nextNode)
+				}
 			}
 		}
-		node = nextNode
+		
+		if len(nextNodes) == 0 {
+			break
+		}
+		node = omwrand.Choice(nextNodes, r)
 	}
 	return actions, avgs
 }
@@ -133,7 +140,7 @@ func (mcts *MCTS[S, AS, A]) SelectExpansionBackward(node *Node[S, AS, A], r *ran
 			return 0, err
 		}
 
-		if isEnd := mcts.Game.IsEnd(&state); isEnd {
+		if isEnd, _ := mcts.Game.IsEnd(&state); isEnd {
 			break
 		}
 
@@ -148,6 +155,14 @@ func (mcts *MCTS[S, AS, A]) SelectExpansionBackward(node *Node[S, AS, A], r *ran
 			//expansion
 			nextNode = mcts.NewNode(&state)
 			node.NextNodes = append(node.NextNodes, nextNode)
+		}
+
+		if _, ok := nextNode.LastActionTrials[action]; !ok {
+			nextNode.LastActionTrials[action] = 0
+		}
+		nextNode.LastActionTrials[action] += 1
+
+		if !ok {
 			//新しくノードを作成したら、処理を終了する
 			break
 		}
@@ -168,4 +183,14 @@ func (mcts *MCTS[S, AS, A]) Run(simulation int, rootNode *Node[S, AS, A], r *ran
 		}
 	}
 	return nil
+}
+
+func (mcts *MCTS[S, AS, A]) NewPlayer(simulation int, r *rand.Rand) sequential.Player[S, A] {
+	return func(state *S) (A, float64, error) {
+		rootNode := mcts.NewNode(state)
+		err := mcts.Run(simulation, rootNode, r)
+		action := rootNode.UCBManager.ActionByMaxTrial(r)
+		avg := rootNode.UCBManager.AverageValue()
+		return action, avg, err
+	}
 }

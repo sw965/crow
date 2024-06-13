@@ -121,9 +121,9 @@ func (m Manager[KS, K]) TrialPercents() map[K]float64 {
 	return ret
 }
 
-type Managers[KS ~[]K, K comparable] []Manager[KS, K]
+type SeparateManager[KS ~[]K, K comparable] []Manager[KS, K]
 
-func (ms Managers[KS, K]) JointActionByMax(r *rand.Rand) KS {
+func (ms SeparateManager[KS, K]) JointActionByMax(r *rand.Rand) KS {
 	ret := make(KS, len(ms))
 	for i, m := range ms {
 		ret[i] = m.ActionByMax(r)
@@ -131,7 +131,7 @@ func (ms Managers[KS, K]) JointActionByMax(r *rand.Rand) KS {
 	return ret
 }
 
-func (ms Managers[KS, K]) JointActionByMaxTrial(r *rand.Rand) KS {
+func (ms SeparateManager[KS, K]) JointActionByMaxTrial(r *rand.Rand) KS {
 	ret := make(KS, len(ms))
 	for i, m := range ms {
 		ret[i] = m.ActionByMaxTrial(r)
@@ -139,7 +139,7 @@ func (ms Managers[KS, K]) JointActionByMaxTrial(r *rand.Rand) KS {
 	return ret
 }
 
-func (ms Managers[KS, K]) JointAverageValue() []float64 {
+func (ms SeparateManager[KS, K]) JointAverageValue() []float64 {
 	ret := make([]float64, len(ms))
 	for i, m := range ms {
 		ret[i] = m.AverageValue()
