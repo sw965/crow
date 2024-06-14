@@ -154,7 +154,9 @@ func (mcts *MCTS[S, ASS, AS, A]) SelectExpansionBackward(node *Node[S, ASS, AS, 
 	selects := make(selects[S, ASS, AS, A], 0, capacity)
 	var err error
 	for {
+		fmt.Println("koko1", node.SeparateUCBManager)
 		jointAction := node.SeparateUCBManager.JointActionByMax(r)
+		fmt.Println("koko2", jointAction)
 		selects = append(selects, nodeSelect[S, ASS, AS, A]{node: node, jointAction: jointAction})
 		node.Trial += 1
 
