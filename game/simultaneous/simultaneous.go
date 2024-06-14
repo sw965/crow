@@ -78,7 +78,7 @@ func (g *Game[S, ASS, AS, A]) PlayWithHistory(state S, f func(*S, int) bool, c i
 		jointAction, jointEval, err := g.Player(&state)
 		if err != nil {
 			var s S
-			return s, stateHistory, jointActionHistory, jointEvalHistory, err
+			return s, []S{}, ASS{}, [][]float64{}, err
 		}
 
 		stateHistory = append(stateHistory, state)
@@ -88,7 +88,7 @@ func (g *Game[S, ASS, AS, A]) PlayWithHistory(state S, f func(*S, int) bool, c i
 		state, err = g.Push(state, jointAction)
 		if err != nil {
 			var s S
-			return s, stateHistory, jointActionHistory, jointEvalHistory, err
+			return s, []S{}, ASS{}, [][]float64{}, err
 		}
 		i += 1
 	}

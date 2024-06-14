@@ -1,6 +1,7 @@
 package duct
 
 import (
+	"fmt"
 	"github.com/sw965/crow/game/simultaneous"
 	"github.com/sw965/crow/ucb"
 	omwslices "github.com/sw965/omw/slices"
@@ -106,6 +107,7 @@ type MCTS[S any, ASS ~[]AS, AS ~[]A, A comparable] struct {
 func (mcts *MCTS[S, ASS, AS, A]) SetUniformSeparateActionPolicyFunc() {
 	mcts.SeparateActionPolicyFunc = func(state *S) SeparateActionPolicy[A] {
 		ass := mcts.Game.LegalSeparateActions(state)
+		fmt.Println("ass = ", ass)
 		policies := make(SeparateActionPolicy[A], len(ass))
 		for playerI, as := range ass {
 			policy := ActionPolicy[A]{}
@@ -122,6 +124,7 @@ func (mcts *MCTS[S, ASS, AS, A]) SetUniformSeparateActionPolicyFunc() {
 
 func (mcts *MCTS[S, ASS, AS, A]) NewNode(state *S) *Node[S, ASS, AS, A] {
 	policies := mcts.SeparateActionPolicyFunc(state)
+	fmt.Println("policies", policies)
 	ms := make(ucb.SeparateManager[AS, A], len(policies))
 	for playerI, policy := range policies {
 		m := ucb.Manager[AS, A]{}
@@ -130,7 +133,7 @@ func (mcts *MCTS[S, ASS, AS, A]) NewNode(state *S) *Node[S, ASS, AS, A] {
 		}
 		ms[playerI] = m
 	}
-
+	fmt.Println("ms = ", ms)
 	nextNodes := make(Nodes[S, ASS, AS, A], 0, mcts.NextNodesCap)
 	lastJointActions := make(ASS, 0, mcts.LastJointActionsCap)
 	lastJointActionsTrials := make([]int, 0, mcts.LastJointActionsCap)
