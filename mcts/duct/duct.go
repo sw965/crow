@@ -31,7 +31,9 @@ func (node *Node[S, ASS, AS, A]) Predict(r *rand.Rand, limit int) (ASS, [][]floa
 	jointAvgs := make([][]float64, 0, limit)
 
 	for i := 0; i < limit; i++ {
+		fmt.Println("sekect1", node.SeparateUCBManager)
 		jointAction := node.SeparateUCBManager.JointActionByMaxTrial(r)
+		fmt.Println("slect2", jointAction)
 		jointActions = append(jointActions, jointAction)
 		jointAvgs = append(jointAvgs, node.SeparateUCBManager.JointAverageValue())
 
