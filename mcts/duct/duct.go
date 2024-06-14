@@ -1,7 +1,6 @@
 package duct
 
 import (
-	"fmt"
 	"github.com/sw965/crow/game/simultaneous"
 	"github.com/sw965/crow/ucb"
 	omwslices "github.com/sw965/omw/slices"
@@ -31,9 +30,7 @@ func (node *Node[S, ASS, AS, A]) Predict(r *rand.Rand, limit int) (ASS, [][]floa
 	jointAvgs := make([][]float64, 0, limit)
 
 	for i := 0; i < limit; i++ {
-		fmt.Println("sekect1", node.SeparateUCBManager)
 		jointAction := node.SeparateUCBManager.JointActionByMaxTrial(r)
-		fmt.Println("slect2", jointAction)
 		jointActions = append(jointActions, jointAction)
 		jointAvgs = append(jointAvgs, node.SeparateUCBManager.JointAverageValue())
 
@@ -109,7 +106,6 @@ type MCTS[S any, ASS ~[]AS, AS ~[]A, A comparable] struct {
 func (mcts *MCTS[S, ASS, AS, A]) SetUniformSeparateActionPolicyFunc() {
 	mcts.SeparateActionPolicyFunc = func(state *S) SeparateActionPolicy[A] {
 		ass := mcts.Game.LegalSeparateActions(state)
-		fmt.Println("ass = ", ass)
 		policies := make(SeparateActionPolicy[A], len(ass))
 		for playerI, as := range ass {
 			policy := ActionPolicy[A]{}
@@ -126,7 +122,6 @@ func (mcts *MCTS[S, ASS, AS, A]) SetUniformSeparateActionPolicyFunc() {
 
 func (mcts *MCTS[S, ASS, AS, A]) NewNode(state *S) *Node[S, ASS, AS, A] {
 	policies := mcts.SeparateActionPolicyFunc(state)
-	fmt.Println("policies", policies)
 	ms := make(ucb.SeparateManager[AS, A], len(policies))
 	for playerI, policy := range policies {
 		m := ucb.Manager[AS, A]{}
@@ -135,7 +130,7 @@ func (mcts *MCTS[S, ASS, AS, A]) NewNode(state *S) *Node[S, ASS, AS, A] {
 		}
 		ms[playerI] = m
 	}
-	fmt.Println("ms = ", ms)
+
 	nextNodes := make(Nodes[S, ASS, AS, A], 0, mcts.NextNodesCap)
 	lastJointActions := make(ASS, 0, mcts.LastJointActionsCap)
 	lastJointActionsTrials := make([]int, 0, mcts.LastJointActionsCap)
@@ -154,9 +149,7 @@ func (mcts *MCTS[S, ASS, AS, A]) SelectExpansionBackward(node *Node[S, ASS, AS, 
 	selects := make(selects[S, ASS, AS, A], 0, capacity)
 	var err error
 	for {
-		fmt.Println("koko1", node.SeparateUCBManager)
 		jointAction := node.SeparateUCBManager.JointActionByMax(r)
-		fmt.Println("koko2", jointAction)
 		selects = append(selects, nodeSelect[S, ASS, AS, A]{node: node, jointAction: jointAction})
 		node.Trial += 1
 
