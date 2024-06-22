@@ -63,8 +63,6 @@ func TestDUCT(t *testing.T) {
 		IsEnd:         isEnd,
 	}
 
-	game.SetRandActionPlayer(r)
-
 	leafNodeJointEvalFunc := func(rps *RockPaperScissors) (duct.LeafNodeJointEvalY, error) {
 		if rps.Hand1 == rps.Hand2 {
 			return duct.LeafNodeJointEvalY{0.5, 0.5}, nil

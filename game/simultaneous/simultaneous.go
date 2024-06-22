@@ -12,25 +12,14 @@ type EqualFunc[S any] func(*S, *S) bool
 type IsEndFunc[S any] func(*S) (bool, []float64)
 
 type Game[S any, ASS ~[]AS, AS ~[]A, A comparable] struct {
-	Player Player[S, AS, A]
 	LegalSeparateActions LegalSeparateActionsFunc[S, ASS, AS, A]
 	Push PushFunc[S, AS, A]
 	Equal EqualFunc[S]
 	IsEnd IsEndFunc[S]
 }
 
-func (g *Game[S, ASS, AS, A]) Clone() Game[S, ASS, AS, A] {
-	return Game[S, ASS, AS, A]{
-		Player:g.Player,
-		LegalSeparateActions:g.LegalSeparateActions,
-		Push:g.Push,
-		Equal:g.Equal,
-		IsEnd:g.IsEnd,
-	}
-}
-
-func (g *Game[S, ASS, AS, A]) SetRandActionPlayer(r *rand.Rand) {
-	g.Player = func(state *S) (AS, []float64, error) {
+func (g *Game[S, ASS, AS, A]) NewRandActionPlayer(r *rand.Rand) Player[S, AS, A] {
+	return func(state *S) (AS, []float64, error) {
 		ass := g.LegalSeparateActions(state)
 		ret := make(AS, len(ass))
 		for playerI, as := range ass {
@@ -40,7 +29,7 @@ func (g *Game[S, ASS, AS, A]) SetRandActionPlayer(r *rand.Rand) {
 	}
 }
 
-func (g *Game[S, ASS, AS, A]) Play(state S, f func(*S, int) bool) (S, error) {
+func (g *Game[S, ASS, AS, A]) Play(player Player[S, AS, A], state S, f func(*S, int) bool) (S, error) {
 	i := 0
 	for {
 		isEnd, _ := g.IsEnd(&state)
@@ -48,7 +37,7 @@ func (g *Game[S, ASS, AS, A]) Play(state S, f func(*S, int) bool) (S, error) {
 			break
 		}
 
-		jointAction, _, err := g.Player(&state)
+		jointAction, _, err := player(&state)
 		if err != nil {
 			var s S
 			return s, err
@@ -63,7 +52,7 @@ func (g *Game[S, ASS, AS, A]) Play(state S, f func(*S, int) bool) (S, error) {
 	return state, nil
 }
 
-func (g *Game[S, ASS, AS, A]) PlayWithHistory(state S, f func(*S, int) bool, c int) (S, []S, ASS, [][]float64, error) {
+func (g *Game[S, ASS, AS, A]) PlayWithHistory(player Player[S, AS, A], state S, f func(*S, int) bool, c int) (S, []S, ASS, [][]float64, error) {
 	i := 0
 	stateHistory := make([]S, 0, c)
 	jointActionHistory := make(ASS, 0, c)
@@ -75,7 +64,7 @@ func (g *Game[S, ASS, AS, A]) PlayWithHistory(state S, f func(*S, int) bool, c i
 			break
 		}
 
-		jointAction, jointEval, err := g.Player(&state)
+		jointAction, jointEval, err := player(&state)
 		if err != nil {
 			var s S
 			return s, []S{}, ASS{}, [][]float64{}, err
@@ -95,10 +84,10 @@ func (g *Game[S, ASS, AS, A]) PlayWithHistory(state S, f func(*S, int) bool, c i
 	return state, stateHistory, jointActionHistory, jointEvalHistory, nil
 }
 
-func (g *Game[S, ASS, AS, A]) Playout(state S) (S, error) {
-	return g.Play(state, func(_ *S, _ int) bool { return false })
+func (g *Game[S, ASS, AS, A]) Playout(player Player[S, AS, A], state S) (S, error) {
+	return g.Play(player, state, func(_ *S, _ int) bool { return false })
 }
 
-func (g *Game[S, ASS, AS, A]) PlayoutWithHistory(state S, capacity int) (S, []S, ASS, [][]float64, error) {
-	return g.PlayWithHistory(state, func(_ *S, _ int) bool { return false }, capacity)
+func (g *Game[S, ASS, AS, A]) PlayoutWithHistory(player Player[S, AS, A], state S, capacity int) (S, []S, ASS, [][]float64, error) {
+	return g.PlayWithHistory(player, state, func(_ *S, _ int) bool { return false }, capacity)
 }

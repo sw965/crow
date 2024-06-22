@@ -7,37 +7,27 @@ import (
 )
 
 type Player[S any, A comparable] func(*S) (A, float64, error)
+
 type LegalActionsFunc[S any, AS ~[]A, A comparable] func(*S) AS
 type PushFunc[S any, A comparable] func(S, *A) (S, error)
 type EqualFunc[S any] func(*S, *S) bool
 type IsEndFunc[S any] func(*S) (bool, float64)
 
 type Game[S any, AS ~[]A, A comparable] struct {
-	Player Player[S, A]
 	LegalActions LegalActionsFunc[S, AS, A]
 	Push PushFunc[S, A]
 	Equal EqualFunc[S]
 	IsEnd IsEndFunc[S]
 }
 
-func (g *Game[S, AS, A]) Clone() Game[S, AS, A] {
-	return Game[S, AS, A]{
-		Player:g.Player,
-		LegalActions:g.LegalActions,
-		Push:g.Push,
-		Equal:g.Equal,
-		IsEnd:g.IsEnd,
-	}
-}
-
-func (g *Game[S, AS, A]) SetRandActionPlayer(r *rand.Rand) {
-	g.Player = func(state *S) (A, float64, error) {
+func (g *Game[S, AS, A]) NewRandActionPlayer(r *rand.Rand) Player[S, A] {
+	return func(state *S) (A, float64, error) {
 		as := g.LegalActions(state)
 		return omwrand.Choice(as, r), math.NaN(), nil
 	}
 }
 
-func (g *Game[S, AS, A]) Play(state S, f func(*S, int) bool) (S, error) {
+func (g *Game[S, AS, A]) Play(player Player[S, A], state S, f func(*S, int) bool) (S, error) {
 	i := 0
 	for {
 		isEnd, _ := g.IsEnd(&state)
@@ -45,7 +35,7 @@ func (g *Game[S, AS, A]) Play(state S, f func(*S, int) bool) (S, error) {
 			break
 		}
 
-		action, _, err := g.Player(&state)
+		action, _, err := player(&state)
 		if err != nil {
 			var s S
 			return s, err
@@ -61,7 +51,7 @@ func (g *Game[S, AS, A]) Play(state S, f func(*S, int) bool) (S, error) {
 	return state, nil
 }
 
-func (g *Game[S, AS, A]) PlayWithHistory(state S, f func(*S, int) bool, c int) (S, []S, AS, []float64, error) {
+func (g *Game[S, AS, A]) PlayWithHistory(player Player[S, A], state S, f func(*S, int) bool, c int) (S, []S, AS, []float64, error) {
 	i := 0
 	stateHistory := make([]S, 0, c)
 	actionHistory := make(AS, 0, c)
@@ -73,7 +63,7 @@ func (g *Game[S, AS, A]) PlayWithHistory(state S, f func(*S, int) bool, c int) (
 			break
 		}
 
-		action, eval, err := g.Player(&state)
+		action, eval, err := player(&state)
 		if err != nil {
 			var s S
 			return s, []S{}, AS{}, []float64{}, err
@@ -93,10 +83,10 @@ func (g *Game[S, AS, A]) PlayWithHistory(state S, f func(*S, int) bool, c int) (
 	return state, stateHistory, actionHistory, evalHistory, nil
 }
 
-func (g *Game[S, AS, A]) Playout(state S) (S, error) {
-	return g.Play(state, func(_ *S, _ int) bool { return false})
+func (g *Game[S, AS, A]) Playout(player Player[S, A], state S) (S, error) {
+	return g.Play(player, state, func(_ *S, _ int) bool { return false})
 }
 
-func (g *Game[S, AS, A]) PlayoutWithHistory(state S, c int) (S, []S, AS, []float64, error) {
-	return g.PlayWithHistory(state, func(_ *S, _ int) bool { return false}, c)
+func (g *Game[S, AS, A]) PlayoutWithHistory(player Player[S, A], state S, c int) (S, []S, AS, []float64, error) {
+	return g.PlayWithHistory(player, state, func(_ *S, _ int) bool { return false}, c)
 }
