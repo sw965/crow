@@ -5,11 +5,13 @@ import (
 	omwrand "github.com/sw965/omw/math/rand"
 )
 
-type Player[S any, AS ~[]A, A comparable] func(*S) (AS, []float64, error)
+type JointEval []float64
+type JointEvals []JointEval
+type Player[S any, AS ~[]A, A comparable] func(*S) (AS, JointEval, error)
 type LegalSeparateActionsFunc[S any, ASS ~[]AS, AS ~[]A, A comparable] func(*S) ASS
 type PushFunc[S any, AS ~[]A, A comparable] func(S, AS) (S, error)
 type EqualFunc[S any] func(*S, *S) bool
-type IsEndFunc[S any] func(*S) (bool, []float64)
+type IsEndFunc[S any] func(*S) (bool, JointEval)
 
 type Game[S any, ASS ~[]AS, AS ~[]A, A comparable] struct {
 	LegalSeparateActions LegalSeparateActionsFunc[S, ASS, AS, A]
@@ -19,13 +21,13 @@ type Game[S any, ASS ~[]AS, AS ~[]A, A comparable] struct {
 }
 
 func (g *Game[S, ASS, AS, A]) NewRandActionPlayer(r *rand.Rand) Player[S, AS, A] {
-	return func(state *S) (AS, []float64, error) {
+	return func(state *S) (AS, JointEval, error) {
 		ass := g.LegalSeparateActions(state)
-		ret := make(AS, len(ass))
-		for playerI, as := range ass {
-			ret[playerI] = omwrand.Choice(as, r)
+		as := make(AS, len(ass))
+		for playerI, legalAs := range ass {
+			as[playerI] = omwrand.Choice(legalAs, r)
 		} 
-		return ret, []float64{}, nil
+		return as, JointEval{}, nil
 	}
 }
 
@@ -52,11 +54,11 @@ func (g *Game[S, ASS, AS, A]) Play(player Player[S, AS, A], state S, f func(*S, 
 	return state, nil
 }
 
-func (g *Game[S, ASS, AS, A]) PlayWithHistory(player Player[S, AS, A], state S, f func(*S, int) bool, c int) (S, []S, ASS, [][]float64, error) {
+func (g *Game[S, ASS, AS, A]) PlayWithHistory(player Player[S, AS, A], state S, f func(*S, int) bool, c int) (S, []S, ASS, JointEvals, error) {
 	i := 0
 	stateHistory := make([]S, 0, c)
 	jointActionHistory := make(ASS, 0, c)
-	jointEvalHistory := make([][]float64, 0, c)
+	jointEvalHistory := make(JointEvals, 0, c)
 
 	for {
 		isEnd, _ := g.IsEnd(&state)
@@ -67,7 +69,7 @@ func (g *Game[S, ASS, AS, A]) PlayWithHistory(player Player[S, AS, A], state S, 
 		jointAction, jointEval, err := player(&state)
 		if err != nil {
 			var s S
-			return s, []S{}, ASS{}, [][]float64{}, err
+			return s, []S{}, ASS{}, JointEvals{}, err
 		}
 
 		stateHistory = append(stateHistory, state)
@@ -77,7 +79,7 @@ func (g *Game[S, ASS, AS, A]) PlayWithHistory(player Player[S, AS, A], state S, 
 		state, err = g.Push(state, jointAction)
 		if err != nil {
 			var s S
-			return s, []S{}, ASS{}, [][]float64{}, err
+			return s, []S{}, ASS{}, JointEvals{}, err
 		}
 		i += 1
 	}
@@ -88,6 +90,6 @@ func (g *Game[S, ASS, AS, A]) Playout(player Player[S, AS, A], state S) (S, erro
 	return g.Play(player, state, func(_ *S, _ int) bool { return false })
 }
 
-func (g *Game[S, ASS, AS, A]) PlayoutWithHistory(player Player[S, AS, A], state S, capacity int) (S, []S, ASS, [][]float64, error) {
+func (g *Game[S, ASS, AS, A]) PlayoutWithHistory(player Player[S, AS, A], state S, capacity int) (S, []S, ASS, JointEvals, error) {
 	return g.PlayWithHistory(player, state, func(_ *S, _ int) bool { return false }, capacity)
 }

@@ -120,6 +120,31 @@ func (mcts *MCTS[S, ASS, AS, A]) SetUniformSeparateActionPolicyFunc() {
 	}
 }
 
+func (mcts *MCTS[S, ASS, AS, A]) SetRandomPlayoutLeafNodeJointEvalFunc(r *rand.Rand) {
+	player := mcts.Game.NewRandActionPlayer(r)
+	mcts.LeafNodeJointEvalFunc = func(sp *S) (LeafNodeJointEvalY, error) {
+		s, err := mcts.Game.Playout(player, *sp)
+		_, jointEval := mcts.Game.IsEnd(&s)
+		y := make(LeafNodeJointEvalY, len(jointEval))
+		for i, v := range jointEval {
+			y[i] = v
+		}
+		return y, err
+	}
+}
+
+func (mcts *MCTS[S, ASS, AS, A]) SetPlayoutLeafNodeJointEvalFunc(player simultaneous.Player[S, AS, A], r *rand.Rand) {
+	mcts.LeafNodeJointEvalFunc = func(sp *S) (LeafNodeJointEvalY, error) {
+		s, err := mcts.Game.Playout(player, *sp)
+		_, jointEval := mcts.Game.IsEnd(&s)
+		y := make(LeafNodeJointEvalY, len(jointEval))
+		for i, v := range jointEval {
+			y[i] = v
+		}
+		return y, err
+	}
+}
+
 func (mcts *MCTS[S, ASS, AS, A]) NewNode(state *S) *Node[S, ASS, AS, A] {
 	policies := mcts.SeparateActionPolicyFunc(state)
 	ms := make(ucb.SeparateManager[AS, A], len(policies))
@@ -208,7 +233,7 @@ func (mcts *MCTS[S, ASS, AS, A]) Run(simulation int, rootNode *Node[S, ASS, AS, 
 }
 
 func (mcts *MCTS[S, ASS, AS, A]) NewPlayer(simulation int, r *rand.Rand) simultaneous.Player[S, AS, A] {
-	return func(state *S) (AS, []float64, error) {
+	return func(state *S) (AS, simultaneous.JointEval, error) {
 		rootNode := mcts.NewNode(state)
 		err := mcts.Run(simulation, rootNode, r)
 		jointAction := rootNode.SeparateUCBManager.JointActionByMaxTrial(r)
