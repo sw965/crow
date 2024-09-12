@@ -25,48 +25,10 @@ type Node[S any, AS ~[]A, A comparable] struct {
 	State S
 	UCBManager ucb.Manager[AS, A]
 	NextNodes Nodes[S, AS, A]
-	LastActionTrials map[A]int
 }
 
 func (node *Node[S, AS, A]) Trial() int {
 	return node.UCBManager.TotalTrial()
-}
-
-func (node *Node[S, AS, A]) Predict(r *rand.Rand, limit int) (AS, []float64) {
-	actions := make(AS, 0, limit)
-	avgs := make([]float64, 0, limit)
-
-	for i := 0; i < limit; i++ {
-		action := node.UCBManager.ActionByMaxTrial(r)
-		actions = append(actions, action)
-		avgs = append(avgs, node.UCBManager.AverageValue())
-
-		n := len(node.NextNodes)
-		if n == 0 {
-			break
-		}
-
-		maxTrial := 0
-		nextNodes := make(Nodes[S, AS, A], 0, n)
-		for _, nextNode := range node.NextNodes {
-			trial, ok := node.LastActionTrials[action]
-			if ok {
-				if trial > maxTrial {
-					nextNodes = make(Nodes[S, AS, A], 0, n)
-					nextNodes = append(nextNodes, nextNode)
-					maxTrial = trial
-				} else if trial == maxTrial {
-					nextNodes = append(nextNodes, nextNode)
-				}
-			}
-		}
-		
-		if len(nextNodes) == 0 {
-			break
-		}
-		node = omwrand.Choice(nextNodes, r)
-	}
-	return actions, avgs
 }
 
 type Nodes[S any, AS ~[]A, A comparable] []*Node[S, AS, A]
@@ -155,15 +117,7 @@ func (mcts *MCTS[S, AS, A]) SelectExpansionBackward(node *Node[S, AS, A], r *ran
 			//expansion
 			nextNode = mcts.NewNode(&state)
 			node.NextNodes = append(node.NextNodes, nextNode)
-		}
-
-		if _, ok := nextNode.LastActionTrials[action]; !ok {
-			nextNode.LastActionTrials[action] = 0
-		}
-		nextNode.LastActionTrials[action] += 1
-
-		if !ok {
-			//新しくノードを作成したら、処理を終了する
+			//新しくノードを作成したら、selectを終了する
 			break
 		}
 		node = nextNode
@@ -186,11 +140,11 @@ func (mcts *MCTS[S, AS, A]) Run(simulation int, rootNode *Node[S, AS, A], r *ran
 }
 
 func (mcts *MCTS[S, AS, A]) NewPlayer(simulation int, r *rand.Rand) sequential.Player[S, A] {
-	return func(state *S) (A, float64, error) {
+	return func(state *S) (A, sequential.Eval, error) {
 		rootNode := mcts.NewNode(state)
 		err := mcts.Run(simulation, rootNode, r)
 		action := rootNode.UCBManager.ActionByMaxTrial(r)
 		avg := rootNode.UCBManager.AverageValue()
-		return action, avg, err
+		return action, sequential.Eval(avg), err
 	}
 }

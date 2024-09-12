@@ -8,13 +8,13 @@ import (
 type JointEval []float64
 type JointEvals []JointEval
 type Player[S any, AS ~[]A, A comparable] func(*S) (AS, JointEval, error)
-type LegalSeparateActionsFunc[S any, ASS ~[]AS, AS ~[]A, A comparable] func(*S) ASS
+type SeparateLegalActionsFunc[S any, ASS ~[]AS, AS ~[]A, A comparable] func(*S) ASS
 type PushFunc[S any, AS ~[]A, A comparable] func(S, AS) (S, error)
 type EqualFunc[S any] func(*S, *S) bool
 type IsEndFunc[S any] func(*S) (bool, JointEval)
 
 type Game[S any, ASS ~[]AS, AS ~[]A, A comparable] struct {
-	LegalSeparateActions LegalSeparateActionsFunc[S, ASS, AS, A]
+	SeparateLegalActions SeparateLegalActionsFunc[S, ASS, AS, A]
 	Push PushFunc[S, AS, A]
 	Equal EqualFunc[S]
 	IsEnd IsEndFunc[S]
@@ -22,7 +22,7 @@ type Game[S any, ASS ~[]AS, AS ~[]A, A comparable] struct {
 
 func (g *Game[S, ASS, AS, A]) NewRandActionPlayer(r *rand.Rand) Player[S, AS, A] {
 	return func(state *S) (AS, JointEval, error) {
-		ass := g.LegalSeparateActions(state)
+		ass := g.SeparateLegalActions(state)
 		as := make(AS, len(ass))
 		for playerI, legalAs := range ass {
 			as[playerI] = omwrand.Choice(legalAs, r)

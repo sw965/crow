@@ -32,7 +32,7 @@ type RockPaperScissors struct {
 func TestDUCT(t *testing.T) {
 	r := omwrand.NewMt19937()
 
-	legalSeparateActions := func(rps *RockPaperScissors) Handss {
+	separateLegalActions := func(rps *RockPaperScissors) Handss {
 		return Handss{HANDS, Hands{ROCK, PAPER, SCISSORS}}
 	}
 
@@ -57,7 +57,7 @@ func TestDUCT(t *testing.T) {
 	}
 
 	game := simultaneous.Game[RockPaperScissors, Handss, Hands, Hand]{
-		LegalSeparateActions: legalSeparateActions,
+		SeparateLegalActions: separateLegalActions,
 		Push:          push,
 		Equal:         equal,
 		IsEnd:         isEnd,
@@ -83,8 +83,7 @@ func TestDUCT(t *testing.T) {
 		LeafNodeJointEvalFunc: leafNodeJointEvalFunc,
 	}
 
-	mcts.SetUniformSeparateActionPolicyFunc()
-	//mcts.UCBFunc = ucb.New1Func(math.Sqrt(1000))
+	mcts.SetSeparateUniformActionPolicyFunc()
 	mcts.UCBFunc = ucb.NewAlphaGoFunc(math.Sqrt(2))
 
 	fmt.Println(mcts.SeparateActionPolicyFunc(&RockPaperScissors{}))
@@ -109,6 +108,4 @@ func TestDUCT(t *testing.T) {
 			fmt.Println(i, a, pucb.AverageValue(), pucb.Trial)
 		}
 	}
-
-	fmt.Println(rootNode.Predict(r, 64))
 }

@@ -9,7 +9,7 @@ import (
 
 type Func func(float64, float64, int, int) float64
 
-func New1Func(c float64) Func {
+func NewStandardFunc(c float64) Func {
 	return func(v, p float64, total, n int) float64 {
 		return v + c*p*math.Sqrt(math.Log(float64(total+1))/float64(n+1))
 	}
