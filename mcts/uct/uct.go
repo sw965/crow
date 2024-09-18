@@ -39,7 +39,7 @@ func (nodes Nodes[S, AS, A]) Find(state *S, eq sequential.EqualFunc[S]) (*Node[S
 			return node, true
 		}
 	}
-	return &Node[S, AS, A]{}, false
+	return nil, false
 }
 
 type nodeSelect[S any, AS ~[]A,  A comparable] struct {

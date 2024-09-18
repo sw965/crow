@@ -27,7 +27,7 @@ func (nodes Nodes[S, ASS, AS, A]) Find(state *S, eq simultaneous.EqualFunc[S]) (
 			return node, true
 		}
 	}
-	return &Node[S, ASS, AS, A]{}, false
+	return nil, false
 }
 
 type nodeSelect[S any, ASS ~[]AS, AS ~[]A, A comparable] struct {
