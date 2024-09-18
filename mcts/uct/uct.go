@@ -107,12 +107,6 @@ func (mcts *MCTS[S, AS, A]) SelectExpansionBackward(node *Node[S, AS, A], r *ran
 			break
 		}
 
-		//nextNodesの中に、同じstateが存在するならば、それを次のNodeとする
-		//nextNodesの中に、同じstateが存在しないなら、allNodesの中から同じstateが存在しないかを調べる。
-		//allNodesの中に、同じstateが存在するならば、次回から高速に探索出来るように、nextNodesに追加して、次のnodeとする。
-		//nextNodesにもallNodesにも同じstateが存在しないなら、新しくnodeを作り、
-		//nextNodesと、allNodesに追加し、新しく作ったnodeを次のnodeとし、select処理を終了する。
-
 		nextNode, ok := node.NextNodes.Find(&state, mcts.Game.Equal)
 		if !ok {
 			//expansion
@@ -121,6 +115,7 @@ func (mcts *MCTS[S, AS, A]) SelectExpansionBackward(node *Node[S, AS, A], r *ran
 			//新しくノードを作成したら、selectを終了する
 			break
 		}
+		//nextNodesの中に、同じstateのNodeが存在するならば、それを次のNodeとする
 		node = nextNode
 	}
 	y := mcts.EvalFunc.LeafNode(&state)
