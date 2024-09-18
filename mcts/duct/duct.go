@@ -1,6 +1,7 @@
 package duct
 
 import (
+	"fmt"
 	"github.com/sw965/crow/game/simultaneous"
 	"github.com/sw965/crow/ucb"
 	"math/rand"
@@ -156,6 +157,9 @@ func (mcts *MCTS[S, ASS, AS, A]) SelectExpansionBackward(node *Node[S, ASS, AS, 
 }
 
 func (mcts *MCTS[S, ASS, AS, A]) Run(simulation int, rootNode *Node[S, ASS, AS, A], r *rand.Rand) error {
+	if mcts.NextNodesCap <= 0 {
+		return fmt.Errorf("MCTS.NextNodesCap > 0 でなければなりません。")
+	}
 	selectCount := 0
 	var err error
 	for i := 0; i < simulation; i++ {

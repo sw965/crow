@@ -81,6 +81,7 @@ func TestDUCT(t *testing.T) {
 	mcts := duct.MCTS[RockPaperScissors, Handss, Hands, Hand]{
 		Game:              game,
 		LeafNodeJointEvalFunc: leafNodeJointEvalFunc,
+		NextNodesCap:3,
 	}
 
 	mcts.SetSeparateUniformActionPolicyFunc()

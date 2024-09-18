@@ -1,6 +1,7 @@
 package uct
 
 import (
+	"fmt"
 	"math/rand"
 	"github.com/sw965/crow/ucb"
 	omwrand "github.com/sw965/omw/math/rand"
@@ -128,6 +129,10 @@ func (mcts *MCTS[S, AS, A]) SelectExpansionBackward(node *Node[S, AS, A], r *ran
 }
 
 func (mcts *MCTS[S, AS, A]) Run(simulation int, rootNode *Node[S, AS, A], r *rand.Rand) error {
+	if mcts.NextNodesCap <= 0 {
+		return fmt.Errorf("MCTS.NextNodesCap > 0 でなければなりません。")
+	}
+
 	selectCount := 0
 	var err error
 	for i := 0; i < simulation; i++ {
