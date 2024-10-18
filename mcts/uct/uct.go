@@ -96,7 +96,7 @@ func (mcts *MCTS[S, As, A, Agent]) SetPlayout(player sequential.Player[S, A], ev
 	}
 }
 
-func (mcts *MCTS[S, As, A, Agent]) SetRandomPlayout(evaluator sequential.ResultEvaluator[S, Agent], r *rand.Rand) {
+func (mcts *MCTS[S, As, A, Agent]) SetRandPlayout(evaluator sequential.ResultEvaluator[S, Agent], r *rand.Rand) {
 	player := mcts.GameLogic.NewRandActionPlayer(r)
 	mcts.SetPlayout(player, evaluator)
 }
