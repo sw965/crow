@@ -77,7 +77,7 @@ func TestDUCT(t *testing.T) {
 		NextNodesCap:           3,
 	}
 
-	mcts.SetUniformSeparateActionPolicyProvider()
+	mcts.SetSeparateUniformActionPolicyProvider()
 	mcts.UCBFunc = ucb.NewAlphaGoFunc(math.Sqrt(2))
 
 	fmt.Println(mcts.SeparateActionPolicyProvider(&RockPaperScissors{}))

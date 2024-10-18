@@ -57,7 +57,7 @@ type MCTS[S any, Ass ~[]As, As ~[]A, A comparable] struct {
 	NextNodesCap                 int
 }
 
-func (mcts *MCTS[S, Ass, As, A]) SetUniformSeparateActionPolicyProvider() {
+func (mcts *MCTS[S, Ass, As, A]) SetSeparateUniformActionPolicyProvider() {
 	mcts.SeparateActionPolicyProvider = func(state *S) SeparateActionPolicy[A] {
 		ass := mcts.GameLogic.SeparateLegalActionsProvider(state)
 		policies := make(SeparateActionPolicy[A], len(ass))
