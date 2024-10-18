@@ -85,7 +85,7 @@ func (mcts *MCTS[S, Ass, As, A]) SetPlayout(player simultaneous.Player[S, As, A]
 	}
 }
 
-func (mcts *MCTS[S, Ass, As, A]) SetRandPlayout(r *rand.Rand, eval simultaneous.ResultJointEvaluator[S]) {
+func (mcts *MCTS[S, Ass, As, A]) SetRandPlayout(eval simultaneous.ResultJointEvaluator[S], r *rand.Rand) {
 	player := mcts.GameLogic.NewRandActionPlayer(r)
 	mcts.SetPlayout(player, eval)
 }
