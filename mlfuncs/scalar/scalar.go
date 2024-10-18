@@ -22,7 +22,7 @@ func SigmoidToTanh(y float64) float64 {
 }
 
 func TanhGrad(y float64) float64 {
-	return 1.0 - (y*y)
+	return 1.0 - (y * y)
 }
 
 func TanhDerivative(x float64) float64 {
@@ -34,9 +34,9 @@ func TanhToSigmoid(y float64) float64 {
 	return (y + 1.0) / 2.0
 }
 
-func NumericalDifferentiation(x float64, f func(float64)float64) float64 {
+func NumericalDifferentiation(x float64, f func(float64) float64) float64 {
 	h := 0.001
-	y1 := f(x+h)
-	y2 := f(x-h)
-	return (y1-y2) / (2*h)
+	y1 := f(x + h)
+	y2 := f(x - h)
+	return (y1 - y2) / (2 * h)
 }

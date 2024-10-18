@@ -51,9 +51,9 @@ func TestDUCT(t *testing.T) {
 
 	gameLogic := simultaneous.Logic[RockPaperScissors, Handss, Hands, Hand]{
 		SeparateLegalActionsProvider: separateLegalActionsProvider,
-		Transitioner:          transitioner,
-		Comparator:         comparator,
-		EndChecker:         endChecker,
+		Transitioner:                 transitioner,
+		Comparator:                   comparator,
+		EndChecker:                   endChecker,
 	}
 
 	leafNodeJointEvaluator := func(rps *RockPaperScissors) (duct.LeafNodeJointEval, error) {
@@ -74,7 +74,7 @@ func TestDUCT(t *testing.T) {
 	mcts := duct.MCTS[RockPaperScissors, Handss, Hands, Hand]{
 		GameLogic:              gameLogic,
 		LeafNodeJointEvaluator: leafNodeJointEvaluator,
-		NextNodesCap:3,
+		NextNodesCap:           3,
 	}
 
 	mcts.SetUniformSeparateActionPolicyProvider()

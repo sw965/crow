@@ -1,8 +1,8 @@
 package sequential
 
 import (
-	"math/rand"
 	omwrand "github.com/sw965/omw/math/rand"
+	"math/rand"
 )
 
 type Player[S any, A comparable] func(*S) (A, error)
@@ -13,11 +13,11 @@ type EndChecker[S any] func(*S) bool
 type CurrentTurnAgentProvider[S any, Agent comparable] func(*S) Agent
 
 type Logic[S any, As ~[]A, A, Agent comparable] struct {
-    LegalActionsProvider LegalActionsProvider[S, As, A]
-    Transitioner Transitioner[S, A]
-    Comparator Comparator[S]
-    EndChecker EndChecker[S]
-    CurrentTurnAgentProvider CurrentTurnAgentProvider[S, Agent]
+	LegalActionsProvider     LegalActionsProvider[S, As, A]
+	Transitioner             Transitioner[S, A]
+	Comparator               Comparator[S]
+	EndChecker               EndChecker[S]
+	CurrentTurnAgentProvider CurrentTurnAgentProvider[S, Agent]
 }
 
 func (l *Logic[S, As, A, Agent]) NewRandActionPlayer(r *rand.Rand) Player[S, A] {

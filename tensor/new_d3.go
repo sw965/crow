@@ -1,8 +1,8 @@
 package tensor
 
 import (
-	"math/rand"
 	"github.com/sw965/omw/fn"
+	"math/rand"
 )
 
 func NewD3Zeros(r, c, d int) D3 {

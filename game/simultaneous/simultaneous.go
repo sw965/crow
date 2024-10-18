@@ -1,8 +1,8 @@
 package simultaneous
 
 import (
-	"math/rand"
 	omwrand "github.com/sw965/omw/math/rand"
+	"math/rand"
 )
 
 type Player[S any, As ~[]A, A comparable] func(*S) (As, error)
@@ -13,9 +13,9 @@ type EndChecker[S any] func(*S) bool
 
 type Logic[S any, Ass ~[]As, As ~[]A, A comparable] struct {
 	SeparateLegalActionsProvider SeparateLegalActionsProvider[S, Ass, As, A]
-	Transitioner Transitioner[S, As, A]
-	Comparator Comparator[S]
-	EndChecker EndChecker[S]
+	Transitioner                 Transitioner[S, As, A]
+	Comparator                   Comparator[S]
+	EndChecker                   EndChecker[S]
 }
 
 func (l *Logic[S, Ass, As, A]) NewRandActionPlayer(r *rand.Rand) Player[S, As, A] {
@@ -24,7 +24,7 @@ func (l *Logic[S, Ass, As, A]) NewRandActionPlayer(r *rand.Rand) Player[S, As, A
 		as := make(As, len(ass))
 		for playerI, legalAs := range ass {
 			as[playerI] = omwrand.Choice(legalAs, r)
-		} 
+		}
 		return as, nil
 	}
 }

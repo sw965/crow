@@ -1,10 +1,10 @@
 package ucb
 
 import (
-	"math"
-	"math/rand"
 	omwmath "github.com/sw965/omw/math"
 	omwrand "github.com/sw965/omw/math/rand"
+	"math"
+	"math/rand"
 )
 
 type Func func(float64, float64, int, int) float64

@@ -1,10 +1,10 @@
 package mlfuncs2d
 
 import (
+	"github.com/sw965/crow/mlfuncs/1d"
+	"github.com/sw965/crow/tensor"
 	"github.com/sw965/omw/fn"
 	omwmath "github.com/sw965/omw/math"
-	"github.com/sw965/crow/tensor"
-	"github.com/sw965/crow/mlfuncs/1d"
 )
 
 func SigmoidToTanh(y tensor.D2) tensor.D2 {
@@ -27,7 +27,7 @@ func L2RegularizationDerivative(c float64) func(tensor.D2) tensor.D2 {
 	}
 }
 
-func NumericalDifferentiation(x tensor.D2, f func(tensor.D2)float64) tensor.D2 {
+func NumericalDifferentiation(x tensor.D2, f func(tensor.D2) float64) tensor.D2 {
 	h := 0.001
 	grad := tensor.NewD2ZerosLike(x)
 	for i := range x {
@@ -38,11 +38,11 @@ func NumericalDifferentiation(x tensor.D2, f func(tensor.D2)float64) tensor.D2 {
 
 			xi[j] = tmp + h
 			y1 := f(x)
-	
+
 			xi[j] = tmp - h
 			y2 := f(x)
-	
-			gradi[j] = (y1-y2) / (2*h)
+
+			gradi[j] = (y1 - y2) / (2 * h)
 			xi[j] = tmp
 		}
 	}

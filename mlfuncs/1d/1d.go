@@ -5,11 +5,11 @@ import (
 	"math"
 	"math/rand"
 
-	"github.com/sw965/omw/fn"
-	omwrand "github.com/sw965/omw/math/rand"
-	omwmath "github.com/sw965/omw/math"
-	"github.com/sw965/crow/tensor"
 	"github.com/sw965/crow/mlfuncs/scalar"
+	"github.com/sw965/crow/tensor"
+	"github.com/sw965/omw/fn"
+	omwmath "github.com/sw965/omw/math"
+	omwrand "github.com/sw965/omw/math/rand"
 )
 
 func Sigmoid(x tensor.D1) tensor.D1 {
@@ -106,7 +106,7 @@ func LeakyReLUDerivative(x tensor.D1, alpha float64) tensor.D1 {
 		if xi > 0 {
 			grad[i] = 1
 		} else {
-			grad[i] =  alpha
+			grad[i] = alpha
 		}
 	}
 	return grad
@@ -209,12 +209,12 @@ func SumSquaredError(y, t tensor.D1) (float64, error) {
 	if len(y) != len(t) {
 		return 0.0, fmt.Errorf("len(y) != len(t) であるため、SumSquaredErrorを計算できません。")
 	}
-    sqSum := 0.0
-    for i := range y {
-        diff := y[i] - t[i]
-        sqSum += (diff * diff)
-    }
-    return 0.5*sqSum, nil
+	sqSum := 0.0
+	for i := range y {
+		diff := y[i] - t[i]
+		sqSum += (diff * diff)
+	}
+	return 0.5 * sqSum, nil
 }
 
 func SumSquaredErrorDerivative(y, t tensor.D1) (tensor.D1, error) {
@@ -222,11 +222,11 @@ func SumSquaredErrorDerivative(y, t tensor.D1) (tensor.D1, error) {
 		return tensor.D1{}, fmt.Errorf("len(y) != len(t) であるため、SumSquaredErrorDerivativeを計算できません。")
 	}
 	n := len(y)
-    grad := make(tensor.D1, n)
-    for i := range y {
-        grad[i] = y[i] - t[i]
-    }
-    return grad, nil
+	grad := make(tensor.D1, n)
+	for i := range y {
+		grad[i] = y[i] - t[i]
+	}
+	return grad, nil
 }
 
 func MeanSquaredError(y, t tensor.D1) (float64, error) {
@@ -262,7 +262,7 @@ func L2RegularizationDerivative(c float64) func(tensor.D1) tensor.D1 {
 	}
 }
 
-func NumericalDifferentiation(x tensor.D1, f func(tensor.D1)float64) tensor.D1 {
+func NumericalDifferentiation(x tensor.D1, f func(tensor.D1) float64) tensor.D1 {
 	h := 0.001
 	grad := make(tensor.D1, len(x))
 	for i := range x {
@@ -274,7 +274,7 @@ func NumericalDifferentiation(x tensor.D1, f func(tensor.D1)float64) tensor.D1 {
 		x[i] = tmp - h
 		y2 := f(x)
 
-		grad[i] = (y1-y2) / (2*h)
+		grad[i] = (y1 - y2) / (2 * h)
 		x[i] = tmp
 	}
 	return grad

@@ -1,14 +1,14 @@
 package layer1d_test
 
 import (
-	"testing"
 	"fmt"
-	"math"
-	omwrand "github.com/sw965/omw/math/rand"
-	"github.com/sw965/crow/tensor"
 	"github.com/sw965/crow/layer/1d"
 	"github.com/sw965/crow/mlfuncs/1d"
 	"github.com/sw965/crow/mlfuncs/2d"
+	"github.com/sw965/crow/tensor"
+	omwrand "github.com/sw965/omw/math/rand"
+	"math"
+	"testing"
 )
 
 func TestAffineForward(test *testing.T) {

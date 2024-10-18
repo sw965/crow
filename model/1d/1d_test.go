@@ -1,13 +1,13 @@
 package model1d_test
 
 import (
-	"testing"
 	"fmt"
 	"github.com/sw965/crow/dataset"
 	"github.com/sw965/crow/model/1d"
+	"github.com/sw965/crow/tensor"
 	omwrand "github.com/sw965/omw/math/rand"
 	omwslices "github.com/sw965/omw/slices"
-	"github.com/sw965/crow/tensor"
+	"testing"
 )
 
 func TestModel(t *testing.T) {

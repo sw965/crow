@@ -104,7 +104,7 @@ func (d3 D3) MaxRow() D2 {
 	return max
 }
 
-func (d3 D3) MapFunc(f func(float64)float64) D3 {
+func (d3 D3) MapFunc(f func(float64) float64) D3 {
 	y := make(D3, len(d3))
 	for i := range d3 {
 		y[i] = d3[i].MapFunc(f)

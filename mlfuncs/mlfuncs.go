@@ -1,8 +1,8 @@
 package mlfuncs
 
 import (
-	"math"
 	"github.com/sw965/crow/tensor"
+	"math"
 )
 
 func NewMultiHotTensor(bss ...[]bool) (tensor.D1, []int, error) {

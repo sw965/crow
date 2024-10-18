@@ -1,13 +1,13 @@
 package mlfuncs2d_test
 
 import (
-	"testing"
 	"fmt"
-	"math"
 	"github.com/sw965/crow/mlfuncs/1d"
 	"github.com/sw965/crow/mlfuncs/2d"
 	"github.com/sw965/crow/tensor"
 	omwrand "github.com/sw965/omw/math/rand"
+	"math"
+	"testing"
 )
 
 func TestLinearSumDerivative(test *testing.T) {

@@ -15,9 +15,9 @@ type LeafNodeJointEval []float64
 type LeafNodeJointEvaluator[S any] func(*S) (LeafNodeJointEval, error)
 
 type Node[S any, Ass ~[]As, As ~[]A, A comparable] struct {
-	State       S
+	State              S
 	SeparateUCBManager ucb.SeparateManager[As, A]
-	NextNodes   Nodes[S, Ass, As, A]
+	NextNodes          Nodes[S, Ass, As, A]
 }
 
 type Nodes[S any, Ass ~[]As, As ~[]A, A comparable] []*Node[S, Ass, As, A]
@@ -50,11 +50,11 @@ func (ss selectionInfoSlice[S, Ass, As, A]) backward(jointEval LeafNodeJointEval
 }
 
 type MCTS[S any, Ass ~[]As, As ~[]A, A comparable] struct {
-	GameLogic               simultaneous.Logic[S, Ass, As, A]
-	UCBFunc            ucb.Func
+	GameLogic                    simultaneous.Logic[S, Ass, As, A]
+	UCBFunc                      ucb.Func
 	SeparateActionPolicyProvider SeparateActionPolicyProvider[S, A]
-	LeafNodeJointEvaluator  LeafNodeJointEvaluator[S]
-	NextNodesCap int
+	LeafNodeJointEvaluator       LeafNodeJointEvaluator[S]
+	NextNodesCap                 int
 }
 
 func (mcts *MCTS[S, Ass, As, A]) SetUniformSeparateActionPolicyProvider() {
@@ -103,9 +103,9 @@ func (mcts *MCTS[S, Ass, As, A]) NewNode(state *S) *Node[S, Ass, As, A] {
 	nextNodes := make(Nodes[S, Ass, As, A], 0, mcts.NextNodesCap)
 
 	return &Node[S, Ass, As, A]{
-		State: *state,
+		State:              *state,
 		SeparateUCBManager: ms,
-		NextNodes:nextNodes,
+		NextNodes:          nextNodes,
 	}
 }
 

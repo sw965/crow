@@ -2,16 +2,16 @@ package model1d
 
 import (
 	"fmt"
-	"math"
-	"math/rand"
 	"github.com/sw965/crow/layer/1d"
-	"github.com/sw965/crow/tensor"
 	"github.com/sw965/crow/mlfuncs"
 	"github.com/sw965/crow/mlfuncs/1d"
 	"github.com/sw965/crow/mlfuncs/2d"
 	"github.com/sw965/crow/mlfuncs/3d"
-	omwslices "github.com/sw965/omw/slices"
+	"github.com/sw965/crow/tensor"
 	omwjson "github.com/sw965/omw/json"
+	omwslices "github.com/sw965/omw/slices"
+	"math"
+	"math/rand"
 )
 
 type Param struct {
@@ -59,7 +59,7 @@ func (v *Variable) Init() {
 func (v *Variable) GradMulScaler(lr float64) {
 	v.grad1D.MulScalar(lr)
 	v.grad2D.MulScalar(lr)
-	v.grad3D.MulScalar(lr)	
+	v.grad3D.MulScalar(lr)
 }
 
 func (v *Variable) SGD() {
@@ -78,47 +78,47 @@ type Sequential struct {
 	variable Variable
 	Forwards layer1d.Forwards
 
-	YLossFunc func(tensor.D1, tensor.D1) (float64, error)
+	YLossFunc       func(tensor.D1, tensor.D1) (float64, error)
 	YLossDerivative func(tensor.D1, tensor.D1) (tensor.D1, error)
 
-	Param1DLossFunc func(tensor.D1)float64
-	Param2DLossFunc func(tensor.D2)float64
-	Param3DLossFunc func(tensor.D3)float64
+	Param1DLossFunc func(tensor.D1) float64
+	Param2DLossFunc func(tensor.D2) float64
+	Param3DLossFunc func(tensor.D3) float64
 
-	Param1DLossDerivative func(tensor.D1)tensor.D1
-	Param2DLossDerivative func(tensor.D2)tensor.D2
-	Param3DLossDerivative func(tensor.D3)tensor.D3
+	Param1DLossDerivative func(tensor.D1) tensor.D1
+	Param2DLossDerivative func(tensor.D2) tensor.D2
+	Param3DLossDerivative func(tensor.D3) tensor.D3
 
 	L2NormGradClipThreshold float64
 }
 
 func NewSequential(variable Variable) Sequential {
 	return Sequential{
-		variable:variable,
-		Param1DLossFunc:func(_ tensor.D1) float64 { return 0.0 },
-		Param1DLossDerivative:tensor.NewD1ZerosLike,
-		Param2DLossFunc:func(_ tensor.D2) float64 { return 0.0 },
-		Param2DLossDerivative:tensor.NewD2ZerosLike,
-		Param3DLossFunc:func(_ tensor.D3) float64 { return 0.0 },
-		Param3DLossDerivative:tensor.NewD3ZerosLike,
+		variable:              variable,
+		Param1DLossFunc:       func(_ tensor.D1) float64 { return 0.0 },
+		Param1DLossDerivative: tensor.NewD1ZerosLike,
+		Param2DLossFunc:       func(_ tensor.D2) float64 { return 0.0 },
+		Param2DLossDerivative: tensor.NewD2ZerosLike,
+		Param3DLossFunc:       func(_ tensor.D3) float64 { return 0.0 },
+		Param3DLossDerivative: tensor.NewD3ZerosLike,
 	}
 }
 
 func NewStandardAffine(xn, h1, h2, yn int, c, threshold float64, r *rand.Rand) (Sequential, Variable) {
 	variable := Variable{
-		Param:Param{
-			D1:tensor.D1{
+		Param: Param{
+			D1: tensor.D1{
 				0.1,
 				0.1,
 			},
-			
-			D2:tensor.D2{
+
+			D2: tensor.D2{
 				tensor.NewD1Zeros(h1),
 				tensor.NewD1Zeros(h2),
 				tensor.NewD1Zeros(yn),
 			},
 
-			D3:tensor.D3{
+			D3: tensor.D3{
 				tensor.NewD2He(xn, h1, r),
 				tensor.NewD2He(h1, h2, r),
 				tensor.NewD2He(h2, yn, r),
@@ -150,9 +150,9 @@ func NewStandardAffine(xn, h1, h2, yn int, c, threshold float64, r *rand.Rand) (
 
 func NewStandardLinearSum(xn int, c, threshold float64) (Sequential, Variable) {
 	variable := Variable{
-		Param:Param{
-			D1:tensor.D1{0.0},
-			D2:tensor.D2{tensor.NewD1Zeros(xn)},
+		Param: Param{
+			D1: tensor.D1{0.0},
+			D2: tensor.D2{tensor.NewD1Zeros(xn)},
 		},
 	}
 	variable.Init()
@@ -291,7 +291,7 @@ func (m *Sequential) ValidateBackwardAndNumericalGradientDifference(x, t tensor.
 			panic(err)
 		}
 		return loss
-	} 
+	}
 
 	numGradD1 := mlfuncs1d.NumericalDifferentiation(m.variable.Param.D1, lossD1)
 	numGradD2 := mlfuncs2d.NumericalDifferentiation(m.variable.Param.D2, lossD2)

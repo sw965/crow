@@ -1,14 +1,14 @@
 package mlfuncs1d_test
 
 import (
-	"testing"
 	"fmt"
-	omwmath "github.com/sw965/omw/math"
-	omwrand "github.com/sw965/omw/math/rand"
-	"github.com/sw965/crow/tensor"
 	"github.com/sw965/crow/mlfuncs/1d"
 	"github.com/sw965/crow/mlfuncs/scalar"
+	"github.com/sw965/crow/tensor"
+	omwmath "github.com/sw965/omw/math"
+	omwrand "github.com/sw965/omw/math/rand"
 	"math"
+	"testing"
 )
 
 func TestParamReLUDerivative(test *testing.T) {
@@ -38,7 +38,7 @@ func TestParamReLUDerivative(test *testing.T) {
 		panic(err)
 	}
 	dydx, dydVectorizedGradAlpha := mlfuncs1d.ParamReLUDerivative(x, alpha)
- 	vectorizedGradAlpha, err := tensor.D1Mul(dydVectorizedGradAlpha, dLdy)
+	vectorizedGradAlpha, err := tensor.D1Mul(dydVectorizedGradAlpha, dLdy)
 	if err != nil {
 		panic(err)
 	}
@@ -53,7 +53,7 @@ func TestParamReLUDerivative(test *testing.T) {
 		panic(err)
 	}
 	maxDiffX := omwmath.Max(diffX...)
-	diffAlpha := math.Abs(numGradAlpha-gradAlpha)
+	diffAlpha := math.Abs(numGradAlpha - gradAlpha)
 	fmt.Println("maxDiffX =", maxDiffX, "diffAlpha =", diffAlpha)
 }
 

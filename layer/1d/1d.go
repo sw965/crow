@@ -2,11 +2,11 @@ package layer1d
 
 import (
 	"fmt"
-	"math/rand"
-	omwmath "github.com/sw965/omw/math"
-	omwslices "github.com/sw965/omw/slices"
 	"github.com/sw965/crow/mlfuncs/1d"
 	"github.com/sw965/crow/tensor"
+	omwmath "github.com/sw965/omw/math"
+	omwslices "github.com/sw965/omw/slices"
+	"math/rand"
 )
 
 type Forward func(tensor.D1, Backwards) (tensor.D1, Backwards, error)
@@ -49,7 +49,7 @@ func NewAffineForward(w tensor.D2, b tensor.D1, gradW tensor.D2, gradB tensor.D1
 		backward = func(chain tensor.D1) (tensor.D1, error) {
 			// ∂L/∂x
 			dx := tensor.D2{chain}.DotProduct(w.Transpose())
-		
+
 			// ∂L/∂w
 			dw := tensor.D2{x}.Transpose().DotProduct(tensor.D2{chain})
 			gradW.Copy(dw)

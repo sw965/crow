@@ -1,10 +1,10 @@
 package mlfuncs3d
 
 import (
+	"github.com/sw965/crow/mlfuncs/2d"
+	"github.com/sw965/crow/tensor"
 	"github.com/sw965/omw/fn"
 	omwmath "github.com/sw965/omw/math"
-	"github.com/sw965/crow/tensor"
-	"github.com/sw965/crow/mlfuncs/2d"
 )
 
 func L2Regularization(c float64) func(tensor.D3) float64 {
@@ -19,7 +19,7 @@ func L2RegularizationDerivative(c float64) func(tensor.D3) tensor.D3 {
 	}
 }
 
-func NumericalDifferentiation(x tensor.D3, f func(tensor.D3)float64) tensor.D3 {
+func NumericalDifferentiation(x tensor.D3, f func(tensor.D3) float64) tensor.D3 {
 	h := 0.001
 	grad := tensor.NewD3ZerosLike(x)
 	for i := range x {
@@ -37,7 +37,7 @@ func NumericalDifferentiation(x tensor.D3, f func(tensor.D3)float64) tensor.D3 {
 				xij[k] = tmp - h
 				y2 := f(x)
 
-				gradij[k] = (y1 - y2) / (2*h)
+				gradij[k] = (y1 - y2) / (2 * h)
 				xij[k] = tmp
 			}
 		}
