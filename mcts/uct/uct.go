@@ -61,15 +61,19 @@ type MCTS[S any, As ~[]A, A, Agent comparable] struct {
 	NextNodesCap         int
 }
 
-func (mcts *MCTS[S, As, A, Agent]) NewNode(state *S) *Node[S, As, A, Agent] {
+func (mcts *MCTS[S, As, A, Agent]) NewNode(state *S) (*Node[S, As, A, Agent], error) {
 	agent := mcts.GameLogic.CurrentTurnAgentProvider(state)
 	policy := mcts.ActionPolicyProvider(state)
+	if len(policy) == 0 {
+		return &Node[S, As, A, Agent]{}, fmt.Errorf("len(ActionPolicy) == 0 である為、新しくNodeを生成出来ません。")
+	}
+
 	m := ucb.Manager[As, A]{}
 	for a, p := range policy {
 		m[a] = &ucb.Calculator{Func: mcts.UCBFunc, P: p}
 	}
 	nextNodes := make(Nodes[S, As, A, Agent], 0, mcts.NextNodesCap)
-	return &Node[S, As, A, Agent]{State: *state, Agent: agent, UCBManager: m, NextNodes: nextNodes}
+	return &Node[S, As, A, Agent]{State: *state, Agent: agent, UCBManager: m, NextNodes: nextNodes}, nil
 }
 
 func (mcts *MCTS[S, As, A, Agent]) SetUniformActionPolicyProvider() {
@@ -121,7 +125,10 @@ func (mcts *MCTS[S, As, A, Agent]) SelectExpansionBackward(node *Node[S, As, A, 
 		nextNode, ok := node.NextNodes.FindByState(&state, mcts.GameLogic.Comparator)
 		if !ok {
 			//expansion
-			nextNode = mcts.NewNode(&state)
+			nextNode, err = mcts.NewNode(&state)
+			if err != nil {
+				return 0, err
+			}
 			node.NextNodes = append(node.NextNodes, nextNode)
 			//新しくノードを作成したら、selectを終了する
 			break

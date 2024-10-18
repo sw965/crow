@@ -90,23 +90,26 @@ func (mcts *MCTS[S, Ass, As, A]) SetRandPlayout(eval simultaneous.ResultJointEva
 	mcts.SetPlayout(player, eval)
 }
 
-func (mcts *MCTS[S, Ass, As, A]) NewNode(state *S) *Node[S, Ass, As, A] {
+func (mcts *MCTS[S, Ass, As, A]) NewNode(state *S) (*Node[S, Ass, As, A], error) {
 	policies := mcts.SeparateActionPolicyProvider(state)
 	ms := make(ucb.SeparateManager[As, A], len(policies))
 	for playerI, policy := range policies {
 		m := ucb.Manager[As, A]{}
+		if len(policy) == 0 {
+			return &Node[S, Ass, As, A]{}, fmt.Errorf("%d番目のプレイヤーのActionPolicyが空である為、新しくNodeを生成出来ません。", playerI)
+		}
 		for a, p := range policy {
 			m[a] = &ucb.Calculator{Func: mcts.UCBFunc, P: p}
 		}
 		ms[playerI] = m
 	}
-	nextNodes := make(Nodes[S, Ass, As, A], 0, mcts.NextNodesCap)
 
+	nextNodes := make(Nodes[S, Ass, As, A], 0, mcts.NextNodesCap)
 	return &Node[S, Ass, As, A]{
 		State:              *state,
 		SeparateUCBManager: ms,
 		NextNodes:          nextNodes,
-	}
+	}, nil
 }
 
 func (mcts *MCTS[S, Ass, As, A]) SelectExpansionBackward(node *Node[S, Ass, As, A], r *rand.Rand, capacity int) (int, error) {
@@ -129,7 +132,10 @@ func (mcts *MCTS[S, Ass, As, A]) SelectExpansionBackward(node *Node[S, Ass, As, 
 		nextNode, ok := node.NextNodes.FindByState(&state, mcts.GameLogic.Comparator)
 		if !ok {
 			//expansion
-			nextNode = mcts.NewNode(&state)
+			nextNode, err = mcts.NewNode(&state)
+			if err != nil {
+				return 0, err
+			}
 			node.NextNodes = append(node.NextNodes, nextNode)
 			//新しくノードを作成したら、selectを終了する
 			break

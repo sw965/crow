@@ -81,11 +81,16 @@ func TestDUCT(t *testing.T) {
 	mcts.UCBFunc = ucb.NewAlphaGoFunc(math.Sqrt(2))
 
 	fmt.Println(mcts.SeparateActionPolicyProvider(&RockPaperScissors{}))
-	rootNode := mcts.NewNode(&RockPaperScissors{})
-	err := mcts.Run(19600, rootNode, r)
+	rootNode, err := mcts.NewNode(&RockPaperScissors{})
 	if err != nil {
 		panic(err)
 	}
+
+	err = mcts.Run(19600, rootNode, r)
+	if err != nil {
+		panic(err)
+	}
+
 	for playerI, m := range rootNode.SeparateUCBManager {
 		for a, pucb := range m {
 			fmt.Println("playerI =", playerI, a, pucb.AverageValue(), pucb.Trial)
