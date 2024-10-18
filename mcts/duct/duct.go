@@ -42,6 +42,7 @@ func (ss selectionInfoSlice[S, Ass, As, A]) backward(jointEval LeafNodeJointEval
 	for _, s := range ss {
 		node := s.node
 		jointAction := s.jointAction
+		fmt.Println(len(node.SeparateUCBManager), len(jointEval), len(jointAction))
 		for playerI, action := range jointAction {
 			node.SeparateUCBManager[playerI][action].TotalValue += float64(jointEval[playerI])
 			node.SeparateUCBManager[playerI][action].Trial += 1
