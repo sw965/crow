@@ -92,6 +92,10 @@ func (mcts *MCTS[S, Ass, As, A]) SetRandPlayout(eval simultaneous.ResultJointEva
 
 func (mcts *MCTS[S, Ass, As, A]) NewNode(state *S) (*Node[S, Ass, As, A], error) {
 	policies := mcts.SeparateActionPolicyProvider(state)
+	if len(policies) == 0 {
+		return &Node[S, Ass, As, A]{}, fmt.Errorf("len(SeparateActionPolicy) == 0 である為、新しくNodeを生成出来ません。")
+	}
+
 	ms := make(ucb.SeparateManager[As, A], len(policies))
 	for playerI, policy := range policies {
 		m := ucb.Manager[As, A]{}
