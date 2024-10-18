@@ -42,7 +42,6 @@ func (ss selectionInfoSlice[S, Ass, As, A]) backward(jointEval LeafNodeJointEval
 	for _, s := range ss {
 		node := s.node
 		jointAction := s.jointAction
-		fmt.Println(len(node.SeparateUCBManager), len(jointEval), len(jointAction))
 		for playerI, action := range jointAction {
 			node.SeparateUCBManager[playerI][action].TotalValue += float64(jointEval[playerI])
 			node.SeparateUCBManager[playerI][action].Trial += 1
@@ -148,9 +147,14 @@ func (mcts *MCTS[S, Ass, As, A]) SelectExpansionBackward(node *Node[S, Ass, As, 
 		//nextNodesの中に、同じstateのNodeが存在するならば、それを次のNodeとする
 		node = nextNode
 	}
+
 	jointEval, err := mcts.LeafNodeJointEvaluator(&state)
+	//selections.backwardの前にエラー処理をしない場合、index out of range が起きる事がある。
+	if err != nil {
+		return 0, err
+	}
 	selections.backward(jointEval)
-	return len(selections), err
+	return len(selections), nil
 }
 
 func (mcts *MCTS[S, Ass, As, A]) Run(simulation int, rootNode *Node[S, Ass, As, A], r *rand.Rand) error {
