@@ -9,32 +9,25 @@ import (
 )
 
 type ActionPolicy[A comparable] map[A]float64
-type ActionPolicyFunc[S any, A comparable] func(*S) ActionPolicy[A]
+type ActionPolicyProvider[S any, A comparable] func(*S) ActionPolicy[A]
 
-type LeafNodeEvalY float64
-type LeafNodeEvalFunc[S any] func(*S) LeafNodeEvalY
+type LeafNodeEval[Agent comparable] map[Agent]float64
+type LeafNodeEvaluator[S any, Agent comparable] func(*S) (LeafNodeEval[Agent], error)
 
-type EachPlayerEvalY float64
-type EachPlayerEvalFunc[S any] func(LeafNodeEvalY, *S) EachPlayerEvalY
-
-type EvalFunc[S any] struct {
-	LeafNode LeafNodeEvalFunc[S]
-	EachPlayer EachPlayerEvalFunc[S]
-}
-
-type Node[S any, AS ~[]A, A comparable] struct {
+type Node[S any, As ~[]A, A, Agent comparable] struct {
 	State S
-	UCBManager ucb.Manager[AS, A]
-	NextNodes Nodes[S, AS, A]
+	Agent Agent
+	UCBManager ucb.Manager[As, A]
+	NextNodes Nodes[S, As, A, Agent]
 }
 
-func (node *Node[S, AS, A]) Trial() int {
+func (node *Node[S, As, A, Agent]) Trial() int {
 	return node.UCBManager.TotalTrial()
 }
 
-type Nodes[S any, AS ~[]A, A comparable] []*Node[S, AS, A]
+type Nodes[S any, As ~[]A, A, Agent comparable] []*Node[S, As, A, Agent]
 
-func (nodes Nodes[S, AS, A]) Find(state *S, eq sequential.EqualFunc[S]) (*Node[S, AS, A], bool) {
+func (nodes Nodes[S, As, A, Agent]) FindByState(state *S, eq sequential.Comparator[S]) (*Node[S, As, A, Agent], bool) {
 	for _, node := range nodes {
 		if eq(&node.State, state) {
 			return node, true
@@ -43,43 +36,45 @@ func (nodes Nodes[S, AS, A]) Find(state *S, eq sequential.EqualFunc[S]) (*Node[S
 	return nil, false
 }
 
-type nodeSelect[S any, AS ~[]A,  A comparable] struct {
-	node *Node[S, AS, A]
+type selectionInfo[S any, As ~[]A, A, Agent comparable] struct {
+	node *Node[S, As, A, Agent]
 	action A
 }
 
-type selects[S any, AS ~[]A, A comparable] []nodeSelect[S, AS, A]
+type selectionInfoSlice[S any, As ~[]A, A, Agent comparable] []selectionInfo[S, As, A, Agent]
 
-func (ss selects[S, AS, A]) Backward(y LeafNodeEvalY, eval EachPlayerEvalFunc[S]) {
+func (ss selectionInfoSlice[S, As, A, Agent]) Backward(eval LeafNodeEval[Agent]) {
 	for _, s := range ss {
 		node := s.node
 		action := s.action
-		node.UCBManager[action].TotalValue += float64(eval(y, &node.State))
+		v := eval[node.Agent]
+		node.UCBManager[action].TotalValue += float64(v)
 		node.UCBManager[action].Trial += 1
 	}
 }
 
-type MCTS[S any, AS ~[]A, A comparable] struct {
-	Game sequential.Game[S, AS, A]
+type MCTS[S any, As ~[]A, A, Agent comparable] struct {
+	GameLogic sequential.Logic[S, As, A, Agent]
 	UCBFunc ucb.Func
-	ActionPolicyFunc ActionPolicyFunc[S, A]
-	EvalFunc EvalFunc[S]
+	ActionPolicyProvider ActionPolicyProvider[S, A]
+	LeafNodeEvaluator LeafNodeEvaluator[S, Agent]
 	NextNodesCap int
 }
 
-func (mcts *MCTS[S, AS, A]) NewNode(state *S) *Node[S, AS, A] {
-	policy := mcts.ActionPolicyFunc(state)
-	m := ucb.Manager[AS, A]{}
+func (mcts *MCTS[S, As, A, Agent]) NewNode(state *S) *Node[S, As, A, Agent] {
+	agent := mcts.GameLogic.CurrentTurnAgentProvider(state)
+	policy := mcts.ActionPolicyProvider(state)
+	m := ucb.Manager[As, A]{}
 	for a, p := range policy {
 		m[a] = &ucb.Calculator{Func:mcts.UCBFunc, P:p}
 	}
-	nextNodes := make(Nodes[S, AS, A], 0, mcts.NextNodesCap)
-	return &Node[S, AS, A]{State:*state, UCBManager:m, NextNodes:nextNodes}
+	nextNodes := make(Nodes[S, As, A, Agent], 0, mcts.NextNodesCap)
+	return &Node[S, As, A, Agent]{State:*state, Agent:agent, UCBManager:m, NextNodes:nextNodes}
 }
 
-func (mcts *MCTS[S, AS, A]) SetUniformActionPolicyFunc() {
-	mcts.ActionPolicyFunc = func(state *S) ActionPolicy[A] {
-		as := mcts.Game.LegalActions(state)
+func (mcts *MCTS[S, As, A, Agent]) SetUniformActionPolicyProvider() {
+	mcts.ActionPolicyProvider = func(state *S) ActionPolicy[A] {
+		as := mcts.GameLogic.LegalActionsProvider(state)
 		n := len(as)
 		p := 1.0 / float64(n)
 		policy := ActionPolicy[A]{}
@@ -90,24 +85,40 @@ func (mcts *MCTS[S, AS, A]) SetUniformActionPolicyFunc() {
 	}
 }
 
-func (mcts *MCTS[S, AS, A]) SelectExpansionBackward(node *Node[S, AS, A], r *rand.Rand, capacity int) (int, error) {
+func (mcts *MCTS[S, As, A, Agent]) SetPlayout(player sequential.Player[S, A], evaluator sequential.ResultEvaluator[S, Agent]) {
+    mcts.LeafNodeEvaluator = func(sp *S) (LeafNodeEval[Agent], error) {
+        s, err := mcts.GameLogic.Playout(player, *sp)
+		if err != nil {
+			return LeafNodeEval[Agent]{}, err
+		}
+        eval, err := evaluator(&s)
+        return LeafNodeEval[Agent](eval), err
+    }
+}
+
+func (mcts *MCTS[S, As, A, Agent]) SetRandomPlayout(evaluator sequential.ResultEvaluator[S, Agent], r *rand.Rand) {
+    player := mcts.GameLogic.NewRandActionPlayer(r)
+    mcts.SetPlayout(player, evaluator)
+}
+
+func (mcts *MCTS[S, As, A, Agent]) SelectExpansionBackward(node *Node[S, As, A, Agent], r *rand.Rand, capacity int) (int, error) {
 	state := node.State
-	selects := make(selects[S, AS, A], 0, capacity)
+	selections := make(selectionInfoSlice[S, As, A, Agent], 0, capacity)
 	var err error
 	for {
 		action := omwrand.Choice(node.UCBManager.MaxKeys(), r)
-		selects = append(selects, nodeSelect[S, AS, A]{node:node, action:action})
+		selections = append(selections, selectionInfo[S, As, A, Agent]{node:node, action:action})
 
-		state, err = mcts.Game.Push(state, &action)
+		state, err = mcts.GameLogic.Transitioner(state, &action)
 		if err != nil {
 			return 0, err
 		}
 
-		if isEnd, _ := mcts.Game.IsEnd(&state); isEnd {
+		if isEnd := mcts.GameLogic.EndChecker(&state); isEnd {
 			break
 		}
 
-		nextNode, ok := node.NextNodes.Find(&state, mcts.Game.Equal)
+		nextNode, ok := node.NextNodes.FindByState(&state, mcts.GameLogic.Comparator)
 		if !ok {
 			//expansion
 			nextNode = mcts.NewNode(&state)
@@ -118,33 +129,23 @@ func (mcts *MCTS[S, AS, A]) SelectExpansionBackward(node *Node[S, AS, A], r *ran
 		//nextNodesの中に、同じstateのNodeが存在するならば、それを次のNodeとする
 		node = nextNode
 	}
-	y := mcts.EvalFunc.LeafNode(&state)
-	selects.Backward(y, mcts.EvalFunc.EachPlayer)
-	return len(selects), nil
+	eval, err := mcts.LeafNodeEvaluator(&state)
+	selections.Backward(eval)
+	return len(selections), err
 }
 
-func (mcts *MCTS[S, AS, A]) Run(simulation int, rootNode *Node[S, AS, A], r *rand.Rand) error {
+func (mcts *MCTS[S, As, A, Agent]) Run(simulation int, rootNode *Node[S, As, A, Agent], r *rand.Rand) error {
 	if mcts.NextNodesCap <= 0 {
 		return fmt.Errorf("MCTS.NextNodesCap > 0 でなければなりません。")
 	}
-
-	selectCount := 0
+	depth := 0
 	var err error
 	for i := 0; i < simulation; i++ {
-		selectCount, err = mcts.SelectExpansionBackward(rootNode, r, selectCount+1)
+		capacity := depth + 1
+		depth, err = mcts.SelectExpansionBackward(rootNode, r, capacity)
 		if err != nil {
 			return err
 		}
 	}
 	return nil
-}
-
-func (mcts *MCTS[S, AS, A]) NewPlayer(simulation int, r *rand.Rand) sequential.Player[S, A] {
-	return func(state *S) (A, sequential.Eval, error) {
-		rootNode := mcts.NewNode(state)
-		err := mcts.Run(simulation, rootNode, r)
-		action := rootNode.UCBManager.ActionByMaxTrial(r)
-		avg := rootNode.UCBManager.AverageValue()
-		return action, sequential.Eval(avg), err
-	}
 }

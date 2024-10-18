@@ -5,91 +5,55 @@ import (
 	omwrand "github.com/sw965/omw/math/rand"
 )
 
-type JointEval []float64
-type JointEvals []JointEval
-type Player[S any, AS ~[]A, A comparable] func(*S) (AS, JointEval, error)
-type SeparateLegalActionsFunc[S any, ASS ~[]AS, AS ~[]A, A comparable] func(*S) ASS
-type PushFunc[S any, AS ~[]A, A comparable] func(S, AS) (S, error)
-type EqualFunc[S any] func(*S, *S) bool
-type IsEndFunc[S any] func(*S) (bool, JointEval)
+type Player[S any, As ~[]A, A comparable] func(*S) (As, error)
+type SeparateLegalActionsProvider[S any, Ass ~[]As, As ~[]A, A comparable] func(*S) Ass
+type Transitioner[S any, As ~[]A, A comparable] func(S, As) (S, error)
+type Comparator[S any] func(*S, *S) bool
+type EndChecker[S any] func(*S) bool
 
-type Game[S any, ASS ~[]AS, AS ~[]A, A comparable] struct {
-	SeparateLegalActions SeparateLegalActionsFunc[S, ASS, AS, A]
-	Push PushFunc[S, AS, A]
-	Equal EqualFunc[S]
-	IsEnd IsEndFunc[S]
+type Logic[S any, Ass ~[]As, As ~[]A, A comparable] struct {
+	SeparateLegalActionsProvider SeparateLegalActionsProvider[S, Ass, As, A]
+	Transitioner Transitioner[S, As, A]
+	Comparator Comparator[S]
+	EndChecker EndChecker[S]
 }
 
-func (g *Game[S, ASS, AS, A]) NewRandActionPlayer(r *rand.Rand) Player[S, AS, A] {
-	return func(state *S) (AS, JointEval, error) {
-		ass := g.SeparateLegalActions(state)
-		as := make(AS, len(ass))
+func (l *Logic[S, Ass, As, A]) NewRandActionPlayer(r *rand.Rand) Player[S, As, A] {
+	return func(state *S) (As, error) {
+		ass := l.SeparateLegalActionsProvider(state)
+		as := make(As, len(ass))
 		for playerI, legalAs := range ass {
 			as[playerI] = omwrand.Choice(legalAs, r)
 		} 
-		return as, JointEval{}, nil
+		return as, nil
 	}
 }
 
-func (g *Game[S, ASS, AS, A]) Play(player Player[S, AS, A], state S, f func(*S, int) bool) (S, error) {
-	i := 0
+func (l *Logic[S, Ass, As, A]) Play(player Player[S, As, A], state S, f func(*S) bool) (S, error) {
 	for {
-		isEnd, _ := g.IsEnd(&state)
-		if isEnd || f(&state, i) {
+		isEnd := l.EndChecker(&state)
+		if isEnd || f(&state) {
 			break
 		}
 
-		jointAction, _, err := player(&state)
+		jointAction, err := player(&state)
 		if err != nil {
 			var s S
 			return s, err
 		}
-		state, err = g.Push(state, jointAction)
+
+		state, err = l.Transitioner(state, jointAction)
 		if err != nil {
 			var s S
 			return s, err
 		}
-		i += 1
 	}
 	return state, nil
 }
 
-func (g *Game[S, ASS, AS, A]) PlayWithHistory(player Player[S, AS, A], state S, f func(*S, int) bool, c int) (S, []S, ASS, JointEvals, error) {
-	i := 0
-	stateHistory := make([]S, 0, c)
-	jointActionHistory := make(ASS, 0, c)
-	jointEvalHistory := make(JointEvals, 0, c)
-
-	for {
-		isEnd, _ := g.IsEnd(&state)
-		if isEnd || f(&state, i) {
-			break
-		}
-
-		jointAction, jointEval, err := player(&state)
-		if err != nil {
-			var s S
-			return s, []S{}, ASS{}, JointEvals{}, err
-		}
-
-		stateHistory = append(stateHistory, state)
-		jointActionHistory = append(jointActionHistory, jointAction)
-		jointEvalHistory = append(jointEvalHistory, jointEval)
-
-		state, err = g.Push(state, jointAction)
-		if err != nil {
-			var s S
-			return s, []S{}, ASS{}, JointEvals{}, err
-		}
-		i += 1
-	}
-	return state, stateHistory, jointActionHistory, jointEvalHistory, nil
+func (l *Logic[S, Ass, As, A]) Playout(player Player[S, As, A], state S) (S, error) {
+	return l.Play(player, state, func(_ *S) bool { return false })
 }
 
-func (g *Game[S, ASS, AS, A]) Playout(player Player[S, AS, A], state S) (S, error) {
-	return g.Play(player, state, func(_ *S, _ int) bool { return false })
-}
-
-func (g *Game[S, ASS, AS, A]) PlayoutWithHistory(player Player[S, AS, A], state S, capacity int) (S, []S, ASS, JointEvals, error) {
-	return g.PlayWithHistory(player, state, func(_ *S, _ int) bool { return false }, capacity)
-}
+type ResultJointEval []float64
+type ResultJointEvaluator[S any] func(*S) (ResultJointEval, error)
