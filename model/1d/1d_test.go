@@ -11,7 +11,7 @@ import (
 )
 
 func TestModel(t *testing.T) {
-	return
+	//return
 	r := omwrand.NewMt19937()
 	xn := 784
 	h1 := 128

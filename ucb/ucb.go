@@ -40,11 +40,11 @@ func (c *Calculator) Calculation(totalTrial int) float64 {
 type Manager[KS ~[]K, K comparable] map[K]*Calculator
 
 func (m Manager[KS, K]) TotalValues() []float64 {
-	ret := make([]float64, 0, len(m))
+	vs := make([]float64, 0, len(m))
 	for _, v := range m {
-		ret = append(ret, v.TotalValue)
+		vs = append(vs, v.TotalValue)
 	}
-	return ret
+	return vs
 }
 
 func (m Manager[KS, K]) TotalValue() float64 {
@@ -52,11 +52,11 @@ func (m Manager[KS, K]) TotalValue() float64 {
 }
 
 func (m Manager[KS, K]) Trials() []int {
-	ret := make([]int, 0, len(m))
+	trials := make([]int, 0, len(m))
 	for _, v := range m {
-		ret = append(ret, v.Trial)
+		trials = append(trials, v.Trial)
 	}
-	return ret
+	return trials
 }
 
 func (m Manager[KS, K]) TotalTrial() int {
@@ -93,7 +93,7 @@ func (m Manager[KS, K]) MaxKeys() KS {
 	return ks
 }
 
-func (m Manager[KS, K]) ActionByMax(r *rand.Rand) K {
+func (m Manager[KS, K]) RandMaxKey(r *rand.Rand) K {
 	return omwrand.Choice(m.MaxKeys(), r)
 }
 
@@ -108,41 +108,41 @@ func (m Manager[KS, K]) MaxTrialKeys() KS {
 	return ks
 }
 
-func (m Manager[KS, K]) ActionByMaxTrial(r *rand.Rand) K {
+func (m Manager[KS, K]) RandMaxTrialKey(r *rand.Rand) K {
 	return omwrand.Choice(m.MaxTrialKeys(), r)
 }
 
-func (m Manager[KS, K]) TrialPercents() map[K]float64 {
+func (m Manager[KS, K]) KeyTrialPercents() map[K]float64 {
 	total := m.TotalTrial()
-	ret := map[K]float64{}
+	ps := map[K]float64{}
 	for k, v := range m {
-		ret[k] = float64(v.Trial) / float64(total)
+		ps[k] = float64(v.Trial) / float64(total)
 	}
-	return ret
+	return ps
 }
 
-type SeparateManager[KS ~[]K, K comparable] []Manager[KS, K]
+type Managers[KS ~[]K, K comparable] []Manager[KS, K]
 
-func (ms SeparateManager[KS, K]) JointActionByMax(r *rand.Rand) KS {
-	ret := make(KS, len(ms))
+func (ms Managers[KS, K]) RandMaxKeys(r *rand.Rand) KS {
+	ks := make(KS, len(ms))
 	for i, m := range ms {
-		ret[i] = m.ActionByMax(r)
+		ks[i] = m.RandMaxKey(r)
 	}
-	return ret
+	return ks
 }
 
-func (ms SeparateManager[KS, K]) JointActionByMaxTrial(r *rand.Rand) KS {
-	ret := make(KS, len(ms))
+func (ms Managers[KS, K]) RandMaxTrialKeys(r *rand.Rand) KS {
+	ks := make(KS, len(ms))
 	for i, m := range ms {
-		ret[i] = m.ActionByMaxTrial(r)
+		ks[i] = m.RandMaxTrialKey(r)
 	}
-	return ret
+	return ks
 }
 
-func (ms SeparateManager[KS, K]) JointAverageValue() []float64 {
-	ret := make([]float64, len(ms))
+func (ms Managers[KS, K]) AverageValues() []float64 {
+	vs := make([]float64, len(ms))
 	for i, m := range ms {
-		ret[i] = m.AverageValue()
+		vs[i] = m.AverageValue()
 	}
-	return ret
+	return vs
 }
