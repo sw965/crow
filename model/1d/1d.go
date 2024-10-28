@@ -32,7 +32,6 @@ func (p *Param) WriteJSON(path string) error {
 
 type Variable struct {
 	Param Param
-
 	grad1D tensor.D1
 	grad2D tensor.D2
 	grad3D tensor.D3
@@ -56,16 +55,13 @@ func (v *Variable) Init() {
 	v.grad3D = tensor.NewD3ZerosLike(v.Param.D3)
 }
 
-func (v *Variable) GradMulScaler(lr float64) {
-	v.grad1D.MulScalar(lr)
-	v.grad2D.MulScalar(lr)
-	v.grad3D.MulScalar(lr)
-}
-
-func (v *Variable) SGD() {
-	v.Param.D1.Sub(v.grad1D)
-	v.Param.D2.Sub(v.grad2D)
-	v.Param.D3.Sub(v.grad3D)
+func (v *Variable) SGD(lr float64) {
+	grad1d := tensor.D1MulScalar(v.grad1D, lr)
+	grad2d := tensor.D2MulScalar(v.grad2D, lr)
+	grad3d := tensor.D3MulScalar(v.grad3D, lr)
+	v.Param.D1.Sub(grad1d)
+	v.Param.D2.Sub(grad2d)
+	v.Param.D3.Sub(grad3d)
 }
 
 func (v *Variable) SetParam(param Param) {
@@ -89,7 +85,7 @@ type Sequential struct {
 	Param2DLossDerivative func(tensor.D2) tensor.D2
 	Param3DLossDerivative func(tensor.D3) tensor.D3
 
-	L2NormGradClipThreshold float64
+	MaxGradL2Norm float64
 }
 
 func NewSequential(variable Variable) Sequential {
@@ -104,7 +100,7 @@ func NewSequential(variable Variable) Sequential {
 	}
 }
 
-func NewStandardAffine(xn, h1, h2, yn int, c, threshold float64, r *rand.Rand) (Sequential, Variable) {
+func NewStandardAffine(xn, h1, h2, yn int, weightDecay float64, r *rand.Rand) (Sequential, Variable) {
 	variable := Variable{
 		Param: Param{
 			D1: tensor.D1{
@@ -135,20 +131,19 @@ func NewStandardAffine(xn, h1, h2, yn int, c, threshold float64, r *rand.Rand) (
 		layer1d.NewParamReLUForward(&variable.Param.D1[1], &variable.GetGrad1D()[1]),
 
 		layer1d.NewAffineForward(variable.Param.D3[2], variable.Param.D2[2], variable.GetGrad3D()[2], variable.GetGrad2D()[2]),
-		layer1d.NewSigmoidForward(),
+		layer1d.NewSoftmaxForward(),
 	}
 
 	affine := NewSequential(variable)
 	affine.Forwards = forwards
 	affine.YLossFunc = mlfuncs1d.SumSquaredError
 	affine.YLossDerivative = mlfuncs1d.SumSquaredErrorDerivative
-	affine.Param3DLossFunc = mlfuncs3d.L2Regularization(c)
-	affine.Param3DLossDerivative = mlfuncs3d.L2RegularizationDerivative(c)
-	affine.L2NormGradClipThreshold = threshold
+	affine.Param3DLossFunc = mlfuncs3d.L2Regularization(weightDecay)
+	affine.Param3DLossDerivative = mlfuncs3d.L2RegularizationDerivative(weightDecay)
 	return affine, variable
 }
 
-func NewStandardLinearSum(xn int, c, threshold float64) (Sequential, Variable) {
+func NewStandardLinearSum(xn int, c float64) (Sequential, Variable) {
 	variable := Variable{
 		Param: Param{
 			D1: tensor.D1{0.0},
@@ -168,7 +163,6 @@ func NewStandardLinearSum(xn int, c, threshold float64) (Sequential, Variable) {
 	linearSum.YLossDerivative = mlfuncs1d.SumSquaredErrorDerivative
 	linearSum.Param2DLossFunc = mlfuncs2d.L2Regularization(c)
 	linearSum.Param2DLossDerivative = mlfuncs2d.L2RegularizationDerivative(c)
-	linearSum.L2NormGradClipThreshold = threshold
 	return linearSum, variable
 }
 
@@ -180,7 +174,7 @@ func (m *Sequential) Predict(x tensor.D1) (tensor.D1, error) {
 func (m *Sequential) MeanLoss(x, t tensor.D2) (float64, error) {
 	n := len(x)
 	if n != len(t) {
-		return 0.0, fmt.Errorf("入力値と正解ラベルのバッチ数が一致しません。")
+		return 0.0, fmt.Errorf("バッチ数が一致しません。")
 	}
 
 	sum := m.Param1DLossFunc(m.variable.Param.D1)
@@ -206,8 +200,9 @@ func (m *Sequential) MeanLoss(x, t tensor.D2) (float64, error) {
 func (m *Sequential) Accuracy(x, t tensor.D2) (float64, error) {
 	n := len(x)
 	if n != len(t) {
-		return 0.0, fmt.Errorf("入力と正解ラベルのバッチ数が一致しません。")
+		return 0.0, fmt.Errorf("バッチ数が一致しません。")
 	}
+
 	correct := 0
 	for i := range x {
 		y, err := m.Predict(x[i])
@@ -256,16 +251,15 @@ func (m *Sequential) UpdateGrad(x, t tensor.D1) error {
 		return err
 	}
 
-	if m.L2NormGradClipThreshold > 0.0 {
-		mlfuncs.ClipL2Norm(m.variable.grad1D, m.variable.grad2D, m.variable.grad3D, m.L2NormGradClipThreshold)
+	if m.MaxGradL2Norm > 0.0 {
+		mlfuncs.ClipL2Norm(m.variable.grad1D, m.variable.grad2D, m.variable.grad3D, m.MaxGradL2Norm)
 	}
 	return err
 }
 
 func (m *Sequential) SGD(x, t tensor.D1, lr float64) {
 	m.UpdateGrad(x, t)
-	m.variable.GradMulScaler(lr)
-	m.variable.SGD()
+	m.variable.SGD(lr)
 }
 
 func (m *Sequential) ValidateBackwardAndNumericalGradientDifference(x, t tensor.D1) error {
@@ -296,8 +290,8 @@ func (m *Sequential) ValidateBackwardAndNumericalGradientDifference(x, t tensor.
 	numGradD1 := mlfuncs1d.NumericalDifferentiation(m.variable.Param.D1, lossD1)
 	numGradD2 := mlfuncs2d.NumericalDifferentiation(m.variable.Param.D2, lossD2)
 	numGradD3 := mlfuncs3d.NumericalDifferentiation(m.variable.Param.D3, lossD3)
-	if m.L2NormGradClipThreshold > 0.0 {
-		mlfuncs.ClipL2Norm(numGradD1, numGradD2, numGradD3, m.L2NormGradClipThreshold)
+	if m.MaxGradL2Norm > 0.0 {
+		mlfuncs.ClipL2Norm(numGradD1, numGradD2, numGradD3, m.MaxGradL2Norm)
 	}
 	m.UpdateGrad(x, t)
 

@@ -18,7 +18,7 @@ func TestModel(t *testing.T) {
 	h2 := 32
 	yn := 10
 
-	affine, _ := model1d.NewStandardAffine(xn, h1, h2, yn, 0.0001, 64.0, r)
+	affine, _ := model1d.NewStandardAffine(xn, h1, h2, yn, 0.0001, r)
 	mnist, err := dataset.LoadFlatMnist()
 	if err != nil {
 		panic(err)
@@ -55,7 +55,7 @@ func TestLinearSum(test *testing.T) {
 	r := omwrand.NewMt19937()
 	xn := 10
 	yn := 1
-	linearSum, _ := model1d.NewStandardLinearSum(xn, 0.001, 64.0)
+	linearSum, _ := model1d.NewStandardLinearSum(xn, 0.001)
 	x := tensor.NewD1RandUniform(xn, -5.0, 5.0, r)
 	t := tensor.NewD1RandUniform(yn, 0.0, 1.0, r)
 	linearSum.ValidateBackwardAndNumericalGradientDifference(x, t)

@@ -186,6 +186,19 @@ func NewTanhForward() Forward {
 	}
 }
 
+func NewSoftmaxForward() Forward {
+    return func(x tensor.D1, backwards Backwards) (tensor.D1, Backwards, error) {
+        y := mlfuncs1d.Softmax(x)
+        var backward Backward
+        backward = func(chain tensor.D1) (tensor.D1, error) {
+            dx, err := mlfuncs1d.SoftmaxDerivative(y, chain)
+            return dx, err
+        }
+        backwards = append(backwards, backward)
+        return y, backwards, nil
+    }
+}
+
 func NewDropoutForward(p float64, isTrain *bool, r *rand.Rand) Forward {
 	return func(x tensor.D1, backwards Backwards) (tensor.D1, Backwards, error) {
 		y, mask := mlfuncs1d.Dropout(x, p, *isTrain, r)

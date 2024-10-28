@@ -44,6 +44,41 @@ func TanhToSigmoid(y tensor.D1) tensor.D1 {
 	return fn.Map[tensor.D1](y, scalar.TanhToSigmoid)
 }
 
+func Softmax(x tensor.D1) tensor.D1 {
+    maxX := omwmath.Max(x...) // オーバーフロー対策
+    expX := make(tensor.D1, len(x))
+    sumExpX := 0.0
+    for i, xi := range x {
+        expX[i] = math.Exp(xi - maxX)
+        sumExpX += expX[i]
+    }
+    y := make(tensor.D1, len(x))
+    for i := range expX {
+        y[i] = expX[i] / sumExpX
+    }
+    return y
+}
+
+func SoftmaxDerivative(y, chain tensor.D1) (tensor.D1, error) {
+    n := len(y)
+    if n != len(chain) {
+        return nil, fmt.Errorf("len(y) != len(chain)")
+    }
+    dx := make(tensor.D1, n)
+    for i := 0; i < n; i++ {
+        sum := 0.0
+        for j := 0; j < n; j++ {
+            if i == j {
+                sum += y[i] * (1 - y[j]) * chain[j]
+            } else {
+                sum -= y[i] * y[j] * chain[j]
+            }
+        }
+        dx[i] = sum
+    }
+    return dx, nil
+}
+
 func LinearSum(x, w tensor.D1, b float64) (float64, error) {
 	hadamard, err := tensor.D1Mul(x, w)
 	y := omwmath.Sum(hadamard...) + b
