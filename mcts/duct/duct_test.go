@@ -3,6 +3,7 @@ package duct_test
 import (
 	"fmt"
 	"github.com/sw965/crow/game/simultaneous"
+	"github.com/sw965/crow/game/simultaneous/solver"
 	"github.com/sw965/crow/mcts/duct"
 	"github.com/sw965/crow/ucb"
 	omwrand "github.com/sw965/omw/math/rand"
@@ -44,7 +45,7 @@ func TestDUCT(t *testing.T) {
 		return *rps1 == *rps2
 	}
 
-	placementsJudger := func(rps *RockPaperScissors) (simultaneous.Placements, error) {
+	placementJudger := func(rps *RockPaperScissors) (simultaneous.Placements, error) {
 		if rps.Hand1 == rps.Hand2 {
 			// 引き分けの場合は同順位
 			return simultaneous.Placements{1, 1}, nil
@@ -84,22 +85,22 @@ func TestDUCT(t *testing.T) {
 		LegalActionTableProvider: legalActionTableProvider,
 		Transitioner:             transitioner,
 		Comparator:               comparator,
-		PlacementsJudger:         placementsJudger,
+		PlacementJudger:          placementJudger,
 	}
 
-	gameLogic.SetStandardResultScoresEvaluator()
+	gameLogic.SetStandardResultScoreEvaluator()
 
 	mcts := duct.MCTS[RockPaperScissors, HandsSlice, Hands, Hand]{
-		GameLogic:              gameLogic,
 		NextNodesCap:           3,
 	}
+	mcts.SetGameLogic(gameLogic)
 
-	mcts.SetUniformActionPoliciesProvider()
+	mcts.PoliciesProvider = solver.UniformPoliciesProvider[RockPaperScissors, HandsSlice, Hands, Hand]
 	mcts.UCBFunc = ucb.NewAlphaGoFunc(math.Sqrt(2))
 	playerNum := 2
 	mcts.SetRandPlayout(playerNum, r)
 
-	fmt.Println(mcts.ActionPoliciesProvider(&RockPaperScissors{}, legalActionTableProvider(&RockPaperScissors{})))
+	fmt.Println(mcts.PoliciesProvider(&RockPaperScissors{}, legalActionTableProvider(&RockPaperScissors{})))
 	rootNode, err := mcts.NewNode(&RockPaperScissors{})
 	if err != nil {
 		panic(err)

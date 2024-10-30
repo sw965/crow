@@ -7,8 +7,8 @@ import (
 	"math/rand"
 )
 
-type Player[S any, As ~[]A, A comparable] func(*S) (As, error)
-type Players[S any, As ~[]A, A comparable] []Player[S, As, A]
+type Player[S any, Ass ~[]As, As ~[]A, A comparable] func(*S, Ass) (As, error)
+type Players[S any, Ass ~[]As, As ~[]A, A comparable] []Player[S, Ass, As, A]
 
 type LegalActionTableProvider[S any, Ass ~[]As, As ~[]A, A comparable] func(*S) Ass
 type Transitioner[S any, As ~[]A, A comparable] func(S, As) (S, error)
@@ -52,25 +52,42 @@ func (p Placements) Validate() error {
 	return nil
 }
 
-type PlacementsJudger[S any] func(*S) (Placements, error)
+type PlacementJudger[S any] func(*S) (Placements, error)
 type ResultScores []float64
-type ResultScoresEvaluator func(Placements) (ResultScores, error)
+type ResultScoreEvaluator func(Placements) (ResultScores, error)
+type TotalResultScores []float64
+
+func(ts TotalResultScores) Add(scores ResultScores) {
+	for i, score := range scores {
+		ts[i] += score
+	}
+}
+
+func (ts TotalResultScores) ToAverage(n int) AverageResultScores {
+	avgs := make(AverageResultScores, len(ts))
+	for i, t := range ts {
+		avgs[i] = t / float64(n)
+	}
+	return avgs
+}
+
+type AverageResultScores []float64
 
 type Logic[S any, Ass ~[]As, As ~[]A, A comparable] struct {
 	LegalActionTableProvider LegalActionTableProvider[S, Ass, As, A]
 	Transitioner             Transitioner[S, As, A]
 	Comparator               Comparator[S]
-	PlacementsJudger         PlacementsJudger[S]
-	ResultScoresEvaluator    ResultScoresEvaluator
+	PlacementJudger          PlacementJudger[S]
+	ResultScoreEvaluator     ResultScoreEvaluator
 }
 
 func (l Logic[S, Ass, As, A]) IsEnd(s *S) (bool, error) {
-	placements, err := l.PlacementsJudger(s)
+	placements, err := l.PlacementJudger(s)
 	return len(placements) != 0, err
 }
 
-func (l *Logic[S, As, A, Agent]) SetStandardResultScoresEvaluator() {
-	l.ResultScoresEvaluator = func(placements Placements) (ResultScores, error) {
+func (l *Logic[S, As, A, Agent]) SetStandardResultScoreEvaluator() {
+	l.ResultScoreEvaluator = func(placements Placements) (ResultScores, error) {
 		if err := placements.Validate(); err != nil {
 			return ResultScores{} , err
 		}
@@ -87,33 +104,33 @@ func (l *Logic[S, As, A, Agent]) SetStandardResultScoresEvaluator() {
 
 		scores := make(ResultScores, n)
 		for i, rank := range placements {
-			v := 1.0 - ((float64(rank) - 1.0) / (float64(n) - 1.0))
-			scores[i] = v / float64(counts[rank])
+			score := 1.0 - ((float64(rank) - 1.0) / (float64(n) - 1.0))
+			// 同順の人数で割る
+			scores[i] = score / float64(counts[rank])
 		}
 		return scores, nil
 	}
 }
 
 func (l Logic[S, Ass, As, A]) EvaluateResultScores(s *S) (ResultScores, error) {
-	placements, err := l.PlacementsJudger(s)
+	placements, err := l.PlacementJudger(s)
 	if err != nil {
 		return ResultScores{}, err
 	}
-	return l.ResultScoresEvaluator(placements)
+	return l.ResultScoreEvaluator(placements)
 }
 
-func (l *Logic[S, Ass, As, A]) NewRandActionPlayer(r *rand.Rand) Player[S, As, A] {
-	return func(state *S) (As, error) {
-		ass := l.LegalActionTableProvider(state)
-		joint := make(As, len(ass))
-		for playerI, as := range ass {
-			joint[playerI] = omwrand.Choice(as, r)
+func (l *Logic[S, Ass, As, A]) NewRandActionPlayer(r *rand.Rand) Player[S, Ass, As, A] {
+	return func(state *S, legalActionTable Ass) (As, error) {
+		jointAction := make(As, len(legalActionTable))
+		for playerI, actions := range legalActionTable {
+			jointAction[playerI] = omwrand.Choice(actions, r)
 		}
-		return joint, nil
+		return jointAction, nil
 	}
 }
 
-func (l *Logic[S, Ass, As, A]) Play(players Players[S, As, A], state S, f func(*S) bool) (S, error) {
+func (l *Logic[S, Ass, As, A]) Play(players Players[S, Ass, As, A], state S, f func(*S) bool) (S, error) {
 	n := len(players)
 	for {
 		isEnd, err := l.IsEnd(&state)
@@ -126,14 +143,15 @@ func (l *Logic[S, Ass, As, A]) Play(players Players[S, As, A], state S, f func(*
 			break
 		}
 
+		legalActionTable := l.LegalActionTableProvider(&state)
 		jointAction := make(As, n)
 		for i, player := range players {
-			jointA, err := player(&state)
+			ja, err := player(&state, legalActionTable)
 			if err != nil {
 				var s S
 				return s, err
 			}
-			jointAction[i] = jointA[i]
+			jointAction[i] = ja[i]
 		}
 
 		state, err = l.Transitioner(state, jointAction)
@@ -145,6 +163,23 @@ func (l *Logic[S, Ass, As, A]) Play(players Players[S, As, A], state S, f func(*
 	return state, nil
 }
 
-func (l *Logic[S, Ass, As, A]) Playout(players Players[S, As, A], state S) (S, error) {
+func (l *Logic[S, Ass, As, A]) Playout(players Players[S, Ass, As, A], state S) (S, error) {
 	return l.Play(players, state, func(_ *S) bool { return false })
+}
+
+func (l Logic[S, Ass, As, A]) ComparePlayerStrength(players Players[S, Ass, As, A], gameNum int, state S) (AverageResultScores, error) {
+    totals := make(TotalResultScores, len(players))
+    for i := 0; i < gameNum; i++ {
+        final, err := l.Playout(players, state)
+        if err != nil {
+            return nil, err
+        }
+
+        scores, err := l.EvaluateResultScores(&final)
+        if err != nil {
+            return nil, err
+        }
+        totals.Add(scores)
+    }
+    return totals.ToAverage(gameNum), nil
 }

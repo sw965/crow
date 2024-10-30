@@ -79,21 +79,21 @@ type ResultScoreEvaluator[G comparable] func(PlacementPerAgent[G]) (ResultScoreP
 
 type TotalResultScorePerAgent[G comparable] map[G]float64
 
-func(t TotalResultScorePerAgent[G]) Add(scores ResultScorePerAgent[G]) {
+func(ts TotalResultScorePerAgent[G]) Add(scores ResultScorePerAgent[G]) {
 	for k, v := range scores {
-		if _, ok := t[k]; !ok {
-			t[k] = 0
+		if _, ok := ts[k]; !ok {
+			ts[k] = 0
 		}
-		t[k] += v
+		ts[k] += v
 	}
 }
 
-func (t TotalResultScorePerAgent[G]) ToAverage(n int) AverageResultScorePerAgent[G] {
-	avg := AverageResultScorePerAgent[G]{}
-	for k, v := range t {
-		avg[k] = v / float64(n)
+func (ts TotalResultScorePerAgent[G]) ToAverage(n int) AverageResultScorePerAgent[G] {
+	avgs := AverageResultScorePerAgent[G]{}
+	for k, v := range ts {
+		avgs[k] = v / float64(n)
 	}
-	return avg
+	return avgs
 }
 
 type AverageResultScorePerAgent[G comparable] map[G]float64
@@ -131,6 +131,7 @@ func (l *Logic[S, As, A, G]) SetStandardResultScoreEvaluator() {
 		scores := ResultScorePerAgent[G]{}
 		for agent, rank := range placements {
 			score := 1.0 - ((float64(rank) - 1.0) / (float64(n) - 1.0))
+			// 同順の人数で割る
 			scores[agent] = score / float64(counts[rank])
 		}
 		return scores, nil
@@ -182,18 +183,18 @@ func (l *Logic[S, As, A, G]) Playout(players PlayerPerAgent[S, As, A, G], state 
 }
 
 func (l Logic[S, As, A, G]) ComparePlayerStrength(players PlayerPerAgent[S, As, A, G], gameNum int, state S) (AverageResultScorePerAgent[G], error) {
-	total := TotalResultScorePerAgent[G]{}
+	totals := TotalResultScorePerAgent[G]{}
 	for i := 0; i < gameNum; i++ {
 		final, err := l.Playout(players, state)
 		if err != nil {
-			return AverageResultScorePerAgent[G]{}, err
+			return nil, err
 		}
 
 		scores, err := l.EvaluateResultScorePerAgent(&final)
 		if err != nil {
-			return AverageResultScorePerAgent[G]{}, err
+			return nil, err
 		}
-		total.Add(scores)
+		totals.Add(scores)
 	}
-	return total.ToAverage(gameNum), nil
+	return totals.ToAverage(gameNum), nil
 }

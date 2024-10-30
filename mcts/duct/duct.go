@@ -3,18 +3,14 @@ package duct
 import (
 	"fmt"
 	"github.com/sw965/crow/game/simultaneous"
+	"github.com/sw965/crow/game/simultaneous/solver"
 	"github.com/sw965/crow/ucb"
 	"math/rand"
 )
 
 // https://www.terry-u16.net/entry/decoupled-uct
 
-type ActionPolicy[A comparable] map[A]float64
-type ActionPolicies[A comparable] []ActionPolicy[A]
-type ActionPoliciesProvider[S any, Ass ~[]As, As ~[]A, A comparable] func(*S, Ass) ActionPolicies[A]
-
-type LeafNodeEvals []float64
-type LeafNodeEvaluator[S any] func(*S) (LeafNodeEvals, error)
+type LeafNodeEvaluator[S any] func(*S) (solver.Evals, error)
 
 type Node[S any, Ass ~[]As, As ~[]A, A comparable] struct {
 	State       S
@@ -40,7 +36,7 @@ type selectionInfo[S any, Ass ~[]As, As ~[]A, A comparable] struct {
 
 type selectionInfoSlice[S any, Ass ~[]As, As ~[]A, A comparable] []selectionInfo[S, Ass, As, A]
 
-func (ss selectionInfoSlice[S, Ass, As, A]) backward(evals LeafNodeEvals) {
+func (ss selectionInfoSlice[S, Ass, As, A]) backward(evals solver.Evals) {
 	for _, s := range ss {
 		node := s.node
 		jointAction := s.jointAction
@@ -52,76 +48,68 @@ func (ss selectionInfoSlice[S, Ass, As, A]) backward(evals LeafNodeEvals) {
 }
 
 type MCTS[S any, Ass ~[]As, As ~[]A, A comparable] struct {
-	GameLogic              simultaneous.Logic[S, Ass, As, A]
+	gameLogic              simultaneous.Logic[S, Ass, As, A]
 	UCBFunc                ucb.Func
-	ActionPoliciesProvider ActionPoliciesProvider[S, Ass, As, A]
+	PoliciesProvider       solver.PoliciesProvider[S, Ass, As, A]
 	LeafNodeEvaluator      LeafNodeEvaluator[S]
 	NextNodesCap           int
 }
 
-func (mcts *MCTS[S, Ass, As, A]) SetUniformActionPoliciesProvider() {
-	mcts.ActionPoliciesProvider = func(state *S, legalActionTable Ass) ActionPolicies[A] {
-		policies := make(ActionPolicies[A], len(legalActionTable))
-		for playerI, as := range legalActionTable {
-			policy := ActionPolicy[A]{}
-			n := len(as)
-			p := 1.0 / float64(n)
-			for _, a := range as {
-				policy[a] = p
-			}
-			policies[playerI] = policy
-		}
-		return policies
-	}
+func (m *MCTS[S, Ass, As, A]) GetGameLogic() simultaneous.Logic[S, Ass, As, A] {
+	return m.gameLogic
 }
 
-func (mcts *MCTS[S, Ass, As, A]) SetPlayout(players simultaneous.Players[S, As, A]) {
-	mcts.LeafNodeEvaluator = func(sp *S) (LeafNodeEvals, error) {
-		s, err := mcts.GameLogic.Playout(players, *sp)
+func (m *MCTS[S, Ass, As, A]) SetGameLogic(gl simultaneous.Logic[S, Ass, As, A]) {
+	m.gameLogic = gl
+}
+
+func (m *MCTS[S, Ass, As, A]) SetPlayout(players simultaneous.Players[S, Ass, As, A]) {
+	m.LeafNodeEvaluator = func(state *S) (solver.Evals, error) {
+		final, err := m.gameLogic.Playout(players, *state)
 		if err != nil {
-			return LeafNodeEvals{}, err
+			return solver.Evals{}, err
 		}
-		scores, err := mcts.GameLogic.EvaluateResultScores(&s)
-		return LeafNodeEvals(scores), err
+		scores, err := m.gameLogic.EvaluateResultScores(&final)
+		return solver.ResultScoresToEvals(scores), err
 	}
 }
 
-func (mcts *MCTS[S, Ass, As, A]) SetRandPlayout(playerNum int, r *rand.Rand) {
-	players := make(simultaneous.Players[S, As, A], playerNum)
+func (m *MCTS[S, Ass, As, A]) SetRandPlayout(playerNum int, r *rand.Rand) {
+	players := make(simultaneous.Players[S, Ass, As, A], playerNum)
 	for i := 0; i < playerNum; i++ {
-		players[i] = mcts.GameLogic.NewRandActionPlayer(r)
+		players[i] = m.gameLogic.NewRandActionPlayer(r)
 	}
-	mcts.SetPlayout(players)
+	m.SetPlayout(players)
 }
 
-func (mcts *MCTS[S, Ass, As, A]) NewNode(state *S) (*Node[S, Ass, As, A], error) {
-	ass := mcts.GameLogic.LegalActionTableProvider(state)
-	policies := mcts.ActionPoliciesProvider(state, ass)
+func (m *MCTS[S, Ass, As, A]) NewNode(state *S) (*Node[S, Ass, As, A], error) {
+	legalActionTable := m.gameLogic.LegalActionTableProvider(state)
+	policies := m.PoliciesProvider(state, legalActionTable)
 	if len(policies) == 0 {
 		return &Node[S, Ass, As, A]{}, fmt.Errorf("len(SeparateActionPolicy) == 0 である為、新しくNodeを生成出来ません。")
 	}
 
-	ms := make(ucb.Managers[As, A], len(policies))
+	ums := make(ucb.Managers[As, A], len(policies))
 	for playerI, policy := range policies {
-		m := ucb.Manager[As, A]{}
+		um := ucb.Manager[As, A]{}
 		if len(policy) == 0 {
 			return &Node[S, Ass, As, A]{}, fmt.Errorf("%d番目のプレイヤーのActionPolicyが空である為、新しくNodeを生成出来ません。", playerI)
 		}
 		for a, p := range policy {
-			m[a] = &ucb.Calculator{Func: mcts.UCBFunc, P: p}
+			um[a] = &ucb.Calculator{Func: m.UCBFunc, P: p}
 		}
-		ms[playerI] = m
+		ums[playerI] = um
 	}
 
-	nextNodes := make(Nodes[S, Ass, As, A], 0, mcts.NextNodesCap)
+	nextNodes := make(Nodes[S, Ass, As, A], 0, m.NextNodesCap)
 	return &Node[S, Ass, As, A]{
 		State:       *state,
-		UCBManagers: ms,
+		UCBManagers: ums,
 		NextNodes:   nextNodes,
 	}, nil
 }
 
-func (mcts *MCTS[S, Ass, As, A]) SelectExpansionBackward(node *Node[S, Ass, As, A], r *rand.Rand, capacity int) (int, error) {
+func (m *MCTS[S, Ass, As, A]) SelectExpansionBackward(node *Node[S, Ass, As, A], r *rand.Rand, capacity int) (int, error) {
 	state := node.State
 	selections := make(selectionInfoSlice[S, Ass, As, A], 0, capacity)
 	var err error
@@ -129,12 +117,12 @@ func (mcts *MCTS[S, Ass, As, A]) SelectExpansionBackward(node *Node[S, Ass, As, 
 		jointAction := node.UCBManagers.RandMaxKeys(r)
 		selections = append(selections, selectionInfo[S, Ass, As, A]{node: node, jointAction: jointAction})
 
-		state, err = mcts.GameLogic.Transitioner(state, jointAction)
+		state, err = m.gameLogic.Transitioner(state, jointAction)
 		if err != nil {
 			return 0, err
 		}
 
-		if isEnd, err := mcts.GameLogic.IsEnd(&state); err != nil {
+		if isEnd, err := m.gameLogic.IsEnd(&state); err != nil {
 			if err != nil {
 				return 0, err
 			}
@@ -143,10 +131,10 @@ func (mcts *MCTS[S, Ass, As, A]) SelectExpansionBackward(node *Node[S, Ass, As, 
 			}
 		}
 
-		nextNode, ok := node.NextNodes.FindByState(&state, mcts.GameLogic.Comparator)
+		nextNode, ok := node.NextNodes.FindByState(&state, m.gameLogic.Comparator)
 		if !ok {
 			//expansion
-			nextNode, err = mcts.NewNode(&state)
+			nextNode, err = m.NewNode(&state)
 			if err != nil {
 				return 0, err
 			}
@@ -158,7 +146,7 @@ func (mcts *MCTS[S, Ass, As, A]) SelectExpansionBackward(node *Node[S, Ass, As, 
 		node = nextNode
 	}
 
-	evals, err := mcts.LeafNodeEvaluator(&state)
+	evals, err := m.LeafNodeEvaluator(&state)
 	//selections.backwardの前にエラー処理をしない場合、index out of range が起きる事がある。
 	if err != nil {
 		return 0, err
@@ -167,15 +155,15 @@ func (mcts *MCTS[S, Ass, As, A]) SelectExpansionBackward(node *Node[S, Ass, As, 
 	return len(selections), nil
 }
 
-func (mcts *MCTS[S, Ass, As, A]) Run(simulation int, rootNode *Node[S, Ass, As, A], r *rand.Rand) error {
-	if mcts.NextNodesCap <= 0 {
+func (m *MCTS[S, Ass, As, A]) Run(simulation int, rootNode *Node[S, Ass, As, A], r *rand.Rand) error {
+	if m.NextNodesCap <= 0 {
 		return fmt.Errorf("MCTS.NextNodesCap > 0 でなければなりません。")
 	}
 	depth := 0
 	var err error
 	for i := 0; i < simulation; i++ {
 		capacity := depth + 1
-		depth, err = mcts.SelectExpansionBackward(rootNode, r, capacity)
+		depth, err = m.SelectExpansionBackward(rootNode, r, capacity)
 		if err != nil {
 			return err
 		}

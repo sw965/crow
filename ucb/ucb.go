@@ -112,7 +112,7 @@ func (m Manager[KS, K]) RandMaxTrialKey(r *rand.Rand) K {
 	return omwrand.Choice(m.MaxTrialKeys(), r)
 }
 
-func (m Manager[KS, K]) TrialPercents() map[K]float64 {
+func (m Manager[KS, K]) TrialPercentPerKey() map[K]float64 {
 	total := m.TotalTrial()
 	ps := map[K]float64{}
 	for k, v := range m {

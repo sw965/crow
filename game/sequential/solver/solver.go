@@ -18,6 +18,15 @@ func UniformPolicyProvider[S any, As ~[]A, A comparable](state *S, legalActions 
 }
 
 type Eval float64
+type EvalPerAgent[G comparable] map[G]Eval
+
+func ResultScorePerAgentToEval[G comparable](scores sequential.ResultScorePerAgent[G]) EvalPerAgent[G] {
+	evals := EvalPerAgent[G]{}
+	for k, v := range scores {
+		evals[k] = Eval(v)
+	}
+	return evals
+}
 
 type ActorCritic[S any, As ~[]A, A comparable] func(*S, As) (A, Policy[A], Eval, error)
 

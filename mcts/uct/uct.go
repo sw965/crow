@@ -9,8 +9,7 @@ import (
 	"math/rand"
 )
 
-type LeafNodeEvalPerAgent[G comparable] map[G]float64
-type LeafNodeEvaluator[S any, G comparable] func(*S) (LeafNodeEvalPerAgent[G], error)
+type LeafNodeEvaluator[S any, G comparable] func(*S) (solver.EvalPerAgent[G], error)
 
 type Node[S any, As ~[]A, A, G comparable] struct {
 	State      S
@@ -41,7 +40,7 @@ type selectionInfo[S any, As ~[]A, A, G comparable] struct {
 
 type selectionInfoSlice[S any, As ~[]A, A, G comparable] []selectionInfo[S, As, A, G]
 
-func (ss selectionInfoSlice[S, As, A, G]) Backward(evals LeafNodeEvalPerAgent[G]) {
+func (ss selectionInfoSlice[S, As, A, G]) Backward(evals solver.EvalPerAgent[G]) {
 	for _, s := range ss {
 		node := s.node
 		action := s.action
@@ -80,13 +79,13 @@ func (m *MCTS[S, As, A, G]) NewNode(state *S) (*Node[S, As, A, G], error) {
 }
 
 func (m *MCTS[S, As, A, G]) SetPlayout(players sequential.PlayerPerAgent[S, As, A, G]) {
-	m.LeafNodeEvaluator = func(state *S) (LeafNodeEvalPerAgent[G], error) {
+	m.LeafNodeEvaluator = func(state *S) (solver.EvalPerAgent[G], error) {
 		final, err := m.gameLogic.Playout(players, *state)
 		if err != nil {
-			return LeafNodeEvalPerAgent[G]{}, err
+			return solver.EvalPerAgent[G]{}, err
 		}
 		scores, err := m.gameLogic.EvaluateResultScorePerAgent(&final)
-		return LeafNodeEvalPerAgent[G](scores), err
+		return solver.ResultScorePerAgentToEval(scores), err
 	}
 }
 
@@ -130,8 +129,8 @@ func (m *MCTS[S, As, A, G]) SelectExpansionBackward(node *Node[S, As, A, G], r *
 		//nextNodesの中に、同じstateのNodeが存在するならば、それを次のNodeとする
 		node = nextNode
 	}
-	eval, err := m.LeafNodeEvaluator(&state)
-	selections.Backward(eval)
+	evals, err := m.LeafNodeEvaluator(&state)
+	selections.Backward(evals)
 	return len(selections), err
 }
 
@@ -166,8 +165,8 @@ func (m *MCTS[S, As, A, G]) NewSolver(simulation int, r *rand.Rand) solver.Actor
 		}
 
 		action := rootNode.UCBManager.RandMaxKey(r)
-		posteriorPolicy := solver.Policy[A](rootNode.UCBManager.TrialPercents())
+		posterior := solver.Policy[A](rootNode.UCBManager.TrialPercentPerKey())
 		eval := rootNode.UCBManager.AverageValue()
-		return action, posteriorPolicy, solver.Eval(eval), nil
+		return action, posterior, solver.Eval(eval), nil
 	}
 }
