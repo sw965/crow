@@ -78,6 +78,10 @@ func (m *MCTS[S, As, A, G]) NewNode(state *S) (*Node[S, As, A, G], error) {
 	return &Node[S, As, A, G]{State: *state, Agent: agent, UCBManager: um, NextNodes: nextNodes}, nil
 }
 
+func (m *MCTS[S, As, A, G]) SetUniformPolicyProvider() {
+	m.PolicyProvider = solver.UniformPolicyProvider[S, As, A]
+}
+
 func (m *MCTS[S, As, A, G]) SetPlayout(players sequential.PlayerPerAgent[S, As, A, G]) {
 	m.LeafNodeEvaluator = func(state *S) (solver.EvalPerAgent[G], error) {
 		final, err := m.gameLogic.Playout(players, *state)

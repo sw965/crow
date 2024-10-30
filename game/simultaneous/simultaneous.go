@@ -52,9 +52,9 @@ func (p Placements) Validate() error {
 	return nil
 }
 
-type PlacementJudger[S any] func(*S) (Placements, error)
+type PlacementsJudger[S any] func(*S) (Placements, error)
 type ResultScores []float64
-type ResultScoreEvaluator func(Placements) (ResultScores, error)
+type ResultScoresEvaluator func(Placements) (ResultScores, error)
 type TotalResultScores []float64
 
 func(ts TotalResultScores) Add(scores ResultScores) {
@@ -77,17 +77,17 @@ type Logic[S any, Ass ~[]As, As ~[]A, A comparable] struct {
 	LegalActionTableProvider LegalActionTableProvider[S, Ass, As, A]
 	Transitioner             Transitioner[S, As, A]
 	Comparator               Comparator[S]
-	PlacementJudger          PlacementJudger[S]
-	ResultScoreEvaluator     ResultScoreEvaluator
+	PlacementsJudger         PlacementsJudger[S]
+	ResultScoresEvaluator    ResultScoresEvaluator
 }
 
 func (l Logic[S, Ass, As, A]) IsEnd(s *S) (bool, error) {
-	placements, err := l.PlacementJudger(s)
+	placements, err := l.PlacementsJudger(s)
 	return len(placements) != 0, err
 }
 
-func (l *Logic[S, As, A, Agent]) SetStandardResultScoreEvaluator() {
-	l.ResultScoreEvaluator = func(placements Placements) (ResultScores, error) {
+func (l *Logic[S, As, A, Agent]) SetStandardResultScoresEvaluator() {
+	l.ResultScoresEvaluator = func(placements Placements) (ResultScores, error) {
 		if err := placements.Validate(); err != nil {
 			return ResultScores{} , err
 		}
@@ -113,11 +113,11 @@ func (l *Logic[S, As, A, Agent]) SetStandardResultScoreEvaluator() {
 }
 
 func (l Logic[S, Ass, As, A]) EvaluateResultScores(s *S) (ResultScores, error) {
-	placements, err := l.PlacementJudger(s)
+	placements, err := l.PlacementsJudger(s)
 	if err != nil {
 		return ResultScores{}, err
 	}
-	return l.ResultScoreEvaluator(placements)
+	return l.ResultScoresEvaluator(placements)
 }
 
 func (l *Logic[S, Ass, As, A]) NewRandActionPlayer(r *rand.Rand) Player[S, Ass, As, A] {

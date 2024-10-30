@@ -63,6 +63,10 @@ func (m *MCTS[S, Ass, As, A]) SetGameLogic(gl simultaneous.Logic[S, Ass, As, A])
 	m.gameLogic = gl
 }
 
+func (m *MCTS[S, As, A, G]) SetUniformPoliciesProvider() {
+	m.PoliciesProvider = solver.UniformPoliciesProvider[S, As, A]
+}
+
 func (m *MCTS[S, Ass, As, A]) SetPlayout(players simultaneous.Players[S, Ass, As, A]) {
 	m.LeafNodeEvaluator = func(state *S) (solver.Evals, error) {
 		final, err := m.gameLogic.Playout(players, *state)

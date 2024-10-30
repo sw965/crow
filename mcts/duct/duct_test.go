@@ -45,7 +45,7 @@ func TestDUCT(t *testing.T) {
 		return *rps1 == *rps2
 	}
 
-	placementJudger := func(rps *RockPaperScissors) (simultaneous.Placements, error) {
+	placementsJudger := func(rps *RockPaperScissors) (simultaneous.Placements, error) {
 		if rps.Hand1 == rps.Hand2 {
 			// 引き分けの場合は同順位
 			return simultaneous.Placements{1, 1}, nil
@@ -85,10 +85,10 @@ func TestDUCT(t *testing.T) {
 		LegalActionTableProvider: legalActionTableProvider,
 		Transitioner:             transitioner,
 		Comparator:               comparator,
-		PlacementJudger:          placementJudger,
+		PlacementsJudger:         placementsJudger,
 	}
 
-	gameLogic.SetStandardResultScoreEvaluator()
+	gameLogic.SetStandardResultScoresEvaluator()
 
 	mcts := duct.MCTS[RockPaperScissors, HandsSlice, Hands, Hand]{
 		NextNodesCap:           3,

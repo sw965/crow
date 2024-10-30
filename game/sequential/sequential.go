@@ -73,9 +73,9 @@ func (p PlacementPerAgent[G]) Validate() error {
 	return nil
 }
 
-type PlacementJudger[S any, G comparable] func(*S) (PlacementPerAgent[G], error)
+type PlacementsJudger[S any, G comparable] func(*S) (PlacementPerAgent[G], error)
 type ResultScorePerAgent[G comparable] map[G]float64
-type ResultScoreEvaluator[G comparable] func(PlacementPerAgent[G]) (ResultScorePerAgent[G], error)
+type ResultScoresEvaluator[G comparable] func(PlacementPerAgent[G]) (ResultScorePerAgent[G], error)
 
 type TotalResultScorePerAgent[G comparable] map[G]float64
 
@@ -99,21 +99,21 @@ func (ts TotalResultScorePerAgent[G]) ToAverage(n int) AverageResultScorePerAgen
 type AverageResultScorePerAgent[G comparable] map[G]float64
 
 type Logic[S any, As ~[]A, A, G comparable] struct {
-	LegalActionsProvider    LegalActionsProvider[S, As, A]
-	Transitioner            Transitioner[S, A]
-	Comparator              Comparator[S]
-	CurrentTurnAgentGetter  CurrentTurnAgentGetter[S, G]
-	PlacementJudger         PlacementJudger[S, G]
-	ResultScoreEvaluator    ResultScoreEvaluator[G]
+	LegalActionsProvider     LegalActionsProvider[S, As, A]
+	Transitioner             Transitioner[S, A]
+	Comparator               Comparator[S]
+	CurrentTurnAgentGetter   CurrentTurnAgentGetter[S, G]
+	PlacementsJudger         PlacementsJudger[S, G]
+	ResultScoresEvaluator    ResultScoresEvaluator[G]
 }
 
 func (l *Logic[S, As, A, G]) IsEnd(state *S) bool {
-	placements, _ := l.PlacementJudger(state)
+	placements, _ := l.PlacementsJudger(state)
 	return len(placements) != 0
 }
 
-func (l *Logic[S, As, A, G]) SetStandardResultScoreEvaluator() {
-	l.ResultScoreEvaluator = func(placements PlacementPerAgent[G]) (ResultScorePerAgent[G], error) {
+func (l *Logic[S, As, A, G]) SetStandardResultScoresEvaluator() {
+	l.ResultScoresEvaluator = func(placements PlacementPerAgent[G]) (ResultScorePerAgent[G], error) {
 		if err := placements.Validate(); err != nil {
 			return ResultScorePerAgent[G]{} , err
 		}
@@ -139,11 +139,11 @@ func (l *Logic[S, As, A, G]) SetStandardResultScoreEvaluator() {
 }
 
 func (l *Logic[S, As, A, G]) EvaluateResultScorePerAgent(state *S) (ResultScorePerAgent[G], error) {
-	placements, err := l.PlacementJudger(state)
+	placements, err := l.PlacementsJudger(state)
 	if err != nil {
 		return ResultScorePerAgent[G]{}, err
 	}
-	return l.ResultScoreEvaluator(placements)
+	return l.ResultScoresEvaluator(placements)
 }
 
 func (l *Logic[S, As, A, G]) NewRandActionPlayer(r *rand.Rand) Player[S, As, A] {
