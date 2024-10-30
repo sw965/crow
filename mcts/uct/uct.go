@@ -62,20 +62,8 @@ func (m *MCTS[S, As, A, G]) GetGameLogic() sequential.Logic[S, As, A, G]{
 	return m.gameLogic
 }
 
-func (m *MCTS[S, As, A, G]) NewNode(state *S) (*Node[S, As, A, G], error) {
-	policy := m.PolicyProvider(state, m.gameLogic.LegalActionsProvider(state))
-	if len(policy) == 0 {
-		return &Node[S, As, A, G]{}, fmt.Errorf("len(Policy) == 0 である為、新しくNodeを生成出来ません。")
-	}
-
-	um := ucb.Manager[As, A]{}
-	for a, p := range policy {
-		um[a] = &ucb.Calculator{Func: m.UCBFunc, P: p}
-	}
-
-	agent := m.gameLogic.CurrentTurnAgentGetter(state)
-	nextNodes := make(Nodes[S, As, A, G], 0, m.NextNodesCap)
-	return &Node[S, As, A, G]{State: *state, Agent: agent, UCBManager: um, NextNodes: nextNodes}, nil
+func (m *MCTS[S, As, A, G]) SetGameLogic(gl sequential.Logic[S, As, A, G]) {
+	m.gameLogic = gl
 }
 
 func (m *MCTS[S, As, A, G]) SetUniformPolicyProvider() {
@@ -99,6 +87,22 @@ func (m *MCTS[S, As, A, G]) SetRandPlayout(agents []G, r *rand.Rand) {
 		players[agent] = m.gameLogic.NewRandActionPlayer(r)
 	}
 	m.SetPlayout(players)
+}
+
+func (m *MCTS[S, As, A, G]) NewNode(state *S) (*Node[S, As, A, G], error) {
+	policy := m.PolicyProvider(state, m.gameLogic.LegalActionsProvider(state))
+	if len(policy) == 0 {
+		return &Node[S, As, A, G]{}, fmt.Errorf("len(Policy) == 0 である為、新しくNodeを生成出来ません。")
+	}
+
+	um := ucb.Manager[As, A]{}
+	for a, p := range policy {
+		um[a] = &ucb.Calculator{Func: m.UCBFunc, P: p}
+	}
+
+	agent := m.gameLogic.CurrentTurnAgentGetter(state)
+	nextNodes := make(Nodes[S, As, A, G], 0, m.NextNodesCap)
+	return &Node[S, As, A, G]{State: *state, Agent: agent, UCBManager: um, NextNodes: nextNodes}, nil
 }
 
 func (m *MCTS[S, As, A, G]) SelectExpansionBackward(node *Node[S, As, A, G], r *rand.Rand, capacity int) (int, error) {
