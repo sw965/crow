@@ -275,7 +275,7 @@ func NewMaxSelector[A comparable](r *rand.Rand) Selector[A] {
 	}
 }
 
-func NewNewThresholdWeightedSelector[A comparable](t float64, r *rand.Rand) Selector[A] {
+func NewThresholdWeightedSelector[A comparable](t float64, r *rand.Rand) Selector[A] {
 	return func(policy Policy[A]) A {
 		max := omwmath.Max(maps.Values(policy)...)
 		threshold := max * t
