@@ -116,11 +116,6 @@ type Logic[S any, As ~[]A, A, G comparable] struct {
 	ResultScoresEvaluator    ResultScoresEvaluator[G]
 }
 
-func (l *Logic[S, As, A, G]) IsEnd(state *S) bool {
-	placements, _ := l.PlacementsJudger(state)
-	return len(placements) != 0
-}
-
 func (l *Logic[S, As, A, G]) SetStandardResultScoresEvaluator() {
 	l.ResultScoresEvaluator = func(placements PlacementPerAgent[G]) (ResultScorePerAgent[G], error) {
 		if err := placements.Validate(); err != nil {
@@ -147,93 +142,17 @@ func (l *Logic[S, As, A, G]) SetStandardResultScoresEvaluator() {
 	}
 }
 
+func (l *Logic[S, As, A, G]) IsEnd(state *S) bool {
+	placements, _ := l.PlacementsJudger(state)
+	return len(placements) != 0
+}
+
 func (l *Logic[S, As, A, G]) EvaluateResultScorePerAgent(state *S) (ResultScorePerAgent[G], error) {
 	placements, err := l.PlacementsJudger(state)
 	if err != nil {
 		return ResultScorePerAgent[G]{}, err
 	}
 	return l.ResultScoresEvaluator(placements)
-}
-
-func (l *Logic[S, As, A, G]) Play(players PlayerPerAgent[S, As, A, G], state S, f func(*S) bool) (S, error) {
-	for {
-		isEnd := l.IsEnd(&state)
-		if isEnd || f(&state) {
-			break
-		}
-
-		agent := l.CurrentTurnAgentGetter(&state)
-		player := players[agent]
-		legalActions := l.LegalActionsProvider(&state)
-
-		action, err := player(&state, legalActions)
-		if err != nil {
-			var zero S
-			return zero, err
-		}
-
-		state, err = l.Transitioner(state, &action)
-		if err != nil {
-			var zero S
-			return zero, err
-		}
-	}
-	return state, nil
-}
-
-func (l *Logic[S, As, A, G]) Playout(players PlayerPerAgent[S, As, A, G], state S) (S, error) {
-	return l.Play(players, state, func(_ *S) bool { return false })
-}
-
-func (l *Logic[S, As, A, G]) ComparePlayerStrength(players PlayerPerAgent[S, As, A, G], gameNum int, state S) (AverageResultScorePerAgent[G], error) {
-	totals := TotalResultScorePerAgent[G]{}
-	for i := 0; i < gameNum; i++ {
-		final, err := l.Playout(players, state)
-		if err != nil {
-			return nil, err
-		}
-
-		scores, err := l.EvaluateResultScorePerAgent(&final)
-		if err != nil {
-			return nil, err
-		}
-		totals.Add(scores)
-	}
-	return totals.ToAverage(gameNum), nil
-}
-
-func (l *Logic[S, As, A, G]) GenerateEpisode(solvers SolverPerAgent[S, As, A, G], state S, capacity int) (S, Episode[S, As, A, G], error) {
-	episode := NewEpisode[S, As, A, G](capacity)
-	for {
-		isEnd := l.IsEnd(&state)
-		if isEnd {
-			break
-		}
-
-		agent := l.CurrentTurnAgentGetter(&state)
-		solver := solvers[agent]
-		legalActions := l.LegalActionsProvider(&state)
-
-		policy, eval, err := solver.ActorCritic(&state, legalActions)
-		if err != nil {
-			var zero S
-			return zero, Episode[S, As, A, G]{}, err
-		}
-		action := solver.Selector(policy)
-
-		episode.States = append(episode.States, state)
-		episode.Agents = append(episode.Agents, agent)
-		episode.Actions = append(episode.Actions, action)
-		episode.Policies = append(episode.Policies, policy)
-		episode.Evals = append(episode.Evals, eval)
-
-		state, err = l.Transitioner(state, &action)
-		if err != nil {
-			var zero S
-			return zero, Episode[S, As, A, G]{}, err
-		}
-	}
-	return state, episode, nil
 }
 
 type Policy[A comparable] map[A]float64
@@ -300,7 +219,7 @@ type Solver[S any, As ~[]A, A comparable] struct {
 
 type SolverPerAgent[S any, As ~[]A, A, G comparable] map[G]*Solver[S, As, A]
 
-type Episode[S any, As ~[]A, A, G comparable] struct {
+type SolverEpisode[S any, As ~[]A, A, G comparable] struct {
 	States   []S
 	Agents   []G
 	Actions  As
@@ -308,20 +227,112 @@ type Episode[S any, As ~[]A, A, G comparable] struct {
 	Evals    []Eval
 }
 
-func NewEpisode[S any, As ~[]A, A, G comparable](c int) Episode[S, As, A, G] {
-	return Episode[S, As, A, G]{
-		States:make([]S, 0, c),
-		Agents:make([]G, 0, c),
-		Actions:make(As, 0, c),
-		Policies:make([]Policy[A], 0, c),
-		Evals:make([]Eval, 0, c),
+func NewSolverEpisode[S any, As ~[]A, A, G comparable](capacity int) SolverEpisode[S, As, A, G] {
+	return SolverEpisode[S, As, A, G]{
+		States:make([]S, 0, capacity),
+		Agents:make([]G, 0, capacity),
+		Actions:make(As, 0, capacity),
+		Policies:make([]Policy[A], 0, capacity),
+		Evals:make([]Eval, 0, capacity),
 	}
 }
 
-func (e *Episode[S, As, A, G]) Append(other *Episode[S, As, A, G]) {
+func (e *SolverEpisode[S, As, A, G]) Append(other *SolverEpisode[S, As, A, G]) {
 	e.States = append(e.States, other.States...)
 	e.Agents = append(e.Agents, other.Agents...)
 	e.Actions = append(e.Actions, other.Actions...)
 	e.Policies = append(e.Policies, other.Policies...)
 	e.Evals = append(e.Evals, other.Evals...)
+}
+
+type Game[S any, As ~[]A, A, G comparable] struct {
+	Logic          Logic[S, As, A, G]
+	PlayerPerAgent PlayerPerAgent[S, As, A, G]
+	SolverPerAgent SolverPerAgent[S, As, A, G]
+	Rand           *rand.Rand
+}
+
+func (g *Game[S, As, A, G]) GetCurrentPlayer(state *S) Player[S, As, A] {
+	agent := g.Logic.CurrentTurnAgentGetter(state)
+	return g.PlayerPerAgent[agent]
+}
+
+func (g *Game[S, As, A, G]) Play(state S, f func(*S) bool) (S, error) {
+	for {
+		isEnd := g.Logic.IsEnd(&state)
+		if isEnd || f(&state) {
+			break
+		}
+
+		player := g.GetCurrentPlayer(&state)
+		legalActions := g.Logic.LegalActionsProvider(&state)
+
+		action, err := player(&state, legalActions)
+		if err != nil {
+			var zero S
+			return zero, err
+		}
+
+		state, err = g.Logic.Transitioner(state, &action)
+		if err != nil {
+			var zero S
+			return zero, err
+		}
+	}
+	return state, nil
+}
+
+func (g *Game[S, As, A, G]) Playout(state S) (S, error) {
+	return g.Play(state, func(_ *S) bool { return false })
+}
+
+func (g *Game[S, As, A, G]) ComparePlayerStrength(state S, gameNum int) (AverageResultScorePerAgent[G], error) {
+	totals := TotalResultScorePerAgent[G]{}
+	for i := 0; i < gameNum; i++ {
+		final, err := g.Playout(state)
+		if err != nil {
+			return nil, err
+		}
+
+		scores, err := g.Logic.EvaluateResultScorePerAgent(&final)
+		if err != nil {
+			return nil, err
+		}
+		totals.Add(scores)
+	}
+	return totals.ToAverage(gameNum), nil
+}
+
+func (g *Game[S, As, A, G]) GenerateSolverEpisode(state S, capacity int) (S, SolverEpisode[S, As, A, G], error) {
+	episode := NewSolverEpisode[S, As, A, G](capacity)
+	for {
+		isEnd := g.Logic.IsEnd(&state)
+		if isEnd {
+			break
+		}
+
+		agent := g.Logic.CurrentTurnAgentGetter(&state)
+		solver := g.SolverPerAgent[agent]
+		legalActions := g.Logic.LegalActionsProvider(&state)
+
+		policy, eval, err := solver.ActorCritic(&state, legalActions)
+		if err != nil {
+			var zero S
+			return zero, SolverEpisode[S, As, A, G]{}, err
+		}
+		action := solver.Selector(policy)
+
+		episode.States = append(episode.States, state)
+		episode.Agents = append(episode.Agents, agent)
+		episode.Actions = append(episode.Actions, action)
+		episode.Policies = append(episode.Policies, policy)
+		episode.Evals = append(episode.Evals, eval)
+
+		state, err = g.Logic.Transitioner(state, &action)
+		if err != nil {
+			var zero S
+			return zero, SolverEpisode[S, As, A, G]{}, err
+		}
+	}
+	return state, episode, nil
 }

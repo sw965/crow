@@ -50,46 +50,38 @@ func (ss selectionInfoSlice[S, As, A, G]) Backward(evals game.EvalPerAgent[G]) {
 }
 
 type Engine[S any, As ~[]A, A, G comparable] struct {
-	gameLogic         game.Logic[S, As, A, G]
+	game              game.Game[S, As, A, G]
 	UCBFunc           ucb.Func
 	PolicyProvider    game.PolicyProvider[S, As, A]
 	LeafNodeEvaluator LeafNodeEvaluator[S, G]
 	NextNodesCap      int
 }
 
-func (e *Engine[S, As, A, G]) GetGameLogic() game.Logic[S, As, A, G]{
-	return e.gameLogic
+func (e *Engine[S, As, A, G]) GetGame() game.Game[S, As, A, G]{
+	return e.game
 }
 
-func (e *Engine[S, As, A, G]) SetGameLogic(gl game.Logic[S, As, A, G]) {
-	e.gameLogic = gl
+func (e *Engine[S, As, A, G]) SetGame(g game.Game[S, As, A, G]) {
+	e.game = g
 }
 
 func (e *Engine[S, As, A, G]) SetUniformPolicyProvider() {
 	e.PolicyProvider = game.UniformPolicyProvider[S, As, A]
 }
 
-func (e *Engine[S, As, A, G]) SetPlayout(players game.PlayerPerAgent[S, As, A, G]) {
+func (e *Engine[S, As, A, G]) SetPlayout() {
 	e.LeafNodeEvaluator = func(state *S) (game.EvalPerAgent[G], error) {
-		final, err := e.gameLogic.Playout(players, *state)
+		final, err := e.game.Playout(*state)
 		if err != nil {
 			return game.EvalPerAgent[G]{}, err
 		}
-		scores, err := e.gameLogic.EvaluateResultScorePerAgent(&final)
+		scores, err := e.game.Logic.EvaluateResultScorePerAgent(&final)
 		return scores.ToEval(), err
 	}
 }
 
-func (e *Engine[S, As, A, G]) SetRandPlayout(agents []G, r *rand.Rand) {
-	players := game.PlayerPerAgent[S, As, A, G]{}
-	for _, agent := range agents {
-		players[agent] = game.NewRandActionPlayer[S, As](r)
-	}
-	e.SetPlayout(players)
-}
-
 func (e *Engine[S, As, A, G]) NewNode(state *S) (*Node[S, As, A, G], error) {
-	policy := e.PolicyProvider(state, e.gameLogic.LegalActionsProvider(state))
+	policy := e.PolicyProvider(state, e.game.Logic.LegalActionsProvider(state))
 	if len(policy) == 0 {
 		return &Node[S, As, A, G]{}, fmt.Errorf("len(Policy) == 0 である為、新しくNodeを生成出来ません。")
 	}
@@ -99,12 +91,12 @@ func (e *Engine[S, As, A, G]) NewNode(state *S) (*Node[S, As, A, G], error) {
 		um[a] = &ucb.Calculator{Func: e.UCBFunc, P: p}
 	}
 
-	agent := e.gameLogic.CurrentTurnAgentGetter(state)
+	agent := e.game.Logic.CurrentTurnAgentGetter(state)
 	nextNodes := make(Nodes[S, As, A, G], 0, e.NextNodesCap)
 	return &Node[S, As, A, G]{State: *state, Agent: agent, UCBManager: um, NextNodes: nextNodes}, nil
 }
 
-func (e *Engine[S, As, A, G]) SelectExpansionBackward(node *Node[S, As, A, G], r *rand.Rand, capacity int) (int, error) {
+func (e *Engine[S, As, A, G]) SelectExpansionBackward(node *Node[S, As, A, G], capacity int, r *rand.Rand) (int, error) {
 	state := node.State
 	selections := make(selectionInfoSlice[S, As, A, G], 0, capacity)
 	var err error
@@ -113,16 +105,16 @@ func (e *Engine[S, As, A, G]) SelectExpansionBackward(node *Node[S, As, A, G], r
 		action := omwrand.Choice(node.UCBManager.MaxKeys(), r)
 		selections = append(selections, selectionInfo[S, As, A, G]{node: node, action: action})
 
-		state, err = e.gameLogic.Transitioner(state, &action)
+		state, err = e.game.Logic.Transitioner(state, &action)
 		if err != nil {
 			return 0, err
 		}
 
-		if isEnd := e.gameLogic.IsEnd(&state); isEnd {
+		if isEnd := e.game.Logic.IsEnd(&state); isEnd {
 			break
 		}
 
-		nextNode, ok := node.NextNodes.FindByState(&state, e.gameLogic.Comparator)
+		nextNode, ok := node.NextNodes.FindByState(&state, e.game.Logic.Comparator)
 		if !ok {
 			//expansion
 			nextNode, err = e.NewNode(&state)
@@ -141,7 +133,7 @@ func (e *Engine[S, As, A, G]) SelectExpansionBackward(node *Node[S, As, A, G], r
 	return len(selections), err
 }
 
-func (e *Engine[S, As, A, G]) Search(simulation int, rootNode *Node[S, As, A, G], r *rand.Rand) error {
+func (e *Engine[S, As, A, G]) Search(rootNode *Node[S, As, A, G], simulation int, r *rand.Rand) error {
 	if e.NextNodesCap <= 0 {
 		return fmt.Errorf("Engine.NextNodesCap > 0 でなければなりません。")
 	}
@@ -149,7 +141,7 @@ func (e *Engine[S, As, A, G]) Search(simulation int, rootNode *Node[S, As, A, G]
 	var err error
 	for i := 0; i < simulation; i++ {
 		capacity := depth + 1
-		depth, err = e.SelectExpansionBackward(rootNode, r, capacity)
+		depth, err = e.SelectExpansionBackward(rootNode, capacity, r)
 		if err != nil {
 			return err
 		}
@@ -165,7 +157,7 @@ func (e *Engine[S, As, A, G]) NewPlayer(simulation int, r *rand.Rand) game.Playe
 			return zero, err
 		}
 
-		err = e.Search(simulation, rootNode, r)
+		err = e.Search(rootNode, simulation, r)
 		if err != nil {
 			var zero A
 			return zero, err
@@ -183,7 +175,7 @@ func (e *Engine[S, As, A, G]) NewActorCritic(simulation int, r *rand.Rand) game.
 			return nil, 0.0, err			
 		}
 
-		err = e.Search(simulation, rootNode, r)
+		err = e.Search(rootNode, simulation, r)
 		if err != nil {
 			return nil, 0.0, err
 		}
