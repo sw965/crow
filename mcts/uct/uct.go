@@ -50,18 +50,18 @@ func (ss selectionInfoSlice[S, As, A, G]) Backward(evals game.EvalPerAgent[G]) {
 }
 
 type Engine[S any, As ~[]A, A, G comparable] struct {
-	game              game.Game[S, As, A, G]
+	game              game.Engine[S, As, A, G]
 	UCBFunc           ucb.Func
 	PolicyProvider    game.PolicyProvider[S, As, A]
 	LeafNodeEvaluator LeafNodeEvaluator[S, G]
 	NextNodesCap      int
 }
 
-func (e *Engine[S, As, A, G]) GetGame() game.Game[S, As, A, G]{
+func (e *Engine[S, As, A, G]) GetGame() game.Engine[S, As, A, G]{
 	return e.game
 }
 
-func (e *Engine[S, As, A, G]) SetGame(g game.Game[S, As, A, G]) {
+func (e *Engine[S, As, A, G]) SetGame(g game.Engine[S, As, A, G]) {
 	e.game = g
 }
 
@@ -147,48 +147,4 @@ func (e *Engine[S, As, A, G]) Search(rootNode *Node[S, As, A, G], simulation int
 		}
 	}
 	return nil
-}
-
-func (e *Engine[S, As, A, G]) NewPlayer(simulation int, r *rand.Rand) game.Player[S, As, A] {
-	return func(state *S, _ As) (A, error) {
-		rootNode, err := e.NewNode(state)
-		if err != nil {
-			var zero A
-			return zero, err
-		}
-
-		err = e.Search(rootNode, simulation, r)
-		if err != nil {
-			var zero A
-			return zero, err
-		}
-
-		action := rootNode.UCBManager.RandMaxTrialKey(r)
-		return action, nil
-	}
-}
-
-func (e *Engine[S, As, A, G]) NewActorCritic(simulation int, r *rand.Rand) game.ActorCritic[S, As, A] {
-	return func(state *S, _ As) (game.Policy[A], game.Eval, error) {
-		rootNode, err := e.NewNode(state)
-		if err != nil {
-			return nil, 0.0, err			
-		}
-
-		err = e.Search(rootNode, simulation, r)
-		if err != nil {
-			return nil, 0.0, err
-		}
-
-		posterior := game.Policy[A](rootNode.UCBManager.TrialPercentPerKey())
-		avg := rootNode.UCBManager.AverageValue()
-		return posterior, game.Eval(avg), nil
-	}
-}
-
-func (e *Engine[S, As, A, G]) NewSolver(simulation int, t float64, r *rand.Rand) game.Solver[S, As, A] {
-	return game.Solver[S, As, A]{
-		ActorCritic:e.NewActorCritic(simulation, r),
-		Selector:game.NewThresholdWeightedSelector[A](t, r),
-	}
 }
