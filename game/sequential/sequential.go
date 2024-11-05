@@ -86,25 +86,6 @@ func (r ResultScorePerAgent[G]) ToEval() EvalPerAgent[G] {
 
 type ResultScoresEvaluator[G comparable] func(PlacementPerAgent[G]) (ResultScorePerAgent[G], error)
 
-type TotalResultScorePerAgent[G comparable] map[G]float64
-
-func(ts TotalResultScorePerAgent[G]) Add(scores ResultScorePerAgent[G]) {
-	for k, v := range scores {
-		if _, ok := ts[k]; !ok {
-			ts[k] = 0
-		}
-		ts[k] += v
-	}
-}
-
-func (ts TotalResultScorePerAgent[G]) ToAverage(n int) AverageResultScorePerAgent[G] {
-	avgs := AverageResultScorePerAgent[G]{}
-	for k, v := range ts {
-		avgs[k] = v / float64(n)
-	}
-	return avgs
-}
-
 type AverageResultScorePerAgent[G comparable] map[G]float64
 
 type Logic[S any, As ~[]A, A, G comparable] struct {
@@ -142,17 +123,17 @@ func (l *Logic[S, As, A, G]) SetStandardResultScoresEvaluator() {
 	}
 }
 
-func (l *Logic[S, As, A, G]) IsEnd(state *S) bool {
-	placements, _ := l.PlacementsJudger(state)
-	return len(placements) != 0
-}
-
 func (l *Logic[S, As, A, G]) EvaluateResultScorePerAgent(state *S) (ResultScorePerAgent[G], error) {
 	placements, err := l.PlacementsJudger(state)
 	if err != nil {
 		return ResultScorePerAgent[G]{}, err
 	}
 	return l.ResultScoresEvaluator(placements)
+}
+
+func (l *Logic[S, As, A, G]) IsEnd(state *S) bool {
+	placements, _ := l.PlacementsJudger(state)
+	return len(placements) != 0
 }
 
 type Policy[A comparable] map[A]float64
@@ -181,17 +162,23 @@ type PlayerPerAgent[S any, As ~[]A, A, G comparable] map[G]Player[S, As, A]
 type Eval float64
 type EvalPerAgent[G comparable] map[G]Eval
 
-type ActorCritic[S any, As ~[]A, A comparable] func(*S, As) (Policy[A], Eval, error)
 type Selector[A comparable] func(Policy[A]) A
 
-func NewMaxSelector[A comparable](r *rand.Rand) Selector[A] {
-	return func(policy Policy[A]) A {
-		ks := maps.Keys(policy)
-		vs := maps.Values(policy)
+func NewEpsilonGreedySelector[A comparable](e float64, r *rand.Rand) Selector[A] {
+	return func(p Policy[A]) A {
+		ks := maps.Keys(p)
+		if e > r.Float64() {
+			return omwrand.Choice(ks, r)
+		}
+		vs := maps.Values(p)
 		idxs := omwslices.MaxIndices(vs)
 		idx := omwrand.Choice(idxs, r)
 		return ks[idx]
 	}
+}
+
+func NewMaxSelector[A comparable](r *rand.Rand) Selector[A] {
+	return NewEpsilonGreedySelector[A](0.0, r)
 }
 
 func NewThresholdWeightedSelector[A comparable](t float64, r *rand.Rand) Selector[A] {
@@ -212,60 +199,25 @@ func NewThresholdWeightedSelector[A comparable](t float64, r *rand.Rand) Selecto
 	}
 }
 
-type Solver[S any, As ~[]A, A comparable] struct {
-	ActorCritic ActorCritic[S, As, A]
-	Selector    Selector[A]
-}
-
-type SolverPerAgent[S any, As ~[]A, A, G comparable] map[G]*Solver[S, As, A]
-
-type SolverEpisode[S any, As ~[]A, A, G comparable] struct {
-	States   []S
-	Agents   []G
-	Actions  As
-	Policies []Policy[A]
-	Evals    []Eval
-}
-
-func NewSolverEpisode[S any, As ~[]A, A, G comparable](capacity int) SolverEpisode[S, As, A, G] {
-	return SolverEpisode[S, As, A, G]{
-		States:make([]S, 0, capacity),
-		Agents:make([]G, 0, capacity),
-		Actions:make(As, 0, capacity),
-		Policies:make([]Policy[A], 0, capacity),
-		Evals:make([]Eval, 0, capacity),
-	}
-}
-
-func (e *SolverEpisode[S, As, A, G]) Append(other *SolverEpisode[S, As, A, G]) {
-	e.States = append(e.States, other.States...)
-	e.Agents = append(e.Agents, other.Agents...)
-	e.Actions = append(e.Actions, other.Actions...)
-	e.Policies = append(e.Policies, other.Policies...)
-	e.Evals = append(e.Evals, other.Evals...)
-}
-
-type Game[S any, As ~[]A, A, G comparable] struct {
+type Engine[S any, As ~[]A, A, G comparable] struct {
 	Logic          Logic[S, As, A, G]
 	PlayerPerAgent PlayerPerAgent[S, As, A, G]
-	SolverPerAgent SolverPerAgent[S, As, A, G]
-	Rand           *rand.Rand
 }
 
-func (g *Game[S, As, A, G]) GetCurrentPlayer(state *S) Player[S, As, A] {
-	agent := g.Logic.CurrentTurnAgentGetter(state)
-	return g.PlayerPerAgent[agent]
+func (e *Engine[S, As, A, G]) GetCurrentPlayer(state *S) Player[S, As, A] {
+	agent := e.Logic.CurrentTurnAgentGetter(state)
+	return e.PlayerPerAgent[agent]
 }
 
-func (g *Game[S, As, A, G]) Play(state S, f func(*S) bool) (S, error) {
+func (e *Engine[S, As, A, G]) Play(state S, f func(*S) bool) (S, error) {
 	for {
-		isEnd := g.Logic.IsEnd(&state)
+		isEnd := e.Logic.IsEnd(&state)
 		if isEnd || f(&state) {
 			break
 		}
 
-		player := g.GetCurrentPlayer(&state)
-		legalActions := g.Logic.LegalActionsProvider(&state)
+		player := e.GetCurrentPlayer(&state)
+		legalActions := e.Logic.LegalActionsProvider(&state)
 
 		action, err := player(&state, legalActions)
 		if err != nil {
@@ -273,7 +225,7 @@ func (g *Game[S, As, A, G]) Play(state S, f func(*S) bool) (S, error) {
 			return zero, err
 		}
 
-		state, err = g.Logic.Transitioner(state, &action)
+		state, err = e.Logic.Transitioner(state, &action)
 		if err != nil {
 			var zero S
 			return zero, err
@@ -282,57 +234,25 @@ func (g *Game[S, As, A, G]) Play(state S, f func(*S) bool) (S, error) {
 	return state, nil
 }
 
-func (g *Game[S, As, A, G]) Playout(state S) (S, error) {
-	return g.Play(state, func(_ *S) bool { return false })
+func (e *Engine[S, As, A, G]) Playout(state S) (S, error) {
+	return e.Play(state, func(_ *S) bool { return false })
 }
 
-func (g *Game[S, As, A, G]) ComparePlayerStrength(state S, gameNum int) (AverageResultScorePerAgent[G], error) {
-	totals := TotalResultScorePerAgent[G]{}
-	for i := 0; i < gameNum; i++ {
-		final, err := g.Playout(state)
+func (e *Engine[S, As, A, G]) ComparePlayerStrength(state S, n int) (AverageResultScorePerAgent[G], error) {
+	avgs := AverageResultScorePerAgent[G]{}
+	for i := 0; i < n; i++ {
+		final, err := e.Playout(state)
 		if err != nil {
 			return nil, err
 		}
 
-		scores, err := g.Logic.EvaluateResultScorePerAgent(&final)
+		scores, err := e.Logic.EvaluateResultScorePerAgent(&final)
 		if err != nil {
 			return nil, err
 		}
-		totals.Add(scores)
-	}
-	return totals.ToAverage(gameNum), nil
-}
-
-func (g *Game[S, As, A, G]) GenerateSolverEpisode(state S, capacity int) (S, SolverEpisode[S, As, A, G], error) {
-	episode := NewSolverEpisode[S, As, A, G](capacity)
-	for {
-		isEnd := g.Logic.IsEnd(&state)
-		if isEnd {
-			break
-		}
-
-		agent := g.Logic.CurrentTurnAgentGetter(&state)
-		solver := g.SolverPerAgent[agent]
-		legalActions := g.Logic.LegalActionsProvider(&state)
-
-		policy, eval, err := solver.ActorCritic(&state, legalActions)
-		if err != nil {
-			var zero S
-			return zero, SolverEpisode[S, As, A, G]{}, err
-		}
-		action := solver.Selector(policy)
-
-		episode.States = append(episode.States, state)
-		episode.Agents = append(episode.Agents, agent)
-		episode.Actions = append(episode.Actions, action)
-		episode.Policies = append(episode.Policies, policy)
-		episode.Evals = append(episode.Evals, eval)
-
-		state, err = g.Logic.Transitioner(state, &action)
-		if err != nil {
-			var zero S
-			return zero, SolverEpisode[S, As, A, G]{}, err
+		for k, v := range scores {
+			avgs[k] += v
 		}
 	}
-	return state, episode, nil
+	return avgs, nil
 }
