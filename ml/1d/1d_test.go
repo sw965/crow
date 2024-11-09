@@ -1,9 +1,9 @@
-package mlfuncs1d_test
+package ml1d_test
 
 import (
 	"fmt"
-	"github.com/sw965/crow/mlfuncs/1d"
-	"github.com/sw965/crow/mlfuncs/scalar"
+	"github.com/sw965/crow/ml/1d"
+	"github.com/sw965/crow/ml/scalar"
 	"github.com/sw965/crow/tensor"
 	omwmath "github.com/sw965/omw/math"
 	omwrand "github.com/sw965/omw/math/rand"
@@ -20,8 +20,8 @@ func TestParamReLUDerivative(test *testing.T) {
 	alpha := omwrand.Float64Uniform(min, max, r)
 
 	loss := func(x tensor.D1, alpha float64) float64 {
-		y := mlfuncs1d.LeakyReLU(x, alpha)
-		ret, err := mlfuncs1d.MeanSquaredError(y, t)
+		y := ml1d.LeakyReLU(x, alpha)
+		ret, err := ml1d.MeanSquaredError(y, t)
 		if err != nil {
 			panic(err)
 		}
@@ -30,14 +30,14 @@ func TestParamReLUDerivative(test *testing.T) {
 	lossX := func(x tensor.D1) float64 { return loss(x, alpha) }
 	lossAlpha := func(alpha float64) float64 { return loss(x, alpha) }
 
-	numGradX := mlfuncs1d.NumericalDifferentiation(x, lossX)
+	numGradX := ml1d.NumericalDifferentiation(x, lossX)
 	numGradAlpha := scalar.NumericalDifferentiation(alpha, lossAlpha)
 
-	dLdy, err := mlfuncs1d.MeanSquaredErrorDerivative(mlfuncs1d.LeakyReLU(x, alpha), t)
+	dLdy, err := ml1d.MeanSquaredErrorDerivative(ml1d.LeakyReLU(x, alpha), t)
 	if err != nil {
 		panic(err)
 	}
-	dydx, dydVectorizedGradAlpha := mlfuncs1d.ParamReLUDerivative(x, alpha)
+	dydx, dydVectorizedGradAlpha := ml1d.ParamReLUDerivative(x, alpha)
 	vectorizedGradAlpha, err := tensor.D1Mul(dydVectorizedGradAlpha, dLdy)
 	if err != nil {
 		panic(err)
@@ -64,8 +64,8 @@ func TestL2RegularizationDerivative(test *testing.T) {
 	w := tensor.NewD1RandUniform(n, min, max, r)
 	c := 0.01
 
-	numGrad := mlfuncs1d.NumericalDifferentiation(w, mlfuncs1d.L2Regularization(c))
-	grad := mlfuncs1d.L2RegularizationDerivative(c)(w)
+	numGrad := ml1d.NumericalDifferentiation(w, ml1d.L2Regularization(c))
+	grad := ml1d.L2RegularizationDerivative(c)(w)
 	diff, err := tensor.D1Sub(numGrad, grad)
 	if err != nil {
 		panic(err)

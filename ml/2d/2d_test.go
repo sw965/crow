@@ -1,9 +1,9 @@
-package mlfuncs2d_test
+package ml2d_test
 
 import (
 	"fmt"
-	"github.com/sw965/crow/mlfuncs/1d"
-	"github.com/sw965/crow/mlfuncs/2d"
+	"github.com/sw965/crow/ml/1d"
+	"github.com/sw965/crow/ml/2d"
 	"github.com/sw965/crow/tensor"
 	omwrand "github.com/sw965/omw/math/rand"
 	"math"
@@ -20,11 +20,11 @@ func TestLinearSumDerivative(test *testing.T) {
 	t := tensor.NewD1RandUniform(r, min, max, rng)
 
 	lossFunc := func(x, w tensor.D2, b tensor.D1) float64 {
-		y, err := mlfuncs2d.LinearSum(x, w, b)
+		y, err := ml2d.LinearSum(x, w, b)
 		if err != nil {
 			panic(err)
 		}
-		loss, err := mlfuncs1d.MeanSquaredError(y, t)
+		loss, err := ml1d.MeanSquaredError(y, t)
 		if err != nil {
 			panic(err)
 		}
@@ -35,21 +35,21 @@ func TestLinearSumDerivative(test *testing.T) {
 	wLossFunc := func(w tensor.D2) float64 { return lossFunc(x, w, b) }
 	bLossFunc := func(b tensor.D1) float64 { return lossFunc(x, w, b) }
 
-	numGradX := mlfuncs2d.NumericalDifferentiation(x, xLossFunc)
-	numGradW := mlfuncs2d.NumericalDifferentiation(w, wLossFunc)
-	numGradB := mlfuncs1d.NumericalDifferentiation(b, bLossFunc)
+	numGradX := ml2d.NumericalDifferentiation(x, xLossFunc)
+	numGradW := ml2d.NumericalDifferentiation(w, wLossFunc)
+	numGradB := ml1d.NumericalDifferentiation(b, bLossFunc)
 
-	y, err := mlfuncs2d.LinearSum(x, w, b)
+	y, err := ml2d.LinearSum(x, w, b)
 	if err != nil {
 		panic(err)
 	}
 
-	lossGrad, err := mlfuncs1d.MeanSquaredErrorDerivative(y, t)
+	lossGrad, err := ml1d.MeanSquaredErrorDerivative(y, t)
 	if err != nil {
 		panic(err)
 	}
 
-	gradX, gradW, gradB, err := mlfuncs2d.LinearSumDerivative(x, w)
+	gradX, gradW, gradB, err := ml2d.LinearSumDerivative(x, w)
 	if err != nil {
 		panic(err)
 	}

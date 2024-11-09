@@ -18,7 +18,8 @@ func TestModel(t *testing.T) {
 	h2 := 32
 	yn := 10
 
-	affine, _ := model1d.NewStandardAffine(xn, h1, h2, yn, 0.0001, r)
+	affine, _ := model1d.NewSoftmaxAffine([]int{xn, h1, h2, yn}, 0.0001, r)
+	affine.MaxGradL2Norm = 50
 	mnist, err := dataset.LoadFlatMnist()
 	if err != nil {
 		panic(err)
@@ -31,12 +32,16 @@ func TestModel(t *testing.T) {
 
 	for i := 0; i < trainNum; i++ {
 		idx := r.Intn(trainImgNum)
-		affine.SGD(mnist.TrainImg[idx], mnist.TrainLabel[idx], 0.01)
+		err := affine.UpdateGrad(mnist.TrainImg[idx], mnist.TrainLabel[idx])
+		if err != nil {
+			panic(err)
+		}
+		affine.SGD(0.01)
 		if i%196 == 0 {
 			//affine.ValidateBackwardAndNumericalGradientDifference(mnist.TrainImg[idx], mnist.TrainLabel[idx])
-			idxs := omwrand.IntsUniform(testSize, 0, testImgNum, r)
-			miniBatchTestImg := omwslices.IndicesAccess(mnist.TestImg, idxs...)
-			miniBatchTestLabel := omwslices.IndicesAccess(mnist.TestLabel, idxs...)
+			idxs := omwrand.Ints(testSize, 0, testImgNum, r)
+			miniBatchTestImg := omwslices.ElementsByIndices(mnist.TestImg, idxs...)
+			miniBatchTestLabel := omwslices.ElementsByIndices(mnist.TestLabel, idxs...)
 			loss, err := affine.MeanLoss(miniBatchTestImg, miniBatchTestLabel)
 			if err != nil {
 				panic(err)
@@ -55,7 +60,7 @@ func TestLinearSum(test *testing.T) {
 	r := omwrand.NewMt19937()
 	xn := 10
 	yn := 1
-	linearSum, _ := model1d.NewStandardLinearSum(xn, 0.001)
+	linearSum, _ := model1d.NewSigmoidLinearSum(xn, 0.001)
 	x := tensor.NewD1RandUniform(xn, -5.0, 5.0, r)
 	t := tensor.NewD1RandUniform(yn, 0.0, 1.0, r)
 	linearSum.ValidateBackwardAndNumericalGradientDifference(x, t)

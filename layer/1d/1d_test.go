@@ -3,8 +3,8 @@ package layer1d_test
 import (
 	"fmt"
 	"github.com/sw965/crow/layer/1d"
-	"github.com/sw965/crow/mlfuncs/1d"
-	"github.com/sw965/crow/mlfuncs/2d"
+	"github.com/sw965/crow/ml/1d"
+	"github.com/sw965/crow/ml/2d"
 	"github.com/sw965/crow/tensor"
 	omwrand "github.com/sw965/omw/math/rand"
 	"math"
@@ -29,7 +29,7 @@ func TestAffineForward(test *testing.T) {
 		if err != nil {
 			panic(err)
 		}
-		l, err := mlfuncs1d.MeanSquaredError(y, t)
+		l, err := ml1d.MeanSquaredError(y, t)
 		if err != nil {
 			panic(err)
 		}
@@ -40,9 +40,9 @@ func TestAffineForward(test *testing.T) {
 	lossW := func(w tensor.D2) float64 { return loss(x, w, b) }
 	lossB := func(b tensor.D1) float64 { return loss(x, w, b) }
 
-	numGradX := mlfuncs1d.NumericalDifferentiation(x, lossX)
-	numGradW := mlfuncs2d.NumericalDifferentiation(w, lossW)
-	numGradB := mlfuncs1d.NumericalDifferentiation(b, lossB)
+	numGradX := ml1d.NumericalDifferentiation(x, lossX)
+	numGradW := ml2d.NumericalDifferentiation(w, lossW)
+	numGradB := ml1d.NumericalDifferentiation(b, lossB)
 
 	forwards := layer1d.Forwards{
 		layer1d.NewAffineForward(w, b, gradW, gradB),
@@ -52,7 +52,7 @@ func TestAffineForward(test *testing.T) {
 		panic(err)
 	}
 
-	chain, err := mlfuncs1d.MeanSquaredErrorDerivative(y, t)
+	chain, err := ml1d.MeanSquaredErrorDerivative(y, t)
 	if err != nil {
 		panic(err)
 	}

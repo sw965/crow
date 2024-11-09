@@ -2,8 +2,9 @@ package layer1d
 
 import (
 	"fmt"
-	"github.com/sw965/crow/mlfuncs/1d"
+	"github.com/sw965/crow/ml/1d"
 	"github.com/sw965/crow/tensor"
+	"github.com/sw965/omw/fn"
 	omwmath "github.com/sw965/omw/math"
 	omwslices "github.com/sw965/omw/slices"
 	"math/rand"
@@ -66,10 +67,10 @@ func NewAffineForward(w tensor.D2, b tensor.D1, gradW tensor.D2, gradB tensor.D1
 
 func NewReLUForward() Forward {
 	return func(x tensor.D1, backwards Backwards) (tensor.D1, Backwards, error) {
-		y := mlfuncs1d.ReLU(x)
+		y := ml1d.ReLU(x)
 		var backward Backward
 		backward = func(chain tensor.D1) (tensor.D1, error) {
-			dydx := mlfuncs1d.ReLUDerivative(x)
+			dydx := ml1d.ReLUDerivative(x)
 			// ∂L/∂x
 			dx, err := tensor.D1Mul(dydx, chain)
 			return dx, err
@@ -81,10 +82,10 @@ func NewReLUForward() Forward {
 
 func NewLeakyReLUForward(alpha float64) Forward {
 	return func(x tensor.D1, backwards Backwards) (tensor.D1, Backwards, error) {
-		y := mlfuncs1d.LeakyReLU(x, alpha)
+		y := ml1d.LeakyReLU(x, alpha)
 		var backward Backward
 		backward = func(chain tensor.D1) (tensor.D1, error) {
-			dydx := mlfuncs1d.LeakyReLUDerivative(x, alpha)
+			dydx := ml1d.LeakyReLUDerivative(x, alpha)
 			dx, err := tensor.D1Mul(dydx, chain)
 			return dx, err
 		}
@@ -95,10 +96,10 @@ func NewLeakyReLUForward(alpha float64) Forward {
 
 func NewParamReLUForward(alpha, gradAlpha *float64) Forward {
 	return func(x tensor.D1, backwards Backwards) (tensor.D1, Backwards, error) {
-		y := mlfuncs1d.LeakyReLU(x, *alpha)
+		y := ml1d.LeakyReLU(x, *alpha)
 		var backward Backward
 		backward = func(chain tensor.D1) (tensor.D1, error) {
-			dydx, dydVectorizedAlpha := mlfuncs1d.ParamReLUDerivative(x, *alpha)
+			dydx, dydVectorizedAlpha := ml1d.ParamReLUDerivative(x, *alpha)
 
 			// ∂L/∂dVectorizedAlpha
 			dVectorizedAlpha, err := tensor.D1Mul(dydVectorizedAlpha, chain)
@@ -119,10 +120,10 @@ func NewParamReLUForward(alpha, gradAlpha *float64) Forward {
 
 func NewRandReLUForward(min, max float64, isTrain *bool, r *rand.Rand) Forward {
 	return func(x tensor.D1, backwards Backwards) (tensor.D1, Backwards, error) {
-		y, noise := mlfuncs1d.RandReLU(x, min, max, *isTrain, r)
+		y, noise := ml1d.RandReLU(x, min, max, *isTrain, r)
 		var backward Backward
 		backward = func(chain tensor.D1) (tensor.D1, error) {
-			dydx := mlfuncs1d.LeakyReLUDerivative(x, noise)
+			dydx := ml1d.LeakyReLUDerivative(x, noise)
 			// ∂L/∂x
 			dx, err := tensor.D1Mul(dydx, chain)
 			return dx, err
@@ -134,10 +135,10 @@ func NewRandReLUForward(min, max float64, isTrain *bool, r *rand.Rand) Forward {
 
 func NewParamRandReLUForward(alpha *float64, min, max float64, gradAlpha *float64, isTrain *bool, r *rand.Rand) Forward {
 	return func(x tensor.D1, backwards Backwards) (tensor.D1, Backwards, error) {
-		y, noise := mlfuncs1d.ParamRandReLU(x, *alpha, min, max, *isTrain, r)
+		y, noise := ml1d.ParamRandReLU(x, *alpha, min, max, *isTrain, r)
 		var backward Backward
 		backward = func(chain tensor.D1) (tensor.D1, error) {
-			dydx, dydVectorizedAlpha := mlfuncs1d.ParamRandReLUDerivative(x, *alpha, noise)
+			dydx, dydVectorizedAlpha := ml1d.ParamRandReLUDerivative(x, *alpha, noise)
 
 			// ∂L/∂dVectorizedAlpha
 			dVectorizedAlpha, err := tensor.D1Mul(dydVectorizedAlpha, chain)
@@ -156,52 +157,55 @@ func NewParamRandReLUForward(alpha *float64, min, max float64, gradAlpha *float6
 	}
 }
 
-func NewSigmoidForward() Forward {
-	return func(x tensor.D1, backwards Backwards) (tensor.D1, Backwards, error) {
-		y := mlfuncs1d.Sigmoid(x)
-		var backward Backward
-		backward = func(chain tensor.D1) (tensor.D1, error) {
-			dydx := mlfuncs1d.SigmoidGrad(y)
-			// ∂L/∂x
-			dx, err := tensor.D1Mul(dydx, chain)
-			return dx, err
-		}
-		backwards = append(backwards, backward)
-		return y, backwards, nil
+func SigmoidForward(x tensor.D1, backwards Backwards) (tensor.D1, Backwards, error) {
+	y := ml1d.Sigmoid(x)
+	var backward Backward
+	backward = func(chain tensor.D1) (tensor.D1, error) {
+		dydx := ml1d.SigmoidGrad(y)
+		// ∂L/∂x
+		dx, err := tensor.D1Mul(dydx, chain)
+		return dx, err
 	}
+	backwards = append(backwards, backward)
+	return y, backwards, nil
 }
 
-func NewTanhForward() Forward {
-	return func(x tensor.D1, backwards Backwards) (tensor.D1, Backwards, error) {
-		y := mlfuncs1d.Tanh(x)
-		var backward Backward
-		backward = func(chain tensor.D1) (tensor.D1, error) {
-			dydx := mlfuncs1d.TanhGrad(y)
-			// ∂L/∂x
-			dx, err := tensor.D1Mul(dydx, chain)
-			return dx, err
-		}
-		backwards = append(backwards, backward)
-		return y, backwards, nil
+func TanhForward(x tensor.D1, backwards Backwards) (tensor.D1, Backwards, error) {
+	y := ml1d.Tanh(x)
+	var backward Backward
+	backward = func(chain tensor.D1) (tensor.D1, error) {
+		dydx := ml1d.TanhGrad(y)
+		// ∂L/∂x
+		dx, err := tensor.D1Mul(dydx, chain)
+		return dx, err
 	}
+	backwards = append(backwards, backward)
+	return y, backwards, nil
 }
 
-func NewSoftmaxForward() Forward {
-    return func(x tensor.D1, backwards Backwards) (tensor.D1, Backwards, error) {
-        y := mlfuncs1d.Softmax(x)
-        var backward Backward
-        backward = func(chain tensor.D1) (tensor.D1, error) {
-            dx, err := mlfuncs1d.SoftmaxDerivative(y, chain)
-            return dx, err
-        }
-        backwards = append(backwards, backward)
-        return y, backwards, nil
+func SoftmaxForward(x tensor.D1, backwards Backwards) (tensor.D1, Backwards, error) {
+    y := ml1d.Softmax(x)
+    var backward Backward
+    backward = func(chain tensor.D1) (tensor.D1, error) {
+		return ml1d.SoftmaxDerivative(y, chain)
     }
+    backwards = append(backwards, backward)
+    return y, backwards, nil
+}
+
+func SoftmaxForwardForCrossEntropy(x tensor.D1, backwards Backwards) (tensor.D1, Backwards, error) {
+    y := ml1d.Softmax(x)
+    var backward Backward
+    backward = func(chain tensor.D1) (tensor.D1, error) {
+		return chain, nil
+    }
+    backwards = append(backwards, backward)
+    return y, backwards, nil
 }
 
 func NewDropoutForward(p float64, isTrain *bool, r *rand.Rand) Forward {
 	return func(x tensor.D1, backwards Backwards) (tensor.D1, Backwards, error) {
-		y, mask := mlfuncs1d.Dropout(x, p, *isTrain, r)
+		y, mask := ml1d.Dropout(x, p, *isTrain, r)
 		var backward Backward
 		backward = func(chain tensor.D1) (tensor.D1, error) {
 			dx, err := tensor.D1Mul(mask, chain)
@@ -214,7 +218,7 @@ func NewDropoutForward(p float64, isTrain *bool, r *rand.Rand) Forward {
 
 func NewLinearSumForward(w tensor.D1, b *float64, gradW tensor.D1, gradB *float64) Forward {
 	return func(x tensor.D1, backwards Backwards) (tensor.D1, Backwards, error) {
-		y, err := mlfuncs1d.LinearSum(x, w, *b)
+		y, err := ml1d.LinearSum(x, w, *b)
 		if err != nil {
 			return tensor.D1{}, Backwards{}, err
 		}
@@ -225,7 +229,7 @@ func NewLinearSumForward(w tensor.D1, b *float64, gradW tensor.D1, gradB *float6
 				return tensor.D1{}, fmt.Errorf("LinearSumForward len(chain) != 1")
 			}
 
-			dydx, dydw, err := mlfuncs1d.LinearSumDerivative(x, w)
+			dydx, dydw, err := ml1d.LinearSumDerivative(x, w)
 			if err != nil {
 				return tensor.D1{}, err
 			}
@@ -238,4 +242,14 @@ func NewLinearSumForward(w tensor.D1, b *float64, gradW tensor.D1, gradB *float6
 		backwards = append(backwards, backward)
 		return tensor.D1{y}, backwards, nil
 	}
+}
+
+func IdentityForward(x tensor.D1, backwards Backwards) (tensor.D1, Backwards, error) {
+	y := fn.Identity[tensor.D1](x)
+	var backward Backward
+	backward = func(chain tensor.D1) (tensor.D1, error) {
+		return chain, nil
+	}
+	backwards = append(backwards, backward)
+	return y, backwards, nil
 }

@@ -2,8 +2,8 @@ package duct_test
 
 import (
 	"fmt"
-	"github.com/sw965/crow/game/simultaneous"
-	"github.com/sw965/crow/game/simultaneous/solver"
+	game "github.com/sw965/crow/game/simultaneous"
+	"github.com/sw965/crow/game/solver"
 	"github.com/sw965/crow/mcts/duct"
 	"github.com/sw965/crow/ucb"
 	omwrand "github.com/sw965/omw/math/rand"
@@ -23,7 +23,7 @@ type Hands []Hand
 
 var HANDS = Hands{ROCK, PAPER, SCISSORS}
 
-type HandsSlice []Hands
+type HandTable []Hands
 
 type RockPaperScissors struct {
 	Hand1 Hand
@@ -33,8 +33,8 @@ type RockPaperScissors struct {
 func TestDUCT(t *testing.T) {
 	r := omwrand.NewMt19937()
 
-	legalActionTableProvider := func(rps *RockPaperScissors) HandsSlice {
-		return HandsSlice{HANDS, Hands{ROCK, PAPER, SCISSORS}}
+	legalActionTableProvider := func(rps *RockPaperScissors) HandTable {
+		return HandTable{HANDS, Hands{ROCK, PAPER, SCISSORS}}
 	}
 
 	transitioner := func(rps RockPaperScissors, hands Hands) (RockPaperScissors, error) {
@@ -45,10 +45,10 @@ func TestDUCT(t *testing.T) {
 		return *rps1 == *rps2
 	}
 
-	placementsJudger := func(rps *RockPaperScissors) (simultaneous.Placements, error) {
+	placementsJudger := func(rps *RockPaperScissors) (game.Placements, error) {
 		if rps.Hand1 == rps.Hand2 {
 			// 引き分けの場合は同順位
-			return simultaneous.Placements{1, 1}, nil
+			return game.Placements{1, 1}, nil
 		}
 	
 		hand1 := rps.Hand1
@@ -56,49 +56,55 @@ func TestDUCT(t *testing.T) {
 	
 		if hand1 == ROCK {
 			if hand2 == SCISSORS {
-				return simultaneous.Placements{1, 2}, nil
+				return game.Placements{1, 2}, nil
 			} else if hand2 == PAPER {
-				return simultaneous.Placements{2, 1}, nil
+				return game.Placements{2, 1}, nil
 			}
 		}
 	
 		if hand1 == SCISSORS {
 			if hand2 == ROCK {
-				return simultaneous.Placements{2, 1}, nil
+				return game.Placements{2, 1}, nil
 			} else if hand2 == PAPER {
-				return simultaneous.Placements{1, 2}, nil
+				return game.Placements{1, 2}, nil
 			}
 		}
 	
 		if hand1 == PAPER {
 			if hand2 == ROCK {
-				return simultaneous.Placements{1, 2}, nil
+				return game.Placements{1, 2}, nil
 			} else if hand2 == SCISSORS {
-				return simultaneous.Placements{2, 1}, nil
+				return game.Placements{2, 1}, nil
 			}
 		}
 	
-		return simultaneous.Placements{}, nil
+		return game.Placements{}, nil
 	}
 
-	gameLogic := simultaneous.Logic[RockPaperScissors, HandsSlice, Hands, Hand]{
+	gameLogic := game.Logic[RockPaperScissors, HandTable, Hands, Hand]{
 		LegalActionTableProvider: legalActionTableProvider,
 		Transitioner:             transitioner,
 		Comparator:               comparator,
 		PlacementsJudger:         placementsJudger,
 	}
-
 	gameLogic.SetStandardResultScoresEvaluator()
 
-	mcts := duct.MCTS[RockPaperScissors, HandsSlice, Hands, Hand]{
-		NextNodesCap:           3,
+	gameEngine := game.Engine[RockPaperScissors, HandTable, Hands, Hand]{
+		Logic:gameLogic,
+		Players:game.Players[RockPaperScissors, HandTable, Hands, Hand]{
+			game.NewRandActionPlayer[RockPaperScissors, HandTable, Hands, Hand](r),
+			game.NewRandActionPlayer[RockPaperScissors, HandTable, Hands, Hand](r),
+		},
 	}
-	mcts.SetGameLogic(gameLogic)
 
-	mcts.PoliciesProvider = solver.UniformPoliciesProvider[RockPaperScissors, HandsSlice, Hands, Hand]
+	mcts := duct.Engine[RockPaperScissors, HandTable, Hands, Hand]{
+		NextNodesCap:3,
+	}
+	mcts.SetGameEngine(gameEngine)
+
+	mcts.PoliciesProvider = solver.UniformPoliciesProvider[RockPaperScissors, HandTable, Hands, Hand]
 	mcts.UCBFunc = ucb.NewAlphaGoFunc(math.Sqrt(2))
-	playerNum := 2
-	mcts.SetRandPlayout(playerNum, r)
+	mcts.SetPlayout()
 
 	fmt.Println(mcts.PoliciesProvider(&RockPaperScissors{}, legalActionTableProvider(&RockPaperScissors{})))
 	rootNode, err := mcts.NewNode(&RockPaperScissors{})

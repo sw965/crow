@@ -3,10 +3,9 @@ package model1d
 import (
 	"fmt"
 	"github.com/sw965/crow/layer/1d"
-	"github.com/sw965/crow/mlfuncs"
-	"github.com/sw965/crow/mlfuncs/1d"
-	"github.com/sw965/crow/mlfuncs/2d"
-	"github.com/sw965/crow/mlfuncs/3d"
+	"github.com/sw965/crow/ml/1d"
+	"github.com/sw965/crow/ml/2d"
+	"github.com/sw965/crow/ml/3d"
 	"github.com/sw965/crow/tensor"
 	omwjson "github.com/sw965/omw/json"
 	omwslices "github.com/sw965/omw/slices"
@@ -35,6 +34,7 @@ type Variable struct {
 	grad1D tensor.D1
 	grad2D tensor.D2
 	grad3D tensor.D3
+	initMethodCallCount int
 }
 
 func (v *Variable) GetGrad1D() tensor.D1 {
@@ -49,10 +49,54 @@ func (v *Variable) GetGrad3D() tensor.D3 {
 	return v.grad3D
 }
 
-func (v *Variable) Init() {
+func (v *Variable) Init() error {
+	if v.initMethodCallCount == 1 {
+		return fmt.Errorf("Variable.Initを呼び出すのは2度目です。1度しか呼び出す事は出来ません。")
+	}
+	//ここの部分でアドレスが書き換わる為、2回呼び出すと勾配の更新が出来なくなる。
 	v.grad1D = tensor.NewD1ZerosLike(v.Param.D1)
 	v.grad2D = tensor.NewD2ZerosLike(v.Param.D2)
 	v.grad3D = tensor.NewD3ZerosLike(v.Param.D3)
+	v.initMethodCallCount += 1
+	return nil
+}
+
+func (v *Variable) ResetGrad() {
+	v.grad1D.Copy(tensor.NewD1ZerosLike(v.grad1D))
+	v.grad2D.Copy(tensor.NewD2ZerosLike(v.grad2D))
+	v.grad3D.Copy(tensor.NewD3ZerosLike(v.grad3D))
+}
+
+func (v *Variable) ComputeGradL2Norm() float64 {
+	sqSum := 0.0
+	for _, e := range v.grad1D {
+		sqSum += (e * e)
+	}
+
+	for _, ei := range v.grad2D {
+		for _, eij := range ei {
+			sqSum += (eij * eij)
+		}
+	}
+
+	for _, ei := range v.grad3D {
+		for _, eij := range ei {
+			for _, eijk := range eij {
+				sqSum += (eijk * eijk)
+			}
+		}
+	}
+	return math.Sqrt(sqSum)
+}
+
+func (v *Variable) ClipGrads(maxNorm float64) {
+	norm := v.ComputeGradL2Norm()
+	scale := maxNorm / norm
+	if scale < 1.0 {
+		v.grad1D.MulScalar(scale)
+		v.grad2D.MulScalar(scale)
+		v.grad3D.MulScalar(scale)
+	}
 }
 
 func (v *Variable) SGD(lr float64) {
@@ -74,76 +118,33 @@ type Sequential struct {
 	variable Variable
 	Forwards layer1d.Forwards
 
-	YLossFunc       func(tensor.D1, tensor.D1) (float64, error)
-	YLossDerivative func(tensor.D1, tensor.D1) (tensor.D1, error)
+	YLossCalculator      func(tensor.D1, tensor.D1) (float64, error)
+	YLossDifferentiator func(tensor.D1, tensor.D1) (tensor.D1, error)
 
-	Param1DLossFunc func(tensor.D1) float64
-	Param2DLossFunc func(tensor.D2) float64
-	Param3DLossFunc func(tensor.D3) float64
+	Param1DLossCalculator func(tensor.D1) float64
+	Param2DLossCalculator func(tensor.D2) float64
+	Param3DLossCalculator func(tensor.D3) float64
 
-	Param1DLossDerivative func(tensor.D1) tensor.D1
-	Param2DLossDerivative func(tensor.D2) tensor.D2
-	Param3DLossDerivative func(tensor.D3) tensor.D3
+	Param1DLossDifferentiator func(tensor.D1) tensor.D1
+	Param2DLossDifferentiator func(tensor.D2) tensor.D2
+	Param3DLossDifferentiator func(tensor.D3) tensor.D3
 
 	MaxGradL2Norm float64
 }
 
 func NewSequential(variable Variable) Sequential {
 	return Sequential{
-		variable:              variable,
-		Param1DLossFunc:       func(_ tensor.D1) float64 { return 0.0 },
-		Param1DLossDerivative: tensor.NewD1ZerosLike,
-		Param2DLossFunc:       func(_ tensor.D2) float64 { return 0.0 },
-		Param2DLossDerivative: tensor.NewD2ZerosLike,
-		Param3DLossFunc:       func(_ tensor.D3) float64 { return 0.0 },
-		Param3DLossDerivative: tensor.NewD3ZerosLike,
+		variable:                  variable,
+		Param1DLossCalculator:     func(_ tensor.D1) float64 { return 0.0 },
+		Param1DLossDifferentiator: tensor.NewD1ZerosLike,
+		Param2DLossCalculator:     func(_ tensor.D2) float64 { return 0.0 },
+		Param2DLossDifferentiator: tensor.NewD2ZerosLike,
+		Param3DLossCalculator:     func(_ tensor.D3) float64 { return 0.0 },
+		Param3DLossDifferentiator: tensor.NewD3ZerosLike,
 	}
 }
 
-func NewStandardAffine(xn, h1, h2, yn int, weightDecay float64, r *rand.Rand) (Sequential, Variable) {
-	variable := Variable{
-		Param: Param{
-			D1: tensor.D1{
-				0.1,
-				0.1,
-			},
-
-			D2: tensor.D2{
-				tensor.NewD1Zeros(h1),
-				tensor.NewD1Zeros(h2),
-				tensor.NewD1Zeros(yn),
-			},
-
-			D3: tensor.D3{
-				tensor.NewD2He(xn, h1, r),
-				tensor.NewD2He(h1, h2, r),
-				tensor.NewD2He(h2, yn, r),
-			},
-		},
-	}
-	variable.Init()
-
-	forwards := layer1d.Forwards{
-		layer1d.NewAffineForward(variable.Param.D3[0], variable.Param.D2[0], variable.GetGrad3D()[0], variable.GetGrad2D()[0]),
-		layer1d.NewParamReLUForward(&variable.Param.D1[0], &variable.GetGrad1D()[0]),
-
-		layer1d.NewAffineForward(variable.Param.D3[1], variable.Param.D2[1], variable.GetGrad3D()[1], variable.GetGrad2D()[1]),
-		layer1d.NewParamReLUForward(&variable.Param.D1[1], &variable.GetGrad1D()[1]),
-
-		layer1d.NewAffineForward(variable.Param.D3[2], variable.Param.D2[2], variable.GetGrad3D()[2], variable.GetGrad2D()[2]),
-		layer1d.NewSoftmaxForward(),
-	}
-
-	affine := NewSequential(variable)
-	affine.Forwards = forwards
-	affine.YLossFunc = mlfuncs1d.SumSquaredError
-	affine.YLossDerivative = mlfuncs1d.SumSquaredErrorDerivative
-	affine.Param3DLossFunc = mlfuncs3d.L2Regularization(weightDecay)
-	affine.Param3DLossDerivative = mlfuncs3d.L2RegularizationDerivative(weightDecay)
-	return affine, variable
-}
-
-func NewStandardLinearSum(xn int, c float64) (Sequential, Variable) {
+func NewLinearSum(xn int, output layer1d.Forward, c float64) (Sequential, Variable) {
 	variable := Variable{
 		Param: Param{
 			D1: tensor.D1{0.0},
@@ -154,16 +155,90 @@ func NewStandardLinearSum(xn int, c float64) (Sequential, Variable) {
 
 	forwards := layer1d.Forwards{
 		layer1d.NewLinearSumForward(variable.Param.D2[0], &variable.Param.D1[0], variable.GetGrad2D()[0], &variable.GetGrad1D()[0]),
-		layer1d.NewSigmoidForward(),
+		output,
 	}
 
 	linearSum := NewSequential(variable)
 	linearSum.Forwards = forwards
-	linearSum.YLossFunc = mlfuncs1d.SumSquaredError
-	linearSum.YLossDerivative = mlfuncs1d.SumSquaredErrorDerivative
-	linearSum.Param2DLossFunc = mlfuncs2d.L2Regularization(c)
-	linearSum.Param2DLossDerivative = mlfuncs2d.L2RegularizationDerivative(c)
+	linearSum.YLossCalculator = ml1d.SumSquaredError
+	linearSum.YLossDifferentiator = ml1d.SumSquaredErrorDerivative
+	linearSum.Param2DLossCalculator = ml2d.L2Regularization(c)
+	linearSum.Param2DLossDifferentiator = ml2d.L2RegularizationDerivative(c)
 	return linearSum, variable
+}
+
+func NewIdentityLinearSum(xn int, c float64) (Sequential, Variable) {
+	return NewLinearSum(xn, layer1d.IdentityForward, c)
+}
+
+func NewSigmoidLinearSum(xn int, c float64) (Sequential, Variable) {
+	return NewLinearSum(xn, layer1d.SigmoidForward, c)
+}
+
+func NewAffine(ns []int, output layer1d.Forward, loss func(tensor.D1, tensor.D1) (float64, error), derivative func(tensor.D1, tensor.D1) (tensor.D1, error), c float64, r *rand.Rand) (Sequential, Variable) {
+	layerN := len(ns) - 1
+	param := Param{
+		D1: make(tensor.D1, layerN-1),
+		D2: make(tensor.D2, layerN),
+		D3: make(tensor.D3, layerN),
+	}
+
+	for i := 0; i < layerN-1; i++ {
+		param.D1[i] = 0.1
+	}
+
+	for i := 0; i < layerN; i++ {
+		param.D2[i] = tensor.NewD1Zeros(ns[i+1])
+	}
+
+	for i := 0; i < layerN; i++ {
+		param.D3[i] = tensor.NewD2He(ns[i], ns[i+1], r)
+	}
+
+	variable := Variable{
+		Param: param,
+	}
+	variable.Init()
+
+	var forwards layer1d.Forwards
+	for i := 0; i < layerN; i++ {
+		forwards = append(forwards, layer1d.NewAffineForward(
+			variable.Param.D3[i],
+			variable.Param.D2[i],
+			variable.GetGrad3D()[i],
+			variable.GetGrad2D()[i],
+		))
+
+		//最後は、出力層を追加する
+		if i == (layerN - 1) {
+			forwards = append(forwards, layer1d.SoftmaxForward)
+		} else {
+			forwards = append(forwards, layer1d.NewParamReLUForward(
+				&variable.Param.D1[i],
+				&variable.GetGrad1D()[i],
+			))
+		}
+	}
+
+	affine := NewSequential(variable)
+	affine.Forwards = forwards
+	affine.YLossCalculator = loss
+	affine.YLossDifferentiator = derivative
+	affine.Param3DLossCalculator = ml3d.L2Regularization(c)
+	affine.Param3DLossDifferentiator = ml3d.L2RegularizationDerivative(c)
+	return affine, variable
+}
+
+func NewSigmoidAffine(ns []int, c float64, r *rand.Rand) (Sequential, Variable) {
+	return NewAffine(ns, layer1d.SigmoidForward, ml1d.SumSquaredError, ml1d.SumSquaredErrorDerivative, c, r)
+}
+
+func NewTanhAffine(ns []int, c float64, r *rand.Rand) (Sequential, Variable) {
+	return NewAffine(ns, layer1d.TanhForward, ml1d.SumSquaredError, ml1d.SumSquaredErrorDerivative, c, r)
+}
+
+func NewSoftmaxAffine(ns []int, c float64, r *rand.Rand) (Sequential, Variable) {
+	return NewAffine(ns, layer1d.SoftmaxForwardForCrossEntropy, ml1d.CrossEntropyError, ml1d.CrossEntropyErrorDerivative, c, r)
 }
 
 func (m *Sequential) Predict(x tensor.D1) (tensor.D1, error) {
@@ -177,9 +252,9 @@ func (m *Sequential) MeanLoss(x, t tensor.D2) (float64, error) {
 		return 0.0, fmt.Errorf("バッチ数が一致しません。")
 	}
 
-	sum := m.Param1DLossFunc(m.variable.Param.D1)
-	sum += m.Param2DLossFunc(m.variable.Param.D2)
-	sum += m.Param3DLossFunc(m.variable.Param.D3)
+	sum := m.Param1DLossCalculator(m.variable.Param.D1)
+	sum += m.Param2DLossCalculator(m.variable.Param.D2)
+	sum += m.Param3DLossCalculator(m.variable.Param.D3)
 	sum *= float64(n)
 
 	for i := range x {
@@ -187,7 +262,7 @@ func (m *Sequential) MeanLoss(x, t tensor.D2) (float64, error) {
 		if err != nil {
 			return 0.0, err
 		}
-		yLoss, err := m.YLossFunc(y, t[i])
+		yLoss, err := m.YLossCalculator(y, t[i])
 		if err != nil {
 			return 0.0, err
 		}
@@ -222,7 +297,7 @@ func (m *Sequential) UpdateGrad(x, t tensor.D1) error {
 		return err
 	}
 
-	dLdy, err := m.YLossDerivative(y, t)
+	dLdy, err := m.YLossDifferentiator(y, t)
 	if err != nil {
 		return err
 	}
@@ -232,9 +307,9 @@ func (m *Sequential) UpdateGrad(x, t tensor.D1) error {
 		return err
 	}
 
-	grad1D := m.Param1DLossDerivative(m.variable.Param.D1)
-	grad2D := m.Param2DLossDerivative(m.variable.Param.D2)
-	grad3D := m.Param3DLossDerivative(m.variable.Param.D3)
+	grad1D := m.Param1DLossDifferentiator(m.variable.Param.D1)
+	grad2D := m.Param2DLossDifferentiator(m.variable.Param.D2)
+	grad3D := m.Param3DLossDifferentiator(m.variable.Param.D3)
 
 	err = m.variable.grad1D.Add(grad1D)
 	if err != nil {
@@ -252,14 +327,14 @@ func (m *Sequential) UpdateGrad(x, t tensor.D1) error {
 	}
 
 	if m.MaxGradL2Norm > 0.0 {
-		mlfuncs.ClipL2Norm(m.variable.grad1D, m.variable.grad2D, m.variable.grad3D, m.MaxGradL2Norm)
+		m.variable.ClipGrads(m.MaxGradL2Norm)
 	}
 	return err
 }
 
-func (m *Sequential) SGD(x, t tensor.D1, lr float64) {
-	m.UpdateGrad(x, t)
+func (m *Sequential) SGD(lr float64) {
 	m.variable.SGD(lr)
+	m.variable.ResetGrad()
 }
 
 func (m *Sequential) ValidateBackwardAndNumericalGradientDifference(x, t tensor.D1) error {
@@ -287,11 +362,11 @@ func (m *Sequential) ValidateBackwardAndNumericalGradientDifference(x, t tensor.
 		return loss
 	}
 
-	numGradD1 := mlfuncs1d.NumericalDifferentiation(m.variable.Param.D1, lossD1)
-	numGradD2 := mlfuncs2d.NumericalDifferentiation(m.variable.Param.D2, lossD2)
-	numGradD3 := mlfuncs3d.NumericalDifferentiation(m.variable.Param.D3, lossD3)
+	numGradD1 := ml1d.NumericalDifferentiation(m.variable.Param.D1, lossD1)
+	numGradD2 := ml2d.NumericalDifferentiation(m.variable.Param.D2, lossD2)
+	numGradD3 := ml3d.NumericalDifferentiation(m.variable.Param.D3, lossD3)
 	if m.MaxGradL2Norm > 0.0 {
-		mlfuncs.ClipL2Norm(numGradD1, numGradD2, numGradD3, m.MaxGradL2Norm)
+		m.variable.ClipGrads(m.MaxGradL2Norm)
 	}
 	m.UpdateGrad(x, t)
 

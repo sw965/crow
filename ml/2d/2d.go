@@ -1,29 +1,29 @@
-package mlfuncs2d
+package ml2d
 
 import (
-	"github.com/sw965/crow/mlfuncs/1d"
+	"github.com/sw965/crow/ml/1d"
 	"github.com/sw965/crow/tensor"
 	"github.com/sw965/omw/fn"
 	omwmath "github.com/sw965/omw/math"
 )
 
 func SigmoidToTanh(y tensor.D2) tensor.D2 {
-	return fn.Map[tensor.D2](y, mlfuncs1d.SigmoidToTanh)
+	return fn.Map[tensor.D2](y, ml1d.SigmoidToTanh)
 }
 
 func TanhToSigmoid(y tensor.D2) tensor.D2 {
-	return fn.Map[tensor.D2](y, mlfuncs1d.TanhToSigmoid)
+	return fn.Map[tensor.D2](y, ml1d.TanhToSigmoid)
 }
 
 func L2Regularization(c float64) func(tensor.D2) float64 {
 	return func(w tensor.D2) float64 {
-		return omwmath.Sum(fn.Map[tensor.D1](w, mlfuncs1d.L2Regularization(c))...)
+		return omwmath.Sum(fn.Map[tensor.D1](w, ml1d.L2Regularization(c))...)
 	}
 }
 
 func L2RegularizationDerivative(c float64) func(tensor.D2) tensor.D2 {
 	return func(w tensor.D2) tensor.D2 {
-		return fn.Map[tensor.D2](w, mlfuncs1d.L2RegularizationDerivative(c))
+		return fn.Map[tensor.D2](w, ml1d.L2RegularizationDerivative(c))
 	}
 }
 

@@ -4,11 +4,19 @@ import (
 	"fmt"
 	"sort"
 	"math/rand"
-	"golang.org/x/exp/maps"
-	omwmath "github.com/sw965/omw/math"
 	omwrand "github.com/sw965/omw/math/rand"
-	omwslices "github.com/sw965/omw/slices"
+	"github.com/sw965/crow/game/solver"
 )
+
+type Player[S any, As ~[]A, A comparable] func(*S, As) (A, error)
+
+func NewRandActionPlayer[S any, As ~[]A, A comparable](r *rand.Rand) Player[S, As, A] {
+	return func(_ *S, legalActions As) (A, error) {
+		return omwrand.Choice(legalActions, r), nil
+	}
+}
+
+type PlayerPerAgent[S any, As ~[]A, A, G comparable] map[G]Player[S, As, A]
 
 type LegalActionsProvider[S any, As ~[]A, A comparable] func(*S) As
 type Transitioner[S any, A comparable] func(S, *A) (S, error)
@@ -23,7 +31,7 @@ func NewPlacementPerAgent[Gss ~[]Gs, Gs ~[]G, G comparable](agentTable Gss) (Pla
 	rank := 1
 	for _, agents := range agentTable {
 		if len(agents) == 0 {
-			return PlacementPerAgent[G]{}, fmt.Errorf("順位 %d に対応するエージェントが存在しません", rank+1)
+			return PlacementPerAgent[G]{}, fmt.Errorf("順位 %d に対応するエージェントが存在しません", rank)
 		}
 
 		for _, agent := range agents {
@@ -76,12 +84,24 @@ func (p PlacementPerAgent[G]) Validate() error {
 type PlacementsJudger[S any, G comparable] func(*S) (PlacementPerAgent[G], error)
 type ResultScorePerAgent[G comparable] map[G]float64
 
-func (r ResultScorePerAgent[G]) ToEval() EvalPerAgent[G] {
-	es := EvalPerAgent[G]{}
-	for k, v := range r {
-		es[k] = Eval(v)
+func (ss ResultScorePerAgent[G]) ToEvalPerAgent() solver.EvalPerAgent[G] {
+	es := solver.EvalPerAgent[G]{}
+	for k, v := range ss {
+		es[k] = solver.Eval(v)
 	}
 	return es
+}
+
+func (ss ResultScorePerAgent[G]) Add(other ResultScorePerAgent[G]) {
+	for k := range ss {
+		ss[k] += other[k]
+	}
+}
+
+func (ss ResultScorePerAgent[G]) DivScalar(a float64) {
+	for k := range ss {
+		ss[k] /= a
+	}
 }
 
 type ResultScoresEvaluator[G comparable] func(PlacementPerAgent[G]) (ResultScorePerAgent[G], error)
@@ -95,6 +115,11 @@ type Logic[S any, As ~[]A, A, G comparable] struct {
 	CurrentTurnAgentGetter   CurrentTurnAgentGetter[S, G]
 	PlacementsJudger         PlacementsJudger[S, G]
 	ResultScoresEvaluator    ResultScoresEvaluator[G]
+}
+
+func (l *Logic[S, As, A, G]) IsEnd(state *S) (bool, error) {
+	placements, err := l.PlacementsJudger(state)
+	return len(placements) != 0, err
 }
 
 func (l *Logic[S, As, A, G]) SetStandardResultScoresEvaluator() {
@@ -114,6 +139,14 @@ func (l *Logic[S, As, A, G]) SetStandardResultScoresEvaluator() {
 		}
 
 		scores := ResultScorePerAgent[G]{}
+
+		if n == 1 {
+            for agent := range placements {
+                scores[agent] = 1.0
+            }
+            return scores, nil
+        }
+
 		for agent, rank := range placements {
 			score := 1.0 - ((float64(rank) - 1.0) / (float64(n) - 1.0))
 			// 同順の人数で割る
@@ -131,74 +164,6 @@ func (l *Logic[S, As, A, G]) EvaluateResultScorePerAgent(state *S) (ResultScoreP
 	return l.ResultScoresEvaluator(placements)
 }
 
-func (l *Logic[S, As, A, G]) IsEnd(state *S) bool {
-	placements, _ := l.PlacementsJudger(state)
-	return len(placements) != 0
-}
-
-type Policy[A comparable] map[A]float64
-type PolicyProvider[S any, As ~[]A, A comparable] func(*S, As) Policy[A]
-
-func UniformPolicyProvider[S any, As ~[]A, A comparable](state *S, legalActions As) Policy[A] {
-	n := len(legalActions)
-	p := 1.0 / float64(n)
-	policy := Policy[A]{}
-	for _, a := range legalActions {
-		policy[a] = p
-	}
-	return policy
-}
-
-type Player[S any, As ~[]A, A comparable] func(*S, As) (A, error)
-
-func NewRandActionPlayer[S any, As ~[]A, A comparable](r *rand.Rand) Player[S, As, A] {
-	return func(_ *S, legalActions As) (A, error) {
-		return omwrand.Choice(legalActions, r), nil
-	}
-}
-
-type PlayerPerAgent[S any, As ~[]A, A, G comparable] map[G]Player[S, As, A]
-
-type Eval float64
-type EvalPerAgent[G comparable] map[G]Eval
-
-type Selector[A comparable] func(Policy[A]) A
-
-func NewEpsilonGreedySelector[A comparable](e float64, r *rand.Rand) Selector[A] {
-	return func(p Policy[A]) A {
-		ks := maps.Keys(p)
-		if e > r.Float64() {
-			return omwrand.Choice(ks, r)
-		}
-		vs := maps.Values(p)
-		idxs := omwslices.MaxIndices(vs)
-		idx := omwrand.Choice(idxs, r)
-		return ks[idx]
-	}
-}
-
-func NewMaxSelector[A comparable](r *rand.Rand) Selector[A] {
-	return NewEpsilonGreedySelector[A](0.0, r)
-}
-
-func NewThresholdWeightedSelector[A comparable](t float64, r *rand.Rand) Selector[A] {
-	return func(policy Policy[A]) A {
-		max := omwmath.Max(maps.Values(policy)...)
-		threshold := max * t
-		n := len(policy)
-		options := make([]A, 0, n)
-		weights := make([]float64, 0, n)
-		for action, p := range policy {
-			if p >= threshold {
-				options = append(options, action)
-				weights = append(weights, p)
-			}
-		}
-		idx := omwrand.IntByWeight(weights, r)
-		return options[idx]
-	}
-}
-
 type Engine[S any, As ~[]A, A, G comparable] struct {
 	Logic          Logic[S, As, A, G]
 	PlayerPerAgent PlayerPerAgent[S, As, A, G]
@@ -211,7 +176,12 @@ func (e *Engine[S, As, A, G]) GetCurrentPlayer(state *S) Player[S, As, A] {
 
 func (e *Engine[S, As, A, G]) Play(state S, f func(*S) bool) (S, error) {
 	for {
-		isEnd := e.Logic.IsEnd(&state)
+		isEnd, err := e.Logic.IsEnd(&state)
+		if err != nil {
+			var zero S
+			return zero, err
+		}
+
 		if isEnd || f(&state) {
 			break
 		}
@@ -238,8 +208,8 @@ func (e *Engine[S, As, A, G]) Playout(state S) (S, error) {
 	return e.Play(state, func(_ *S) bool { return false })
 }
 
-func (e *Engine[S, As, A, G]) ComparePlayerStrength(state S, n int) (AverageResultScorePerAgent[G], error) {
-	avgs := AverageResultScorePerAgent[G]{}
+func (e *Engine[S, As, A, G]) ComparePlayerStrength(state S, n int) (ResultScorePerAgent[G], error) {
+	avgs := ResultScorePerAgent[G]{}
 	for i := 0; i < n; i++ {
 		final, err := e.Playout(state)
 		if err != nil {
@@ -250,9 +220,8 @@ func (e *Engine[S, As, A, G]) ComparePlayerStrength(state S, n int) (AverageResu
 		if err != nil {
 			return nil, err
 		}
-		for k, v := range scores {
-			avgs[k] += v
-		}
+		avgs.Add(scores)
 	}
+	avgs.DivScalar(float64(n))
 	return avgs, nil
 }

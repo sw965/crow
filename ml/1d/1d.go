@@ -1,11 +1,10 @@
-package mlfuncs1d
+package ml1d
 
 import (
 	"fmt"
 	"math"
 	"math/rand"
-
-	"github.com/sw965/crow/mlfuncs/scalar"
+	"github.com/sw965/crow/ml/scalar"
 	"github.com/sw965/crow/tensor"
 	"github.com/sw965/omw/fn"
 	omwmath "github.com/sw965/omw/math"
@@ -60,21 +59,13 @@ func Softmax(x tensor.D1) tensor.D1 {
 }
 
 func SoftmaxDerivative(y, chain tensor.D1) (tensor.D1, error) {
-    n := len(y)
-    if n != len(chain) {
-        return nil, fmt.Errorf("len(y) != len(chain)")
+    sum := 0.0
+    for i := range y {
+        sum += y[i] * chain[i]
     }
-    dx := make(tensor.D1, n)
-    for i := 0; i < n; i++ {
-        sum := 0.0
-        for j := 0; j < n; j++ {
-            if i == j {
-                sum += y[i] * (1 - y[j]) * chain[j]
-            } else {
-                sum -= y[i] * y[j] * chain[j]
-            }
-        }
-        dx[i] = sum
+    dx := make(tensor.D1, len(y))
+    for i := range y {
+        dx[i] = y[i] * (chain[i] - sum)
     }
     return dx, nil
 }
@@ -167,7 +158,7 @@ func RandReLU(x tensor.D1, min, max float64, isTrain bool, r *rand.Rand) (tensor
 	y := make(tensor.D1, len(x))
 	var noise float64
 	if isTrain {
-		noise = omwrand.Float64Uniform(min, max, r)
+		noise = omwrand.Float64(min, max, r)
 	} else {
 		noise = (min + max) / 2.0
 	}
@@ -186,7 +177,7 @@ func ParamRandReLU(x tensor.D1, alpha, min, max float64, isTrain bool, r *rand.R
 	y := make(tensor.D1, len(x))
 	var noise float64
 	if isTrain {
-		noise = omwrand.Float64Uniform(min, max, r)
+		noise = omwrand.Float64(min, max, r)
 	} else {
 		noise = (min + max) / 2.0
 	}
@@ -240,6 +231,32 @@ func Dropout(x tensor.D1, p float64, isTrain bool, r *rand.Rand) (tensor.D1, ten
 	return y, mask
 }
 
+func CrossEntropyError(y, t tensor.D1) (float64, error) {
+    if len(y) != len(t) {
+        return 0.0, fmt.Errorf("len(y) != len(t) であるため、CrossEntropyErrorを計算できません。")
+    }
+    loss := 0.0
+	e := 0.0001
+	for i := range y {
+		yi := math.Max(y[i], e)
+		ti := t[i]
+		loss += -ti * math.Log(yi)
+	}
+    return loss, nil
+}
+
+//Softmaxが出力である事が前提
+func CrossEntropyErrorDerivative(y, t tensor.D1) (tensor.D1, error) {
+    if len(y) != len(t) {
+        return nil, fmt.Errorf("len(y) != len(t) であるため、CrossEntropyErrorDerivativeを計算できません。")
+    }
+    grad := make(tensor.D1, len(y))
+    for i := range y {
+        grad[i] = y[i] - t[i]
+    }
+    return grad, nil
+}
+
 func SumSquaredError(y, t tensor.D1) (float64, error) {
 	if len(y) != len(t) {
 		return 0.0, fmt.Errorf("len(y) != len(t) であるため、SumSquaredErrorを計算できません。")
@@ -262,19 +279,6 @@ func SumSquaredErrorDerivative(y, t tensor.D1) (tensor.D1, error) {
 		grad[i] = y[i] - t[i]
 	}
 	return grad, nil
-}
-
-func MeanSquaredError(y, t tensor.D1) (float64, error) {
-	sqSum, err := SumSquaredError(y, t)
-	n := len(y)
-	return sqSum / float64(n), err
-}
-
-func MeanSquaredErrorDerivative(y, t tensor.D1) (tensor.D1, error) {
-	n := len(y)
-	grad, err := SumSquaredErrorDerivative(y, t)
-	grad.DivScalar(float64(n))
-	return grad, err
 }
 
 func L2Regularization(c float64) func(tensor.D1) float64 {

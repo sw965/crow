@@ -6,9 +6,10 @@ import (
 	omwrand "github.com/sw965/omw/math/rand"
 	"github.com/sw965/crow/ucb"
 	game "github.com/sw965/crow/game/sequential"
+	"github.com/sw965/crow/game/solver"
 )
 
-type LeafNodeEvaluator[S any, G comparable] func(*S) (game.EvalPerAgent[G], error)
+type LeafNodeEvaluator[S any, G comparable] func(*S) (solver.EvalPerAgent[G], error)
 
 type Node[S any, As ~[]A, A, G comparable] struct {
 	State      S
@@ -39,7 +40,7 @@ type selectionInfo[S any, As ~[]A, A, G comparable] struct {
 
 type selectionInfoSlice[S any, As ~[]A, A, G comparable] []selectionInfo[S, As, A, G]
 
-func (ss selectionInfoSlice[S, As, A, G]) Backward(evals game.EvalPerAgent[G]) {
+func (ss selectionInfoSlice[S, As, A, G]) Backward(evals solver.EvalPerAgent[G]) {
 	for _, s := range ss {
 		node := s.node
 		action := s.action
@@ -52,7 +53,7 @@ func (ss selectionInfoSlice[S, As, A, G]) Backward(evals game.EvalPerAgent[G]) {
 type Engine[S any, As ~[]A, A, G comparable] struct {
 	game              game.Engine[S, As, A, G]
 	UCBFunc           ucb.Func
-	PolicyProvider    game.PolicyProvider[S, As, A]
+	PolicyProvider    solver.PolicyProvider[S, As, A]
 	LeafNodeEvaluator LeafNodeEvaluator[S, G]
 	NextNodesCap      int
 }
@@ -66,17 +67,17 @@ func (e *Engine[S, As, A, G]) SetGame(g game.Engine[S, As, A, G]) {
 }
 
 func (e *Engine[S, As, A, G]) SetUniformPolicyProvider() {
-	e.PolicyProvider = game.UniformPolicyProvider[S, As, A]
+	e.PolicyProvider = solver.UniformPolicyProvider[S, As, A]
 }
 
 func (e *Engine[S, As, A, G]) SetPlayout() {
-	e.LeafNodeEvaluator = func(state *S) (game.EvalPerAgent[G], error) {
+	e.LeafNodeEvaluator = func(state *S) (solver.EvalPerAgent[G], error) {
 		final, err := e.game.Playout(*state)
 		if err != nil {
-			return game.EvalPerAgent[G]{}, err
+			return solver.EvalPerAgent[G]{}, err
 		}
 		scores, err := e.game.Logic.EvaluateResultScorePerAgent(&final)
-		return scores.ToEval(), err
+		return scores.ToEvalPerAgent(), err
 	}
 }
 
@@ -86,14 +87,14 @@ func (e *Engine[S, As, A, G]) NewNode(state *S) (*Node[S, As, A, G], error) {
 		return &Node[S, As, A, G]{}, fmt.Errorf("len(Policy) == 0 である為、新しくNodeを生成出来ません。")
 	}
 
-	um := ucb.Manager[As, A]{}
+	u := ucb.Manager[As, A]{}
 	for a, p := range policy {
-		um[a] = &ucb.Calculator{Func: e.UCBFunc, P: p}
+		u[a] = &ucb.Calculator{Func: e.UCBFunc, P: p}
 	}
 
 	agent := e.game.Logic.CurrentTurnAgentGetter(state)
 	nextNodes := make(Nodes[S, As, A, G], 0, e.NextNodesCap)
-	return &Node[S, As, A, G]{State: *state, Agent: agent, UCBManager: um, NextNodes: nextNodes}, nil
+	return &Node[S, As, A, G]{State: *state, Agent: agent, UCBManager: u, NextNodes: nextNodes}, nil
 }
 
 func (e *Engine[S, As, A, G]) SelectExpansionBackward(node *Node[S, As, A, G], capacity int, r *rand.Rand) (int, error) {
@@ -110,7 +111,12 @@ func (e *Engine[S, As, A, G]) SelectExpansionBackward(node *Node[S, As, A, G], c
 			return 0, err
 		}
 
-		if isEnd := e.game.Logic.IsEnd(&state); isEnd {
+		isEnd, err := e.game.Logic.IsEnd(&state)
+		if err != nil {
+			return 0, err
+		}
+
+		if isEnd {
 			break
 		}
 
