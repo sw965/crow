@@ -9,8 +9,6 @@ import (
 )
 
 type Policy[A comparable] map[A]float64
-type Policies[A comparable] []map[A]float64
-
 type PolicyProvider[S any, As ~[]A, A comparable] func(*S, As) Policy[A]
 
 func UniformPolicyProvider[S any, As ~[]A, A comparable](state *S, legalActions As) Policy[A] {
@@ -23,21 +21,10 @@ func UniformPolicyProvider[S any, As ~[]A, A comparable](state *S, legalActions 
 	return policy
 }
 
-type PoliciesProvider[S any, Ass ~[]As, As ~[]A, A comparable] func(*S, Ass) Policies[A]
-
-func UniformPoliciesProvider[S any, Ass ~[]As, As ~[]A, A comparable](state *S, legalActionTable Ass) Policies[A] {
-	ps := make(Policies[A], len(legalActionTable))
-	for i, legalActions := range legalActionTable {
-		ps[i] = UniformPolicyProvider(state, legalActions)
-	}
-	return ps
-}
-
 type Eval float64
-type Evals []Eval
+type EvalPerAgent[G comparable] []Eval
 
-type ActorCritc[S any] func(S) (A,)
-
+type ActorCritic[S any] func(S) (Policy, Eval, error)
 type Selector[A comparable] func(Policy[A]) A
 
 func NewEpsilonGreedySelector[A comparable](e float64, r *rand.Rand) Selector[A] {
@@ -75,10 +62,9 @@ func NewThresholdWeightedSelector[A comparable](t float64, r *rand.Rand) Selecto
 	}
 }
 
-type Sequential struct {
-	ActorCritc func()
+type Solver[A comparable] struct {
+	ActorCritic ActorCritic[A]
+	Selector Selector[A]
 }
 
-type Simultaneous struct {
-
-}
+type PerAgent[A, G comparable] map[G]*Solver[A]

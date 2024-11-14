@@ -40,7 +40,7 @@ type selectionInfo[S any, As ~[]A, A, G comparable] struct {
 
 type selectionInfoSlice[S any, As ~[]A, A, G comparable] []selectionInfo[S, As, A, G]
 
-func (ss selectionInfoSlice[S, As, A, G]) Backward(evals solver.EvalPerAgent[G]) {
+func (ss selectionInfoSlice[S, As, A, G]) backward(evals solver.EvalPerAgent[G]) {
 	for _, s := range ss {
 		node := s.node
 		action := s.action
@@ -135,7 +135,7 @@ func (e *Engine[S, As, A, G]) SelectExpansionBackward(node *Node[S, As, A, G], c
 		node = nextNode
 	}
 	evals, err := e.LeafNodeEvaluator(&state)
-	selections.Backward(evals)
+	selections.backward(evals)
 	return len(selections), err
 }
 

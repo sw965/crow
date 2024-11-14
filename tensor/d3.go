@@ -112,6 +112,22 @@ func (d3 D3) MapFunc(f func(float64) float64) D3 {
 	return y
 }
 
+func (d3 D3) Size() int {
+	n := 0
+	for _, d2 := range d3 {
+		n += d2.Size()
+	}
+	return n
+}
+
+func (d3 D3) Flatten() D1 {
+	flat := make(D1, 0, d3.Size())
+	for _, d2 := range d3 {
+		flat = append(flat, d2.Flatten()...)
+	}
+	return flat
+}
+
 func D3AddScalar(d3 D3, s float64) D3 {
 	y := d3.Clone()
 	y.AddScalar(s)
