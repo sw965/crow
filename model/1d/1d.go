@@ -3,13 +3,13 @@ package model1d
 import (
 	"fmt"
 	"github.com/sw965/crow/layer/1d"
-	//"github.com/sw965/crow/ml"
 	"github.com/sw965/crow/ml/1d"
 	"github.com/sw965/crow/ml/2d"
 	"github.com/sw965/crow/ml/3d"
 	"github.com/sw965/crow/tensor"
 	omwjson "github.com/sw965/omw/json"
 	omwslices "github.com/sw965/omw/slices"
+	omwrand "github.com/sw965/omw/math/rand"
 	"math/rand"
 	"github.com/sw965/omw/parallel"
 )
@@ -240,6 +240,7 @@ func (m *Sequential) ComputeGrad(xs, ts tensor.D2, p int) (layer1d.GradBuffer, e
     for gorutineI, idxs := range parallel.DistributeIndicesEvenly(n-1, p) {
         go write(idxs, gorutineI)
     }
+
     for i := 0; i < p; i++ {
 		err := <- errCh
 		if err != nil {
@@ -266,11 +267,12 @@ func (m *Sequential) ComputeGrad(xs, ts tensor.D2, p int) (layer1d.GradBuffer, e
     if m.GradMaxL2Norm > 0.0 {
         total.ClipUsingL2Norm(m.GradMaxL2Norm)    
     }
-
     return total, nil
 }
 
-func (m *Sequential) SGD(gb *layer1d.GradBuffer, lr float64) error {
+type Optimizer func(*Sequential, *layer1d.GradBuffer, float64) error
+
+func SGD(m *Sequential, gb *layer1d.GradBuffer, lr float64) error {
 	grad1D := tensor.D1MulScalar(gb.D1, lr)
 	grad2D := tensor.D2MulScalar(gb.D2, lr)
 	grad3D := tensor.D3MulScalar(gb.D3, lr)
@@ -288,6 +290,93 @@ func (m *Sequential) SGD(gb *layer1d.GradBuffer, lr float64) error {
 	err = m.Parameter.D3.Sub(grad3D)
 	if err != nil {
 		return err
+	}
+	return nil
+}
+
+type Momentum struct {
+	Velocity1D tensor.D1
+	Velocity2D tensor.D2
+	Velocity3D tensor.D3
+	Rate float64
+}
+
+func NewMomentum(model *Sequential, rate float64) Momentum {
+	return Momentum{
+		Velocity1D:tensor.NewD1ZerosLike(model.Parameter.D1),
+		Velocity2D:tensor.NewD2ZerosLike(model.Parameter.D2),
+		Velocity3D:tensor.NewD3ZerosLike(model.Parameter.D3),
+		Rate:rate,
+	}
+}
+
+func (m *Momentum) Optimizer(model *Sequential, gb *layer1d.GradBuffer, lr float64) error {
+	rate := m.Rate
+
+	for i := range m.Velocity1D {
+		v := m.Velocity1D[i]
+		grad := gb.D1[i]
+		m.Velocity1D[i] = rate*v - lr*grad
+		model.Parameter.D1[i] += m.Velocity1D[i]
+	}
+
+	for i := range m.Velocity2D {
+		for j := range m.Velocity2D[i] {
+			v := m.Velocity2D[i][j]
+			grad := gb.D2[i][j]
+			m.Velocity2D[i][j] = rate*v - lr*grad
+			model.Parameter.D2[i][j] += m.Velocity2D[i][j]
+		}
+	}
+
+	for i := range m.Velocity3D {
+		for j := range m.Velocity3D[i] {
+			for k := range m.Velocity3D[i][j] {
+				v := m.Velocity3D[i][j][k]
+				grad := gb.D3[i][j][k]
+				m.Velocity3D[i][j][k] = rate*v - lr*grad
+				model.Parameter.D3[i][j][k] += m.Velocity3D[i][j][k]
+			}
+		}
+	}
+	return nil
+}
+
+type Trainer struct {
+	TeacherXs tensor.D2
+	TeacherYs tensor.D2
+	Optimizer Optimizer
+	BatchSize int
+	Epoch int
+}
+
+func (t *Trainer) Train(m *Sequential, lr float64, p int, r *rand.Rand) error {
+	if t.Optimizer == nil {
+		return fmt.Errorf("Optimizerが設定されていない為、訓練を開始できません。")
+	}
+
+	n := len(t.TeacherXs)
+	if n < t.BatchSize {
+		return fmt.Errorf("データ数 < バッチサイズである為、処理を続行出来ません、")
+	}
+
+	if t.Epoch <= 0 {
+		return fmt.Errorf("エポック数が0以下である為、訓練を開始出来ません。")
+	}
+
+	iterN := n / t.BatchSize * t.Epoch
+	for i := 0; i < iterN; i++ {
+		idxs := omwrand.Ints(t.BatchSize, 0, n, r)
+		xs := omwslices.ElementsByIndices(t.TeacherXs, idxs...)
+		ts := omwslices.ElementsByIndices(t.TeacherYs, idxs...)
+		gradBuffer, err := m.ComputeGrad(xs, ts, p)
+		if err != nil {
+			return err
+		}
+		err = t.Optimizer(m, &gradBuffer, lr)
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }

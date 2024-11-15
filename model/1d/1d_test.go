@@ -25,36 +25,35 @@ func TestModel(t *testing.T) {
 		panic(err)
 	}
 
-	trainImgNum := len(mnist.TrainImg)
 	testImgNum := len(mnist.TestImg)
 	trainNum := 256000
 	testSize := 196
+	momentum := model1d.NewMomentum(&affine, 0.9)
+	trainer := model1d.Trainer{
+		TeacherXs:mnist.TrainImg,
+		TeacherYs:mnist.TrainLabel,
+		Optimizer:momentum.Optimizer,
+		BatchSize:512,
+		Epoch:1,
+	}
 
 	for i := 0; i < trainNum; i++ {
-		idxs := omwrand.Ints(128, 0, trainImgNum, r)
-		gradCacher, err := affine.ComputeGrad(omwslices.ElementsByIndices(mnist.TrainImg, idxs...), omwslices.ElementsByIndices(mnist.TrainLabel, idxs...), 4)
+		err := trainer.Train(&affine, 0.01, 4, r)
 		if err != nil {
 			panic(err)
 		}
-		err = affine.SGD(&gradCacher, 0.01)
-		if err != nil {
-			panic(err)
-		}
-		if i%196 == 0 {
-			//affine.ValidateBackwardAndNumericalGradientDifference(mnist.TrainImg[idx], mnist.TrainLabel[idx])
-			idxs := omwrand.Ints(testSize, 0, testImgNum, r)
-			miniBatchTestImg := omwslices.ElementsByIndices(mnist.TestImg, idxs...)
-			miniBatchTestLabel := omwslices.ElementsByIndices(mnist.TestLabel, idxs...)
-			loss, err := affine.MeanLoss(miniBatchTestImg, miniBatchTestLabel)
-			if err != nil {
-				panic(err)
-			}
-			accuracy, err := affine.Accuracy(miniBatchTestImg, miniBatchTestLabel)
-			if err != nil {
-				panic(err)
-			}
 
-			fmt.Println("i =", i, "loss =", loss, "accuracy =", accuracy)
+		idxs := omwrand.Ints(testSize, 0, testImgNum, r)
+		miniBatchTestImg := omwslices.ElementsByIndices(mnist.TestImg, idxs...)
+		miniBatchTestLabel := omwslices.ElementsByIndices(mnist.TestLabel, idxs...)
+		loss, err := affine.MeanLoss(miniBatchTestImg, miniBatchTestLabel)
+		if err != nil {
+			panic(err)
 		}
+		accuracy, err := affine.Accuracy(miniBatchTestImg, miniBatchTestLabel)
+		if err != nil {
+			panic(err)
+		}
+		fmt.Println("i =", i, "loss =", loss, "accuracy =", accuracy)
 	}
 }
