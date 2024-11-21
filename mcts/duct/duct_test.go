@@ -108,7 +108,7 @@ func TestDUCT(t *testing.T) {
 		panic(err)
 	}
 
-	err = mcts.Run(19600, rootNode, r)
+	err = mcts.Search(rootNode, 19600, r)
 	if err != nil {
 		panic(err)
 	}
@@ -119,7 +119,7 @@ func TestDUCT(t *testing.T) {
 		}
 	}
 	fmt.Println("")
-	err = mcts.Run(196000, rootNode, r)
+	err = mcts.Search(rootNode, 196000, r)
 	if err != nil {
 		panic(err)
 	}

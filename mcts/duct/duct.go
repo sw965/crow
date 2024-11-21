@@ -150,7 +150,7 @@ func (e *Engine[S, Ass, As, A]) SelectExpansionBackward(node *Node[S, Ass, As, A
 	return len(selections), nil
 }
 
-func (e *Engine[S, Ass, As, A]) Run(simulation int, rootNode *Node[S, Ass, As, A], r *rand.Rand) error {
+func (e *Engine[S, Ass, As, A]) Search(rootNode *Node[S, Ass, As, A], simulation int, r *rand.Rand) error {
 	if e.NextNodesCap <= 0 {
 		return fmt.Errorf("MCTS.NextNodesCap > 0 でなければなりません。")
 	}
@@ -164,4 +164,41 @@ func (e *Engine[S, Ass, As, A]) Run(simulation int, rootNode *Node[S, Ass, As, A
 		}
 	}
 	return nil
+}
+
+func (e *Engine[S, Ass, As, A]) NewActorCritic(simulation int, t float64, r *rand.Rand) game.ActorCritic[S, Ass, As, A] {
+	return func(state *S, _ Ass) (game.Policies[A], game.Evals, error) {
+		rootNode, err := e.NewNode(state)
+		if err != nil {
+			return game.Policies[A]{}, game.Evals{}, err
+		}
+
+		err = e.Search(rootNode, simulation, r)
+		if err != nil {
+			return game.Policies[A]{}, game.Evals{}, err
+		}
+
+		n := len(rootNode.UCBManagers)
+		policies := make(game.Policies[A], n)
+		for i, m := range rootNode.UCBManagers {
+			trialPercents := m.TrialPercentPerKey()
+			policy := game.Policy[A]{}
+			for k, v := range trialPercents {
+				policy[k] = v
+			}
+			policies[i] = policy
+		}
+
+		evals := make(game.Evals, n)
+		for i, avg := range rootNode.UCBManagers.AverageValues() {
+			evals[i] = game.Eval(avg)
+		}
+		return policies, evals, nil
+	}
+}
+
+func (e *Engine[S, As, A, Ag]) NewSolver(simulation int, t float64, r *rand.Rand) game.Solver[S, As, A, Ag] {
+	ac := e.NewActorCritic(simulation, t, r)
+	selector := game.NewThresholdWeightedSelector[A](t, r)
+	return game.Solver[S, As, A, Ag]{ActorCritic:ac, Selector:selector}
 }

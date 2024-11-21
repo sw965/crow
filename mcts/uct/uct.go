@@ -158,3 +158,54 @@ func (e *Engine[S, As, A, Ag]) Search(rootNode *Node[S, As, A, Ag], simulation i
 	avgs.DivScalar(game.Eval(simulation))
 	return avgs, nil
 }
+
+func (e *Engine[S, As, A, Ag]) NewPlayer(simulation int, t float64, r *rand.Rand) game.Player[S, As, A] {
+	return func(state *S, _ As) (A, error) {
+		rootNode, err := e.NewNode(state)
+		if err != nil {
+			var a A
+			return a, err
+		}
+
+		_, err = e.Search(rootNode, simulation, r)
+		if err != nil {
+			var a A
+			return a, err
+		}
+		
+		trialPercents := rootNode.UCBManager.TrialPercentPerKey()
+		policy := game.Policy[A]{}
+		for k, v := range trialPercents {
+			policy[k] = v
+		}
+		selector := game.NewThresholdWeightedSelector[A](t, r)
+		return selector(policy), nil
+	}
+}
+
+func (e *Engine[S, As, A, Ag]) NewActorCritic(simulation int, t float64, r *rand.Rand) game.ActorCritic[S, As, A, Ag] {
+	return func(state *S, _ As) (game.Policy[A], game.AgentEvals[Ag], error) {
+		rootNode, err := e.NewNode(state)
+		if err != nil {
+			return game.Policy[A]{}, game.AgentEvals[Ag]{}, err
+		}
+
+		evals, err := e.Search(rootNode, simulation, r)
+		if err != nil {
+			return game.Policy[A]{}, game.AgentEvals[Ag]{}, err
+		}
+
+		trialPercents := rootNode.UCBManager.TrialPercentPerKey()
+		policy := game.Policy[A]{}
+		for k, v := range trialPercents {
+			policy[k] = v
+		}
+		return policy, evals, nil
+	}
+}
+
+func (e *Engine[S, As, A, Ag]) NewSolver(simulation int, t float64, r *rand.Rand) game.Solver[S, As, A, Ag] {
+	ac := e.NewActorCritic(simulation, t, r)
+	selector := game.NewThresholdWeightedSelector[A](t, r)
+	return game.Solver[S, As, A, Ag]{ActorCritic:ac, Selector:selector}
+}

@@ -444,3 +444,7 @@ func (e *SolverEpisode[S, As, A, Ag]) MakeValueLabels(agents []Ag, resultRatio f
 	}
 	return labels, nil
 }
+
+func NewPlayer() {
+	
+}

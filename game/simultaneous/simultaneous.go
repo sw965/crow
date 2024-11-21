@@ -4,12 +4,10 @@ import (
     "fmt"
     "sort"
     "math/rand"
-	omwmath "github.com/sw965/omw/math"
     omwrand "github.com/sw965/omw/math/rand"
-	omwslices "github.com/sw965/omw/slices"
-	"golang.org/x/exp/maps"
 	"github.com/sw965/crow/tensor"
 	"golang.org/x/exp/slices"
+	"github.com/sw965/crow/game/sequential"
 )
 
 type LegalActionTableProvider[S any, Ass ~[]As, As ~[]A, A comparable] func(*S) Ass
@@ -196,6 +194,15 @@ func (e *Engine[S, Ass, As, A]) ComparePlayerStrength(state S, playerNum, gameNu
 }
 
 type Policy[A comparable] map[A]float64
+
+func (p Policy[A]) ToSequential() sequential.Policy[A] {
+	sp := sequential.Policy[A]{}
+	for k, v := range p {
+		sp[k] = v
+	}
+	return sp
+}
+
 type Policies[A comparable] []Policy[A]
 
 type PoliciesProvider[S any, Ass ~[]As, As ~[]A, A comparable] func(*S, Ass) Policies[A]
@@ -217,54 +224,43 @@ func UniformPoliciesProvider[S any, Ass ~[]As, As ~[]A, A comparable](state *S, 
 type Eval float64
 type Evals []Eval
 
-type ActorCritic[S any, Ass ~[]As, As ~[]A, A comparable] func(*S, Ass, int) (Policy[A], Eval, error)
-type Selector[A comparable] func(Policy[A]) A
+type ActorCritic[S any, Ass ~[]As, As ~[]A, A comparable] func(*S, Ass) (Policies[A], Evals, error)
+type Selector[As ~[]A, A comparable] func(Policies[A]) As
 
-func NewEpsilonGreedySelector[A comparable](e float64, r *rand.Rand) Selector[A] {
-	return func(p Policy[A]) A {
-		ks := maps.Keys(p)
-		if e > r.Float64() {
-			return omwrand.Choice(ks, r)
+func NewEpsilonGreedySelector[As ~[]A, A comparable](e float64, r *rand.Rand) Selector[As, A] {
+	return func(ps Policies[A]) As {
+		jointAction := make(As, len(ps))
+		for i, p := range ps {
+			sp := p.ToSequential()
+			jointAction[i] = sequential.NewEpsilonGreedySelector[A](e, r)(sp)
 		}
-		vs := maps.Values(p)
-		idxs := omwslices.MaxIndices(vs)
-		idx := omwrand.Choice(idxs, r)
-		return ks[idx]
+		return jointAction
 	}
 }
 
-func NewMaxSelector[A comparable](r *rand.Rand) Selector[A] {
-	return NewEpsilonGreedySelector[A](0.0, r)
+func NewMaxSelector[As ~[]A, A comparable](r *rand.Rand) Selector[As, A] {
+	return NewEpsilonGreedySelector[As, A](0.0, r)
 }
 
-func NewThresholdWeightedSelector[A comparable](t float64, r *rand.Rand) Selector[A] {
-	return func(policy Policy[A]) A {
-		max := omwmath.Max(maps.Values(policy)...)
-		threshold := max * t
-		n := len(policy)
-		options := make([]A, 0, n)
-		weights := make([]float64, 0, n)
-		for action, p := range policy {
-			if p >= threshold {
-				options = append(options, action)
-				weights = append(weights, p)
-			}
+func NewThresholdWeightedSelector[As ~[]A, A comparable](t float64, r *rand.Rand) Selector[As, A] {
+	return func(ps Policies[A]) As {
+		jointAction := make(As, len(ps))
+		for i, p := range ps {
+			sp := p.ToSequential()
+			jointAction[i] = sequential.NewThresholdWeightedSelector[A](t, r)(sp)
 		}
-		idx := omwrand.IntByWeight(weights, r)
-		return options[idx]
+		return jointAction
 	}
 }
 
 type Solver[S any, Ass ~[]As, As ~[]A, A comparable] struct {
 	ActorCritic ActorCritic[S, Ass, As, A]
-	Selector Selector[A]
+	Selector Selector[As, A]
 }
-
-type Solvers[S any, Ass ~[]As, As ~[]A, A comparable] []Solver[S, Ass, As, A]
 
 type SolverEngine[S any, Ass ~[]As, As ~[]A, A comparable] struct {
 	GameLogic Logic[S, Ass, As, A]
-	Solvers Solvers[S, Ass, As, A]
+	Solver Solver[S, Ass, As, A]
 }
 
 func (e SolverEngine[S, Ass, As, A]) Play(state S, f func(*S) bool) (S, error) {
@@ -280,18 +276,13 @@ func (e SolverEngine[S, Ass, As, A]) Play(state S, f func(*S) bool) (S, error) {
         }
 
         legalActionTable := e.GameLogic.LegalActionTableProvider(&state)
-        n := len(e.Solvers)
-        jointAction := make(As, n)
 
-        for i, solver := range e.Solvers {
-			policy, _, err := solver.ActorCritic(&state, legalActionTable, i)
-			if err != nil {
-                var zero S
-                return zero, err
-            }
-            action := solver.Selector(policy)
-            jointAction[i] = action
+		policies, _, err := e.Solver.ActorCritic(&state, legalActionTable)
+		if err != nil {
+            var s S
+            return s, err
         }
+        jointAction := e.Solver.Selector(policies)
 
         state, err = e.GameLogic.Transitioner(state, jointAction)
         if err != nil {
@@ -353,21 +344,12 @@ func(e SolverEngine[S, Ass, As, A]) GenerateEpisode(states []S, c int) (SolverEp
 			}
 
 			legalActionTable := e.GameLogic.LegalActionTableProvider(&state)
-			n := len(e.Solvers)
-			jointAction := make(As, n)
-			policies := make(Policies[A], n)
-			evals := make(Evals, n)
 
-			for i, solver := range e.Solvers {
-				policy, eval, err := solver.ActorCritic(&state, legalActionTable, i)
-				if err != nil {
-					return SolverEpisode[S, Ass, As, A]{}, err
-				}
-				action := solver.Selector(policy)
-				jointAction[i] = action
-				policies[i] = policy
-				evals[i] = eval
+			policies, evals, err := e.Solver.ActorCritic(&state, legalActionTable)
+			if err != nil {
+				return SolverEpisode[S, Ass, As, A]{}, err
 			}
+			jointAction := e.Solver.Selector(policies)
 
 			episode.States = append(episode.States, state)
 			episode.PolicyTable = append(episode.PolicyTable, policies)
