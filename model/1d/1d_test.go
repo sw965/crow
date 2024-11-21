@@ -14,12 +14,12 @@ func TestModel(t *testing.T) {
 	//return
 	r := omwrand.NewMt19937()
 	xn := 784
-	h1 := 128
-	h2 := 32
+	h1 := 64
+	h2 := 16
 	yn := 10
 
 	affine := model1d.NewSoftmaxAffine([]int{xn, h1, h2, yn}, 0.1, r)
-	affine.GradMaxL2Norm = 50
+	affine.GradMaxL2Norm = 0
 	mnist, err := dataset.LoadFlatMnist()
 	if err != nil {
 		panic(err)
@@ -27,21 +27,24 @@ func TestModel(t *testing.T) {
 
 	testImgNum := len(mnist.TestImg)
 	trainNum := 256000
-	testSize := 196
+	testSize := 16
+	trainer := model1d.NewTrainer(&affine, mnist.TrainImg, mnist.TrainLabel, 4)
+	trainer.BatchSize = 512
 	momentum := model1d.NewMomentum(&affine, 0.9)
-	trainer := model1d.Trainer{
-		TeacherXs:mnist.TrainImg,
-		TeacherYs:mnist.TrainLabel,
-		Optimizer:momentum.Optimizer,
-		BatchSize:512,
-		Epoch:1,
-	}
+	fmt.Println(momentum.Velocity1D)
+	fmt.Println(momentum.Velocity2D[0][0])
+	fmt.Println(momentum.Velocity3D[0][0][0])
+	trainer.Optimizer = momentum.Optimizer
 
 	for i := 0; i < trainNum; i++ {
-		err := trainer.Train(&affine, 0.01, 4, r)
+		err := trainer.Train(&affine, 0.01, r)
 		if err != nil {
 			panic(err)
 		}
+
+		fmt.Println(momentum.Velocity1D)
+		fmt.Println(momentum.Velocity2D[0][0])
+		fmt.Println(momentum.Velocity3D[0][0][0])
 
 		idxs := omwrand.Ints(testSize, 0, testImgNum, r)
 		miniBatchTestImg := omwslices.ElementsByIndices(mnist.TestImg, idxs...)

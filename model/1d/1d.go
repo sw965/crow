@@ -7,9 +7,9 @@ import (
 	"github.com/sw965/crow/ml/2d"
 	"github.com/sw965/crow/ml/3d"
 	"github.com/sw965/crow/tensor"
+	mlmodel "github.com/sw965/crow/ml/model"
 	omwjson "github.com/sw965/omw/json"
 	omwslices "github.com/sw965/omw/slices"
-	omwrand "github.com/sw965/omw/math/rand"
 	"math/rand"
 	"github.com/sw965/omw/parallel"
 )
@@ -208,71 +208,71 @@ func (m *Sequential) BackPropagate(x, t tensor.D1) (layer1d.GradBuffer, error) {
 	return gradBuffer, err
 }
 
-func (m *Sequential) ComputeGrad(xs, ts tensor.D2, p int) (layer1d.GradBuffer, error) {
-	firstGradBuffer, err := m.BackPropagate(xs[0], ts[0])
-	if err != nil {
-		return layer1d.GradBuffer{}, err
-	}
-
-	gradBuffers := make(layer1d.GradBuffers, p)
-	for i := 0; i < p; i++ {
-		gradBuffers[i] = firstGradBuffer.NewZerosLike()
-	}
-
-	n := len(xs)
-    errCh := make(chan error, p)
-	defer close(errCh)
-
-    write := func(idxs []int, gorutineI int) {
-        for _, idx := range idxs {
-            x := xs[idx]
-			t := ts[idx]
-			gradBuffer, err := m.BackPropagate(x, t)
-            if err != nil {
-                errCh <- err
-                return
-            }
-            gradBuffers[gorutineI].Add(&gradBuffer)
-        }
-		errCh <- nil
-    }
-
-    for gorutineI, idxs := range parallel.DistributeIndicesEvenly(n-1, p) {
-        go write(idxs, gorutineI)
-    }
-
-    for i := 0; i < p; i++ {
-		err := <- errCh
+func NewGradComputer(p int) mlmodel.GradComputer[*Sequential, tensor.D2, tensor.D2, tensor.D1, tensor.D1, layer1d.GradBuffer] {
+	return func(m *Sequential, features, labels tensor.D2) (layer1d.GradBuffer, error) {
+		firstGradBuffer, err := m.BackPropagate(features[0], labels[0])
 		if err != nil {
 			return layer1d.GradBuffer{}, err
 		}
-    }
-
-    total := gradBuffers.Total()
-	total.Add(&firstGradBuffer)
-
-    nf := float64(n)
-    total.D1.DivScalar(nf)
-    total.D2.DivScalar(nf)
-    total.D3.DivScalar(nf)
-
-    param1DLossGrad := m.Param1DLossDifferentiator(m.Parameter.D1)
-    param2DLossGrad := m.Param2DLossDifferentiator(m.Parameter.D2)
-    param3DLossGrad := m.Param3DLossDifferentiator(m.Parameter.D3)
-
-    total.D1.Add(param1DLossGrad)
-    total.D2.Add(param2DLossGrad)
-    total.D3.Add(param3DLossGrad)
-
-    if m.GradMaxL2Norm > 0.0 {
-        total.ClipUsingL2Norm(m.GradMaxL2Norm)    
-    }
-    return total, nil
+	
+		gradBuffers := make(layer1d.GradBuffers, p)
+		for i := 0; i < p; i++ {
+			gradBuffers[i] = firstGradBuffer.NewZerosLike()
+		}
+	
+		n := len(features)
+		errCh := make(chan error, p)
+		defer close(errCh)
+	
+		write := func(idxs []int, gorutineI int) {
+			for _, idx := range idxs {
+				x := features[idx]
+				t := labels[idx]
+				gradBuffer, err := m.BackPropagate(x, t)
+				if err != nil {
+					errCh <- err
+					return
+				}
+				gradBuffers[gorutineI].Add(&gradBuffer)
+			}
+			errCh <- nil
+		}
+	
+		for gorutineI, idxs := range parallel.DistributeIndicesEvenly(n-1, p) {
+			go write(idxs, gorutineI)
+		}
+	
+		for i := 0; i < p; i++ {
+			err := <- errCh
+			if err != nil {
+				return layer1d.GradBuffer{}, err
+			}
+		}
+	
+		total := gradBuffers.Total()
+		total.Add(&firstGradBuffer)
+	
+		nf := float64(n)
+		total.D1.DivScalar(nf)
+		total.D2.DivScalar(nf)
+		total.D3.DivScalar(nf)
+	
+		param1DLossGrad := m.Param1DLossDifferentiator(m.Parameter.D1)
+		param2DLossGrad := m.Param2DLossDifferentiator(m.Parameter.D2)
+		param3DLossGrad := m.Param3DLossDifferentiator(m.Parameter.D3)
+	
+		total.D1.Add(param1DLossGrad)
+		total.D2.Add(param2DLossGrad)
+		total.D3.Add(param3DLossGrad)
+	
+		if m.GradMaxL2Norm > 0.0 {
+			total.ClipUsingL2Norm(m.GradMaxL2Norm)    
+		}
+		return total, nil
+	}
 }
 
-type Optimizer func(*Sequential, *layer1d.GradBuffer, float64) error
-
-func SGD(m *Sequential, gb *layer1d.GradBuffer, lr float64) error {
+func SGD(m *Sequential, gb layer1d.GradBuffer, lr float64) error {
 	grad1D := tensor.D1MulScalar(gb.D1, lr)
 	grad2D := tensor.D2MulScalar(gb.D2, lr)
 	grad3D := tensor.D3MulScalar(gb.D3, lr)
@@ -310,14 +310,13 @@ func NewMomentum(model *Sequential, rate float64) Momentum {
 	}
 }
 
-func (m *Momentum) Optimizer(model *Sequential, gb *layer1d.GradBuffer, lr float64) error {
+func (m *Momentum) Optimizer(model *Sequential, gb layer1d.GradBuffer, lr float64) error {
 	rate := m.Rate
 
 	for i := range m.Velocity1D {
 		v := m.Velocity1D[i]
 		grad := gb.D1[i]
 		m.Velocity1D[i] = rate*v - lr*grad
-		model.Parameter.D1[i] += m.Velocity1D[i]
 	}
 
 	for i := range m.Velocity2D {
@@ -325,7 +324,6 @@ func (m *Momentum) Optimizer(model *Sequential, gb *layer1d.GradBuffer, lr float
 			v := m.Velocity2D[i][j]
 			grad := gb.D2[i][j]
 			m.Velocity2D[i][j] = rate*v - lr*grad
-			model.Parameter.D2[i][j] += m.Velocity2D[i][j]
 		}
 	}
 
@@ -335,48 +333,30 @@ func (m *Momentum) Optimizer(model *Sequential, gb *layer1d.GradBuffer, lr float
 				v := m.Velocity3D[i][j][k]
 				grad := gb.D3[i][j][k]
 				m.Velocity3D[i][j][k] = rate*v - lr*grad
-				model.Parameter.D3[i][j][k] += m.Velocity3D[i][j][k]
 			}
 		}
 	}
-	return nil
+
+	err := model.Parameter.D1.Add(m.Velocity1D)
+	if err != nil {
+		return err
+	}
+
+	err = model.Parameter.D2.Add(m.Velocity2D)
+	if err != nil {
+		return err
+	}
+
+	return model.Parameter.D3.Add(m.Velocity3D)
 }
 
-type Trainer struct {
-	TeacherXs tensor.D2
-	TeacherYs tensor.D2
-	Optimizer Optimizer
-	BatchSize int
-	Epoch int
-}
-
-func (t *Trainer) Train(m *Sequential, lr float64, p int, r *rand.Rand) error {
-	if t.Optimizer == nil {
-		return fmt.Errorf("Optimizerが設定されていない為、訓練を開始できません。")
+func NewTrainer(m *Sequential, features, labels tensor.D2, p int) mlmodel.Trainer[*Sequential, tensor.D2, tensor.D2, tensor.D1, tensor.D1, layer1d.GradBuffer] {
+	return mlmodel.Trainer[*Sequential, tensor.D2, tensor.D2, tensor.D1, tensor.D1, layer1d.GradBuffer]{
+		Features:features,
+		Labels:labels,
+		GradComputer:NewGradComputer(p),
+		Optimizer:SGD,
+		BatchSize:16,
+		Epoch:1,
 	}
-
-	n := len(t.TeacherXs)
-	if n < t.BatchSize {
-		return fmt.Errorf("データ数 < バッチサイズである為、処理を続行出来ません、")
-	}
-
-	if t.Epoch <= 0 {
-		return fmt.Errorf("エポック数が0以下である為、訓練を開始出来ません。")
-	}
-
-	iterN := n / t.BatchSize * t.Epoch
-	for i := 0; i < iterN; i++ {
-		idxs := omwrand.Ints(t.BatchSize, 0, n, r)
-		xs := omwslices.ElementsByIndices(t.TeacherXs, idxs...)
-		ts := omwslices.ElementsByIndices(t.TeacherYs, idxs...)
-		gradBuffer, err := m.ComputeGrad(xs, ts, p)
-		if err != nil {
-			return err
-		}
-		err = t.Optimizer(m, &gradBuffer, lr)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
 }

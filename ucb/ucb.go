@@ -37,30 +37,22 @@ func (c *Calculator) Calculation(totalTrial int) float64 {
 	return c.Func(v, c.P, totalTrial, c.Trial)
 }
 
-type Manager[KS ~[]K, K comparable] map[K]*Calculator
-
-func (m Manager[KS, K]) TotalValues() []float64 {
-	vs := make([]float64, 0, len(m))
-	for _, v := range m {
-		vs = append(vs, v.TotalValue)
-	}
-	return vs
-}
+type Manager[KS ~[]K, K comparable]map[K]*Calculator
 
 func (m Manager[KS, K]) TotalValue() float64 {
-	return omwmath.Sum(m.TotalValues()...)
-}
-
-func (m Manager[KS, K]) Trials() []int {
-	trials := make([]int, 0, len(m))
+	t := 0.0
 	for _, v := range m {
-		trials = append(trials, v.Trial)
+		t += v.TotalValue
 	}
-	return trials
+	return t
 }
 
 func (m Manager[KS, K]) TotalTrial() int {
-	return omwmath.Sum(m.Trials()...)
+	t := 0
+	for _, v := range m {
+		t += v.Trial
+	}
+	return t
 }
 
 func (m Manager[KS, K]) AverageValue() float64 {
@@ -98,7 +90,7 @@ func (m Manager[KS, K]) RandMaxKey(r *rand.Rand) K {
 }
 
 func (m Manager[KS, K]) MaxTrialKeys() KS {
-	max := omwmath.Max(m.Trials()...)
+	max := m.MaxTrial()
 	ks := make(KS, 0, len(m))
 	for k, v := range m {
 		if v.Trial == max {
@@ -110,6 +102,14 @@ func (m Manager[KS, K]) MaxTrialKeys() KS {
 
 func (m Manager[KS, K]) RandMaxTrialKey(r *rand.Rand) K {
 	return omwrand.Choice(m.MaxTrialKeys(), r)
+}
+
+func (m Manager[KS, K]) MaxTrial() int {
+	trials := make([]int, 0, len(m))
+	for _, v := range m {
+		trials = append(trials, v.Trial)
+	}
+	return omwmath.Max(trials...)
 }
 
 func (m Manager[KS, K]) TrialPercentPerKey() map[K]float64 {

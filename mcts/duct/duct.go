@@ -3,14 +3,13 @@ package duct
 import (
 	"fmt"
 	game "github.com/sw965/crow/game/simultaneous"
-	"github.com/sw965/crow/game/solver"
 	"github.com/sw965/crow/ucb"
 	"math/rand"
 )
 
 // https://www.terry-u16.net/entry/decoupled-uct
 
-type LeafNodeEvaluator[S any] func(*S) (solver.Evals, error)
+type LeafNodeEvaluator[S any] func(*S) (game.Evals, error)
 
 type Node[S any, Ass ~[]As, As ~[]A, A comparable] struct {
 	State       S
@@ -36,7 +35,7 @@ type selectionInfo[S any, Ass ~[]As, As ~[]A, A comparable] struct {
 
 type selectionInfoSlice[S any, Ass ~[]As, As ~[]A, A comparable] []selectionInfo[S, Ass, As, A]
 
-func (ss selectionInfoSlice[S, Ass, As, A]) backward(evals solver.Evals) {
+func (ss selectionInfoSlice[S, Ass, As, A]) backward(evals game.Evals) {
 	for _, s := range ss {
 		node := s.node
 		jointAction := s.jointAction
@@ -48,11 +47,11 @@ func (ss selectionInfoSlice[S, Ass, As, A]) backward(evals solver.Evals) {
 }
 
 type Engine[S any, Ass ~[]As, As ~[]A, A comparable] struct {
-	gameEngine             game.Engine[S, Ass, As, A]
-	UCBFunc                ucb.Func
-	PoliciesProvider       solver.PoliciesProvider[S, Ass, As, A]
-	LeafNodeEvaluator      LeafNodeEvaluator[S]
-	NextNodesCap           int
+	gameEngine        game.Engine[S, Ass, As, A]
+	UCBFunc           ucb.Func
+	PoliciesProvider  game.PoliciesProvider[S, Ass, As, A]
+	LeafNodeEvaluator LeafNodeEvaluator[S]
+	NextNodesCap      int
 }
 
 func (e *Engine[S, Ass, As, A]) GetGameEngine() game.Engine[S, Ass, As, A] {
@@ -63,15 +62,15 @@ func (e *Engine[S, Ass, As, A]) SetGameEngine(ge game.Engine[S, Ass, As, A]) {
 	e.gameEngine = ge
 }
 
-func (e *Engine[S, As, A, G]) SetUniformPoliciesProvider() {
-	e.PoliciesProvider = solver.UniformPoliciesProvider[S, As, A]
+func (e *Engine[S, Ass, As, A]) SetUniformPoliciesProvider() {
+	e.PoliciesProvider = game.UniformPoliciesProvider[S, Ass, As, A]
 }
 
 func (e *Engine[S, Ass, As, A]) SetPlayout() {
-	e.LeafNodeEvaluator = func(state *S) (solver.Evals, error) {
+	e.LeafNodeEvaluator = func(state *S) (game.Evals, error) {
 		final, err := e.gameEngine.Playout(*state)
 		if err != nil {
-			return solver.Evals{}, err
+			return game.Evals{}, err
 		}
 		scores, err := e.gameEngine.Logic.EvaluateResultScores(&final)
 		return scores.ToEvals(), err

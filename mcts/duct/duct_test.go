@@ -3,7 +3,6 @@ package duct_test
 import (
 	"fmt"
 	game "github.com/sw965/crow/game/simultaneous"
-	"github.com/sw965/crow/game/solver"
 	"github.com/sw965/crow/mcts/duct"
 	"github.com/sw965/crow/ucb"
 	omwrand "github.com/sw965/omw/math/rand"
@@ -91,10 +90,7 @@ func TestDUCT(t *testing.T) {
 
 	gameEngine := game.Engine[RockPaperScissors, HandTable, Hands, Hand]{
 		Logic:gameLogic,
-		Players:game.Players[RockPaperScissors, HandTable, Hands, Hand]{
-			game.NewRandActionPlayer[RockPaperScissors, HandTable, Hands, Hand](r),
-			game.NewRandActionPlayer[RockPaperScissors, HandTable, Hands, Hand](r),
-		},
+		Player:game.NewRandActionPlayer[RockPaperScissors, HandTable, Hands, Hand](r),
 	}
 
 	mcts := duct.Engine[RockPaperScissors, HandTable, Hands, Hand]{
@@ -102,7 +98,7 @@ func TestDUCT(t *testing.T) {
 	}
 	mcts.SetGameEngine(gameEngine)
 
-	mcts.PoliciesProvider = solver.UniformPoliciesProvider[RockPaperScissors, HandTable, Hands, Hand]
+	mcts.SetUniformPoliciesProvider()
 	mcts.UCBFunc = ucb.NewAlphaGoFunc(math.Sqrt(2))
 	mcts.SetPlayout()
 
@@ -123,7 +119,7 @@ func TestDUCT(t *testing.T) {
 		}
 	}
 	fmt.Println("")
-	err = mcts.Run(19600, rootNode, r)
+	err = mcts.Run(196000, rootNode, r)
 	if err != nil {
 		panic(err)
 	}

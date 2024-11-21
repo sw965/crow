@@ -11,13 +11,13 @@ type Agent string
 
 func Test(t *testing.T) {
 	logic := sequential.Logic[State, []string, string, Agent]{}
-	logic.PlacementsJudger = func(_ *State) (sequential.PlacementPerAgent[Agent], error) {
-		return sequential.NewPlacementPerAgent[[][]Agent, []Agent, Agent](
+	logic.PlacementsJudger = func(_ *State) (sequential.AgentPlacements[Agent], error) {
+		return sequential.NewAgentPlacements[[][]Agent, []Agent, Agent](
 			[][]Agent{[]Agent{"白"}, []Agent{"水"}},
 		)
 	}
 	logic.SetStandardResultScoresEvaluator()
 
 	var s State
-	fmt.Println(logic.EvaluateResultScorePerAgent(&s))
+	fmt.Println(logic.EvaluateAgentResultScores(&s))
 }
