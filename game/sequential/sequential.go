@@ -4,11 +4,9 @@ import (
 	"fmt"
 	"sort"
 	"math/rand"
-	omwrand "github.com/sw965/omw/math/rand"
-	omwslices "github.com/sw965/omw/slices"
-	omwmath "github.com/sw965/omw/math"
 	"golang.org/x/exp/maps"
-	"github.com/sw965/crow/tensor"
+	omwmath "github.com/sw965/omw/math"
+	omwrand "github.com/sw965/omw/math/rand"
 )
 
 type LegalActionsProvider[S any, As ~[]A, A comparable] func(*S) As
@@ -99,8 +97,6 @@ func (ss AgentResultScores[Ag]) DivScalar(a float64) {
 
 type ResultScoresEvaluator[Ag comparable] func(AgentPlacements[Ag]) (AgentResultScores[Ag], error)
 
-type AverageAgentResultScores[Ag comparable] map[Ag]float64
-
 type Logic[S any, As ~[]A, A, Ag comparable] struct {
 	LegalActionsProvider     LegalActionsProvider[S, As, A]
 	Transitioner             Transitioner[S, A]
@@ -172,43 +168,35 @@ type Engine[S any, As ~[]A, A, Ag comparable] struct {
 	AgentPlayers AgentPlayers[S, As, A, Ag]
 }
 
-func (e *Engine[S, As, A, Ag]) GetCurrentPlayer(state *S) Player[S, As, A] {
-	agent := e.Logic.CurrentTurnAgentGetter(state)
-	return e.AgentPlayers[agent]
-}
-
-func (e *Engine[S, As, A, Ag]) Play(state S, f func(*S) bool) (S, error) {
+func (e *Engine[S, As, A, Ag]) Playout(state S) (S, error) {
 	for {
 		isEnd, err := e.Logic.IsEnd(&state)
 		if err != nil {
-			var zero S
-			return zero, err
+			var s S
+			return s, err
 		}
 
-		if isEnd || f(&state) {
+		if isEnd {
 			break
 		}
 
-		player := e.GetCurrentPlayer(&state)
+		agent := e.Logic.CurrentTurnAgentGetter(&state)
+		player := e.AgentPlayers[agent]
 		legalActions := e.Logic.LegalActionsProvider(&state)
 
 		action, err := player(&state, legalActions)
 		if err != nil {
-			var zero S
-			return zero, err
+			var s S
+			return s, err
 		}
 
 		state, err = e.Logic.Transitioner(state, &action)
 		if err != nil {
-			var zero S
-			return zero, err
+			var s S
+			return s, err
 		}
 	}
 	return state, nil
-}
-
-func (e *Engine[S, As, A, Ag]) Playout(state S) (S, error) {
-	return e.Play(state, func(_ *S) bool { return false })
 }
 
 func (e *Engine[S, As, A, Ag]) ComparePlayerStrength(state S, n int) (AgentResultScores[Ag], error) {
@@ -227,6 +215,51 @@ func (e *Engine[S, As, A, Ag]) ComparePlayerStrength(state S, n int) (AgentResul
 	}
 	avgs.DivScalar(float64(n))
 	return avgs, nil
+}
+
+func (e *Engine[S, As, A, Ag]) NewStates(init S, n int, r *rand.Rand) ([]S, error) {
+	if n <= 0 {
+		return []S{}, fmt.Errorf("引数のnが0以下です。0より大きい値にしてください。")
+	}
+
+	states := make([]S, 0, n)
+	c := 0
+
+	for {
+		state := init
+		for {
+			isEnd, err := e.Logic.IsEnd(&state)
+			if err != nil {
+				return []S{}, err
+			}
+	
+			if isEnd {
+				break
+			}
+
+			states = append(states, state)
+			c += 1
+
+			if c == n {
+				return states, nil
+			}
+
+			agent := e.Logic.CurrentTurnAgentGetter(&state)
+			player := e.AgentPlayers[agent]
+			legalActions := e.Logic.LegalActionsProvider(&state)
+	
+			action, err := player(&state, legalActions)
+			if err != nil {
+				return []S{}, err
+			}
+	
+			state, err = e.Logic.Transitioner(state, &action)
+			if err != nil {
+				return []S{}, err
+			}
+		}
+	}
+	return states, nil
 }
 
 type Policy[A comparable] map[A]float64
@@ -257,25 +290,7 @@ func (es AgentEvals[Ag]) DivScalar(e Eval) {
 	}
 }
 
-type ActorCritic[S any, As ~[]A, A, Ag comparable] func(*S, As) (Policy[A], AgentEvals[Ag], error)
 type Selector[A comparable] func(Policy[A]) A
-
-func NewEpsilonGreedySelector[A comparable](e float64, r *rand.Rand) Selector[A] {
-	return func(p Policy[A]) A {
-		ks := maps.Keys(p)
-		if e > r.Float64() {
-			return omwrand.Choice(ks, r)
-		}
-		vs := maps.Values(p)
-		idxs := omwslices.MaxIndices(vs)
-		idx := omwrand.Choice(idxs, r)
-		return ks[idx]
-	}
-}
-
-func NewMaxSelector[A comparable](r *rand.Rand) Selector[A] {
-	return NewEpsilonGreedySelector[A](0.0, r)
-}
 
 func NewThresholdWeightedSelector[A comparable](t float64, r *rand.Rand) Selector[A] {
 	return func(policy Policy[A]) A {
@@ -293,158 +308,4 @@ func NewThresholdWeightedSelector[A comparable](t float64, r *rand.Rand) Selecto
 		idx := omwrand.IntByWeight(weights, r)
 		return options[idx]
 	}
-}
-
-type Solver[S any, As ~[]A, A, Ag comparable] struct {
-	ActorCritic ActorCritic[S, As, A, Ag]
-	Selector Selector[A]
-}
-
-type AgentSolvers[S any, As ~[]A, A, Ag comparable] map[Ag]*Solver[S, As, A, Ag]
-
-type SolverEngine[S any, As ~[]A, A, Ag comparable] struct {
-	GameLogic    Logic[S, As, A, Ag]
-	AgentSolvers AgentSolvers[S, As, A, Ag]
-}
-
-func (e SolverEngine[S, As, A, Ag]) Play(state S, f func(*S) bool) (S, error) {
-	for {
-		isEnd, err := e.GameLogic.IsEnd(&state)
-		if err != nil {
-			var zero S
-			return zero, err
-		}
-
-		if isEnd || f(&state) {
-			break
-		}
-
-		agent := e.GameLogic.CurrentTurnAgentGetter(&state)
-		solver := e.AgentSolvers[agent]
-		legalActions := e.GameLogic.LegalActionsProvider(&state)
-
-		policy, _, err := solver.ActorCritic(&state, legalActions)
-		if err != nil {
-			var zero S
-			return zero, err
-		}
-		action := solver.Selector(policy)
-
-		state, err = e.GameLogic.Transitioner(state, &action)
-		if err != nil {
-			var zero S
-			return zero, err
-		}
-	}
-	return state, nil
-}
-
-func (e SolverEngine[S, As, A, Ag]) MakeTrainingInitStates(state S, n int, f func(*S) bool, c int) ([]S, error) {
-	states := make([]S, 0, c)
-	init := state
-	for i := 0; i < n; i++ {
-		state, err := e.Play(state, f)
-		if err != nil {
-			return []S{}, err
-		}
-
-		isEnd, err := e.GameLogic.IsEnd(&state)
-		if err != nil {
-			return []S{}, err
-		}
-
-		if !isEnd {
-			states = append(states, state)
-		}
-		state = init
-	}
-	return states, nil
-}
-
-func(e SolverEngine[S, As, A, Ag]) GenerateEpisode(states []S, totalCap, oneGameCap int) (SolverEpisode[S, As, A, Ag], error) {
-	episode := SolverEpisode[S, As, A, Ag]{
-		States:make([]S, 0, totalCap),
-		Agents:make([]Ag, 0, totalCap),
-		Actions:make(As, 0, totalCap),
-		Policies:make([]Policy[A], 0, totalCap),
-		AgentEvalTable:make([]AgentEvals[Ag], 0, totalCap),
-		ResultScores:make([]float64, 0, totalCap),
-	}
-
-	oneGameAgents := make([]Ag, 0, oneGameCap)
-	for _, state := range states {
-		for {
-			isEnd, err := e.GameLogic.IsEnd(&state)
-			if err != nil {
-				return SolverEpisode[S, As, A, Ag]{}, err
-			}
-	
-			if isEnd {
-				scores, err := e.GameLogic.EvaluateAgentResultScores(&state)
-				if err != nil {
-					return SolverEpisode[S, As, A, Ag]{}, err
-				}
-				for _, agent := range oneGameAgents {
-					score := scores[agent]
-					episode.ResultScores = append(episode.ResultScores, score)
-				}
-				episode.Agents = append(episode.Agents, oneGameAgents...)
-				oneGameAgents = oneGameAgents[:0] //空にする(容量はそのまま)
-				break
-			}
-	
-			agent := e.GameLogic.CurrentTurnAgentGetter(&state)
-			solver := e.AgentSolvers[agent]
-			legalActions := e.GameLogic.LegalActionsProvider(&state)
-	
-			policy, evals, err := solver.ActorCritic(&state, legalActions)
-			if err != nil {
-				return SolverEpisode[S, As, A, Ag]{}, err
-			}
-			action := solver.Selector(policy)
-
-			episode.States = append(episode.States, state)
-			episode.Agents = append(episode.Agents, agent)
-			episode.Policies = append(episode.Policies, policy)
-			episode.AgentEvalTable = append(episode.AgentEvalTable, evals)
-	
-			state, err = e.GameLogic.Transitioner(state, &action)
-			if err != nil {
-				return SolverEpisode[S, As, A, Ag]{}, err
-			}
-		}
-	}
-	return SolverEpisode[S, As, A, Ag]{}, nil
-}
-
-type SolverEpisode[S any, As ~[]A, A, Ag comparable] struct {
-	States []S
-	Agents []Ag
-	Actions As
-	Policies []Policy[A]
-	AgentEvalTable []AgentEvals[Ag]
-	ResultScores []float64
-}
-
-func (e *SolverEpisode[S, As, A, Ag]) MakeValueLabels(agents []Ag, resultRatio float64) (tensor.D2, error) {
-	if resultRatio < 0.0 || resultRatio > 1.0 {
-		return tensor.D2{}, fmt.Errorf("引数のゲーム結果の比率は、0.0～1.0でなければならない。")
-	}
-	evalRatio := 1.0 - resultRatio
-
-	labels := make(tensor.D2, len(e.States))
-	agentsN := len(agents)
-	for i, evals := range e.AgentEvalTable {
-		label := make(tensor.D1, agentsN)
-		for _, agent := range agents {
-			eval := evals[agent]
-			label[i] = evalRatio * float64(eval) + (resultRatio * e.ResultScores[i])
-		}
-		labels[i] = label
-	}
-	return labels, nil
-}
-
-func NewPlayer() {
-	
 }

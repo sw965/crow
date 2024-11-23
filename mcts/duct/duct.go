@@ -166,39 +166,28 @@ func (e *Engine[S, Ass, As, A]) Search(rootNode *Node[S, Ass, As, A], simulation
 	return nil
 }
 
-func (e *Engine[S, Ass, As, A]) NewActorCritic(simulation int, t float64, r *rand.Rand) game.ActorCritic[S, Ass, As, A] {
-	return func(state *S, _ Ass) (game.Policies[A], game.Evals, error) {
+func (e *Engine[S, Ass, As, A]) NewPlayer(simulation int, selector game.Selector[As, A], r *rand.Rand) game.Player[S, Ass, As, A] {
+	return func(state *S, _ Ass) (As, error) {
 		rootNode, err := e.NewNode(state)
 		if err != nil {
-			return game.Policies[A]{}, game.Evals{}, err
+			return As{}, err
 		}
 
 		err = e.Search(rootNode, simulation, r)
 		if err != nil {
-			return game.Policies[A]{}, game.Evals{}, err
+			return As{}, err
 		}
 
-		n := len(rootNode.UCBManagers)
-		policies := make(game.Policies[A], n)
+		ps := make(game.Policies[A], len(rootNode.UCBManagers))
 		for i, m := range rootNode.UCBManagers {
 			trialPercents := m.TrialPercentPerKey()
-			policy := game.Policy[A]{}
+			p := game.Policy[A]{}
 			for k, v := range trialPercents {
-				policy[k] = v
+				p[k] = v
 			}
-			policies[i] = policy
+			ps[i] = p		
 		}
-
-		evals := make(game.Evals, n)
-		for i, avg := range rootNode.UCBManagers.AverageValues() {
-			evals[i] = game.Eval(avg)
-		}
-		return policies, evals, nil
+		jointAction := selector(ps)
+		return jointAction, nil
 	}
-}
-
-func (e *Engine[S, As, A, Ag]) NewSolver(simulation int, t float64, r *rand.Rand) game.Solver[S, As, A, Ag] {
-	ac := e.NewActorCritic(simulation, t, r)
-	selector := game.NewThresholdWeightedSelector[A](t, r)
-	return game.Solver[S, As, A, Ag]{ActorCritic:ac, Selector:selector}
 }

@@ -1,6 +1,7 @@
 package ucb
 
 import (
+	"golang.org/x/exp/maps"
 	omwmath "github.com/sw965/omw/math"
 	omwrand "github.com/sw965/omw/math/rand"
 	"math"
@@ -119,6 +120,24 @@ func (m Manager[KS, K]) TrialPercentPerKey() map[K]float64 {
 		ps[k] = float64(v.Trial) / float64(total)
 	}
 	return ps
+}
+
+func (m Manager[Ks, K]) F(t float64, r *rand.Rand) K {
+	ps := m.TrialPercentPerKey()
+	max := omwmath.Max(maps.Values(ps)...)
+	n := len(ps)
+	options := make(Ks, 0, n)
+	ws := make([]float64, 0, n)
+
+	for a, p := range ps {
+		if p >= max * t {
+			options = append(options, a)
+			ws = append(ws, p)
+		}
+	}
+
+	idx := omwrand.IntByWeight(ws, r)
+	return options[idx]
 }
 
 type Managers[KS ~[]K, K comparable] []Manager[KS, K]
