@@ -50,7 +50,7 @@ func (ss selectionInfoSlice[S, As, A, G]) backward(evals game.AgentEvals[G]) {
 }
 
 type Engine[S any, As ~[]A, A, Ag comparable] struct {
-	game              game.Engine[S, As, A, Ag]
+	gameEngine              game.Engine[S, As, A, Ag]
 	UCBFunc           ucb.Func
 	PolicyProvider    game.PolicyProvider[S, As, A]
 	LeafNodeEvaluator LeafNodeEvaluator[S, Ag]
@@ -58,11 +58,11 @@ type Engine[S any, As ~[]A, A, Ag comparable] struct {
 }
 
 func (e *Engine[S, As, A, G]) GetGame() game.Engine[S, As, A, G]{
-	return e.game
+	return e.gameEngine
 }
 
-func (e *Engine[S, As, A, G]) SetGame(g game.Engine[S, As, A, G]) {
-	e.game = g
+func (e *Engine[S, As, A, G]) SetGame(ge game.Engine[S, As, A, G]) {
+	e.gameEngine = ge
 }
 
 func (e *Engine[S, As, A, G]) SetUniformPolicyProvider() {
@@ -71,17 +71,17 @@ func (e *Engine[S, As, A, G]) SetUniformPolicyProvider() {
 
 func (e *Engine[S, As, A, G]) SetPlayout() {
 	e.LeafNodeEvaluator = func(state *S) (game.AgentEvals[G], error) {
-		final, err := e.game.Playout(*state)
+		final, err := e.gameEngine.Playout(*state)
 		if err != nil {
 			return game.AgentEvals[G]{}, err
 		}
-		scores, err := e.game.Logic.EvaluateAgentResultScores(&final)
-		return scores.ToEvalPerAgent(), err
+		scores, err := e.gameEngine.Logic.EvaluateAgentResultScores(&final)
+		return scores.ToAgentEvals(), err
 	}
 }
 
 func (e *Engine[S, As, A, G]) NewNode(state *S) (*Node[S, As, A, G], error) {
-	policy := e.PolicyProvider(state, e.game.Logic.LegalActionsProvider(state))
+	policy := e.PolicyProvider(state, e.gameEngine.Logic.LegalActionsProvider(state))
 	if len(policy) == 0 {
 		return &Node[S, As, A, G]{}, fmt.Errorf("len(Policy) == 0 である為、新しくNodeを生成出来ません。")
 	}
@@ -91,7 +91,7 @@ func (e *Engine[S, As, A, G]) NewNode(state *S) (*Node[S, As, A, G], error) {
 		u[a] = &ucb.Calculator{Func: e.UCBFunc, P: p}
 	}
 
-	agent := e.game.Logic.CurrentTurnAgentGetter(state)
+	agent := e.gameEngine.Logic.CurrentTurnAgentGetter(state)
 	nextNodes := make(Nodes[S, As, A, G], 0, e.NextNodesCap)
 	return &Node[S, As, A, G]{State: *state, Agent: agent, UCBManager: u, NextNodes: nextNodes}, nil
 }
@@ -100,17 +100,18 @@ func (e *Engine[S, As, A, Ag]) SelectExpansionBackward(node *Node[S, As, A, Ag],
 	state := node.State
 	selections := make(selectionInfoSlice[S, As, A, Ag], 0, capacity)
 	var err error
+	var isEnd bool
 
 	for {
 		action := omwrand.Choice(node.UCBManager.MaxKeys(), r)
 		selections = append(selections, selectionInfo[S, As, A, Ag]{node: node, action: action})
 
-		state, err = e.game.Logic.Transitioner(state, &action)
+		state, err = e.gameEngine.Logic.Transitioner(state, &action)
 		if err != nil {
 			return game.AgentEvals[Ag]{}, 0, err
 		}
 
-		isEnd, err := e.game.Logic.IsEnd(&state)
+		isEnd, err = e.gameEngine.Logic.IsEnd(&state)
 		if err != nil {
 			return game.AgentEvals[Ag]{}, 0, err
 		}
@@ -119,7 +120,7 @@ func (e *Engine[S, As, A, Ag]) SelectExpansionBackward(node *Node[S, As, A, Ag],
 			break
 		}
 
-		nextNode, ok := node.NextNodes.FindByState(&state, e.game.Logic.Comparator)
+		nextNode, ok := node.NextNodes.FindByState(&state, e.gameEngine.Logic.Comparator)
 		if !ok {
 			//expansion
 			nextNode, err = e.NewNode(&state)
@@ -134,7 +135,20 @@ func (e *Engine[S, As, A, Ag]) SelectExpansionBackward(node *Node[S, As, A, Ag],
 		node = nextNode
 	}
 
-	evals, err := e.LeafNodeEvaluator(&state)
+	var evals game.AgentEvals[Ag]
+	if isEnd {
+		scores, err := e.gameEngine.Logic.EvaluateAgentResultScores(&state)
+		if err != nil {
+			return game.AgentEvals[Ag]{}, 0, err
+		}
+		evals = scores.ToAgentEvals()
+	} else {
+		evals, err = e.LeafNodeEvaluator(&state)
+		if err != nil {
+			return game.AgentEvals[Ag]{}, 0, err
+		}		
+	}
+
 	selections.backward(evals)
 	return evals, len(selections), err
 }

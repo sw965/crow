@@ -108,6 +108,8 @@ func (e *Engine[S, Ass, As, A]) SelectExpansionBackward(node *Node[S, Ass, As, A
 	state := node.State
 	selections := make(selectionInfoSlice[S, Ass, As, A], 0, capacity)
 	var err error
+	var isEnd bool
+
 	for {
 		jointAction := node.UCBManagers.RandMaxKeys(r)
 		selections = append(selections, selectionInfo[S, Ass, As, A]{node: node, jointAction: jointAction})
@@ -117,13 +119,13 @@ func (e *Engine[S, Ass, As, A]) SelectExpansionBackward(node *Node[S, Ass, As, A
 			return 0, err
 		}
 
-		if isEnd, err := e.gameEngine.Logic.IsEnd(&state); err != nil {
-			if err != nil {
-				return 0, err
-			}
-			if isEnd {
-				break
-			}
+		isEnd, err = e.gameEngine.Logic.IsEnd(&state)
+		if err != nil {
+			return 0, err
+		}
+
+		if isEnd {
+			break
 		}
 
 		nextNode, ok := node.NextNodes.FindByState(&state, e.gameEngine.Logic.Comparator)
@@ -141,11 +143,21 @@ func (e *Engine[S, Ass, As, A]) SelectExpansionBackward(node *Node[S, Ass, As, A
 		node = nextNode
 	}
 
-	evals, err := e.LeafNodeEvaluator(&state)
-	//selections.backwardの前にエラー処理をしない場合、index out of range が起きる事がある。
-	if err != nil {
-		return 0, err
+	var evals game.Evals
+	if isEnd {
+		scores, err := e.gameEngine.Logic.EvaluateResultScores(&state)
+		if err != nil {
+			return 0, err
+		}
+		evals = scores.ToEvals()
+	} else {
+		evals, err = e.LeafNodeEvaluator(&state)
+		//selections.backwardの前にエラー処理をしない場合、index out of range が起きる事がある。
+		if err != nil {
+			return 0, err
+		}
 	}
+
 	selections.backward(evals)
 	return len(selections), nil
 }

@@ -75,7 +75,7 @@ func (p AgentPlacements[G]) Validate() error {
 type PlacementsJudger[S any, Ag comparable] func(*S) (AgentPlacements[Ag], error)
 type AgentResultScores[Ag comparable] map[Ag]float64
 
-func (ss AgentResultScores[Ag]) ToEvalPerAgent() AgentEvals[Ag] {
+func (ss AgentResultScores[Ag]) ToAgentEvals() AgentEvals[Ag] {
 	es := AgentEvals[Ag]{}
 	for k, v := range ss {
 		es[k] = Eval(v)
