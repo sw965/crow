@@ -176,7 +176,7 @@ func (e *Engine[S, As, A, Ag]) NewPlayer(simulation int, selector game.Selector[
 		trialPercents := rootNode.UCBManager.TrialPercentPerKey()
 		policy := game.Policy[A]{}
 		for k, v := range trialPercents {
-			trialPercents[k] = v
+			policy[k] = v
 		}
 
 		action := selector(policy)
