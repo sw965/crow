@@ -61,12 +61,6 @@ func (ss ResultScores) ToEvals() Evals {
 	return es
 }
 
-func (ss ResultScores) Add(other ResultScores) {
-	for i := range ss {
-		ss[i] += other[i]
-	}
-}
-
 func (ss ResultScores) DivScalar(a float64) {
 	for i := range ss {
 		ss[i] /= a
@@ -181,7 +175,9 @@ func (e *Engine[S, Ass, As, A]) ComparePlayerStrength(state S, playerNum, gameNu
         if err != nil {
             return nil, err
         }
-        avgs.Add(scores)
+        for k, v := range scores {
+            avgs[k] += v
+        }
     }
 	avgs.DivScalar(float64(gameNum))
     return avgs, nil

@@ -83,12 +83,6 @@ func (ss AgentResultScores[Ag]) ToAgentEvals() AgentEvals[Ag] {
 	return es
 }
 
-func (ss AgentResultScores[Ag]) Add(other AgentResultScores[Ag]) {
-	for k := range ss {
-		ss[k] += other[k]
-	}
-}
-
 func (ss AgentResultScores[Ag]) DivScalar(a float64) {
 	for k := range ss {
 		ss[k] /= a
@@ -211,7 +205,9 @@ func (e *Engine[S, As, A, Ag]) ComparePlayerStrength(state S, n int) (AgentResul
 		if err != nil {
 			return nil, err
 		}
-		avgs.Add(scores)
+		for k, v := range scores {
+			avgs[k] += v
+		}
 	}
 	avgs.DivScalar(float64(n))
 	return avgs, nil
