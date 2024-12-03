@@ -58,24 +58,13 @@ func Softmax(x tensor.D1) tensor.D1 {
     return y
 }
 
-func SoftmaxDerivative(y, chain tensor.D1) (tensor.D1, error) {
-    sum := 0.0
-    for i := range y {
-        sum += y[i] * chain[i]
-    }
-    dx := make(tensor.D1, len(y))
-    for i := range y {
-        dx[i] = y[i] * (chain[i] - sum)
-    }
-    return dx, nil
-}
-
 func LinearSum(x, w tensor.D1, b float64) (float64, error) {
 	hadamard, err := tensor.D1Mul(x, w)
 	y := omwmath.Sum(hadamard...) + b
 	return y, err
 }
 
+//バイアス項(b)の微分は常に1である為、ここでは計算しない
 func LinearSumDerivative(x, w tensor.D1) (tensor.D1, tensor.D1, error) {
 	n := len(x)
 	gradX := make(tensor.D1, n)

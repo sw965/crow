@@ -7,12 +7,44 @@ import (
 	omwmath "github.com/sw965/omw/math"
 )
 
-func SigmoidToTanh(y tensor.D2) tensor.D2 {
-	return fn.Map[tensor.D2](y, ml1d.SigmoidToTanh)
+func Sigmoid(x tensor.D2) tensor.D2 {
+	return fn.Map[tensor.D2](x, ml1d.Sigmoid)
 }
 
-func TanhToSigmoid(y tensor.D2) tensor.D2 {
-	return fn.Map[tensor.D2](y, ml1d.TanhToSigmoid)
+func SigmoidGrad(x tensor.D2) tensor.D2 {
+	return fn.Map[tensor.D2](x, ml1d.SigmoidGrad)
+}
+
+func LinearSum(x, w tensor.D2, b tensor.D1) (tensor.D1, error) {
+	y := make(tensor.D1, len(x))
+	var err error
+	for i, xi := range x {
+		wi := w[i]
+		bi := b[i]
+		y[i], err = ml1d.LinearSum(xi, wi, bi)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return y, nil
+}
+
+//バイアス項(b)の微分は常に1である為、ここでは計算しない
+func LinearSumDerivative(x, w tensor.D2) (tensor.D2, tensor.D2, error) {
+	n := len(x)
+	gradX := make(tensor.D2, n)
+	gradW := make(tensor.D2, n)
+
+	for i := 0; i < n; i++ {
+		gradXi, gradWi, err := ml1d.LinearSumDerivative(x[i], w[i])
+		if err != nil {
+			return nil, nil, err
+		}
+
+		gradX[i] = gradXi
+		gradW[i] = gradWi
+	}
+	return gradX, gradW, nil
 }
 
 func L2Regularization(c float64) func(tensor.D2) float64 {

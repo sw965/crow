@@ -282,17 +282,6 @@ func TanhForward(x tensor.D1, backwards Backwards) (tensor.D1, Backwards, error)
 	return y, backwards, nil
 }
 
-func SoftmaxForward(x tensor.D1, backwards Backwards) (tensor.D1, Backwards, error) {
-    y := ml1d.Softmax(x)
-    var backward Backward
-    backward = func(chain tensor.D1, gb *GradBuffer) (tensor.D1, *GradBuffer, error) {
-		dydx, err := ml1d.SoftmaxDerivative(y, chain)
-		return dydx, gb, err 
-    }
-    backwards = append(backwards, backward)
-    return y, backwards, nil
-}
-
 func SoftmaxForwardForCrossEntropy(x tensor.D1, backwards Backwards) (tensor.D1, Backwards, error) {
     y := ml1d.Softmax(x)
     var backward Backward
@@ -333,6 +322,8 @@ func NewLinearSumForward(w tensor.D1, b *float64) Forward {
 			if err != nil {
 				return tensor.D1{}, &GradBuffer{}, err
 			}
+
+			//∂L/∂x
 			dx := tensor.D1MulScalar(dydx, chain[0])
 
 			//∂L/∂w

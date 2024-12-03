@@ -60,7 +60,7 @@ func NewSequential(param Parameter) Sequential {
 	}
 }
 
-func NewLinearSum(xn int, output layer1d.Forward, c float64) Sequential {
+func NewLinear(xn int, output layer1d.Forward, c float64) Sequential {
 	param := Parameter{
 		D1: tensor.D1{0.0},
 		D2: tensor.D2{tensor.NewD1Zeros(xn)},
@@ -80,12 +80,12 @@ func NewLinearSum(xn int, output layer1d.Forward, c float64) Sequential {
 	return linearSum
 }
 
-func NewIdentityLinearSum(xn int, c float64) Sequential {
-	return NewLinearSum(xn, layer1d.IdentityForward, c)
+func NewIdentityLinear(xn int, c float64) Sequential {
+	return NewLinear(xn, layer1d.IdentityForward, c)
 }
 
-func NewSigmoidLinearSum(xn int, c float64) Sequential {
-	return NewLinearSum(xn, layer1d.SigmoidForward, c)
+func NewSigmoidLinear(xn int, c float64) Sequential {
+	return NewLinear(xn, layer1d.SigmoidForward, c)
 }
 
 func NewAffine(ns []int, output layer1d.Forward, loss func(tensor.D1, tensor.D1) (float64, error), derivative func(tensor.D1, tensor.D1) (tensor.D1, error), c float64, r *rand.Rand) Sequential {
@@ -141,6 +141,12 @@ func NewTanhAffine(ns []int, c float64, r *rand.Rand) Sequential {
 
 func NewSoftmaxAffine(ns []int, c float64, r *rand.Rand) Sequential {
 	return NewAffine(ns, layer1d.SoftmaxForwardForCrossEntropy, ml1d.CrossEntropyError, ml1d.CrossEntropyErrorDerivative, c, r)
+}
+
+func (m *Sequential) SetParameter(param *Parameter) {
+	m.Parameter.D1.Copy(param.D1)
+	m.Parameter.D2.Copy(param.D2)
+	m.Parameter.D3.Copy(param.D3)
 }
 
 func (m *Sequential) Predict(x tensor.D1) (tensor.D1, error) {
