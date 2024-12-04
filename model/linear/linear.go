@@ -186,11 +186,11 @@ func (m *Model) Train(xs tensor.D3, ts tensor.D2, c *MiniBatchConfig) error {
 			return err
 		}
 
-		gradW.SubScalar(lr)
-		gradB.SubScalar(lr)
+		gradW.MulScalar(lr)
+		gradB.MulScalar(lr)
 
 		m.Parameter.W.Sub(gradW)
-		m.Parameter.B.Sub(gradB)	
+		m.Parameter.B.Sub(gradB)
 	}
 	return nil
 }
