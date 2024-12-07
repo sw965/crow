@@ -118,26 +118,9 @@ func (l Logic[S, Ass, As, A]) EvaluateResultScores(s *S) (ResultScores, error) {
     return l.ResultScoresEvaluator(placements)
 }
 
-type Player[S any, Ass ~[]As, As ~[]A, A comparable] func(*S, Ass) (As, error)
-
-func NewRandActionPlayer[S any, Ass ~[]As, As ~[]A, A comparable](r *rand.Rand) Player[S, Ass, As, A] {
-    return func(state *S, legalActionTable Ass) (As, error) {
-        jointAction := make(As, len(legalActionTable))
-		for i, legalActions := range legalActionTable {
-			jointAction[i] = omwrand.Choice(legalActions, r)
-		}
-		return jointAction, nil
-    }
-}
-
-type Engine[S any, Ass ~[]As, As ~[]A, A comparable] struct {
-    Logic   Logic[S, Ass, As, A]
-    Player Player[S, Ass, As, A]
-}
-
-func (e *Engine[S, Ass, As, A]) Playout(state S) (S, error) {
+func (l *Logic[S, Ass, As, A]) Playout(state S, player Player[S, Ass, As, A]) (S, error) {
     for {
-        isEnd, err := e.Logic.IsEnd(&state)
+        isEnd, err := l.IsEnd(&state)
         if err != nil {
             var s S
             return s, err
@@ -147,14 +130,14 @@ func (e *Engine[S, Ass, As, A]) Playout(state S) (S, error) {
             break
         }
 
-        legalActionTable := e.Logic.LegalActionTableProvider(&state)
-        jointAction, err := e.Player(&state, legalActionTable)
+        legalActionTable := l.LegalActionTableProvider(&state)
+        jointAction, err := player(&state, legalActionTable)
 		if err != nil {
 			var s S
 			return s, err
 		}
 
-        state, err = e.Logic.Transitioner(state, jointAction)
+        state, err = l.Transitioner(state, jointAction)
         if err != nil {
             var s S
             return s, err
@@ -163,15 +146,15 @@ func (e *Engine[S, Ass, As, A]) Playout(state S) (S, error) {
     return state, nil
 }
 
-func (e *Engine[S, Ass, As, A]) ComparePlayerStrength(state S, playerNum, gameNum int) (ResultScores, error) {
+func (l *Logic[S, Ass, As, A]) ComparePlayerStrength(state S, player Player[S, Ass, As, A], playerNum, gameNum int) (ResultScores, error) {
     avgs := make(ResultScores, playerNum)
     for i := 0; i < gameNum; i++ {
-        final, err := e.Playout(state)
+        final, err := l.Playout(state, player)
         if err != nil {
             return nil, err
         }
 
-        scores, err := e.Logic.EvaluateResultScores(&final)
+        scores, err := l.EvaluateResultScores(&final)
         if err != nil {
             return nil, err
         }
@@ -183,46 +166,16 @@ func (e *Engine[S, Ass, As, A]) ComparePlayerStrength(state S, playerNum, gameNu
     return avgs, nil
 }
 
-func (e *Engine[S, Ass, As, A]) NewStates(init S, n int, r *rand.Rand) ([]S, error) {
-    if n <= 0 {
-        return []S{}, fmt.Errorf("引数のnが0以下です。0より大きい値にしてください。")
+type Player[S any, Ass ~[]As, As ~[]A, A comparable] func(*S, Ass) (As, error)
+
+func NewRandActionPlayer[S any, Ass ~[]As, As ~[]A, A comparable](r *rand.Rand) Player[S, Ass, As, A] {
+    return func(state *S, legalActionTable Ass) (As, error) {
+        jointAction := make(As, len(legalActionTable))
+		for i, legalActions := range legalActionTable {
+			jointAction[i] = omwrand.Choice(legalActions, r)
+		}
+		return jointAction, nil
     }
-
-    states := make([]S, 0, n)
-    c := 0
-
-    for {
-        state := init
-        for {
-            isEnd, err := e.Logic.IsEnd(&state)
-            if err != nil {
-                return []S{}, err
-            }
-    
-            if isEnd {
-                break
-            }
-
-            states = append(states, state)
-            c += 1
-
-            if n == c {
-                return states, nil
-            }
-
-            legalActionTable := e.Logic.LegalActionTableProvider(&state)
-            jointAction, err := e.Player(&state, legalActionTable)
-            if err != nil {
-                return []S{}, err
-            }
-    
-            state, err = e.Logic.Transitioner(state, jointAction)
-            if err != nil {
-                return []S{}, err
-            }
-        }
-    }
-    return states, nil
 }
 
 type Policy[A comparable] map[A]float64

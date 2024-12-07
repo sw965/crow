@@ -47,38 +47,38 @@ func (ss selectionInfoSlice[S, Ass, As, A]) backward(evals game.Evals) {
 }
 
 type Engine[S any, Ass ~[]As, As ~[]A, A comparable] struct {
-	gameEngine        game.Engine[S, Ass, As, A]
+	gameLogic         game.Logic[S, Ass, As, A]
 	UCBFunc           ucb.Func
 	PoliciesProvider  game.PoliciesProvider[S, Ass, As, A]
 	LeafNodeEvaluator LeafNodeEvaluator[S]
 	NextNodesCap      int
 }
 
-func (e *Engine[S, Ass, As, A]) GetGameEngine() game.Engine[S, Ass, As, A] {
-	return e.gameEngine
+func (e *Engine[S, Ass, As, A]) GetGameLogic() game.Logic[S, Ass, As, A] {
+	return e.gameLogic
 }
 
-func (e *Engine[S, Ass, As, A]) SetGameEngine(ge game.Engine[S, Ass, As, A]) {
-	e.gameEngine = ge
+func (e *Engine[S, Ass, As, A]) SetGameLogic(gl game.Logic[S, Ass, As, A]) {
+	e.gameLogic = gl
 }
 
 func (e *Engine[S, Ass, As, A]) SetUniformPoliciesProvider() {
 	e.PoliciesProvider = game.UniformPoliciesProvider[S, Ass, As, A]
 }
 
-func (e *Engine[S, Ass, As, A]) SetPlayout() {
+func (e *Engine[S, Ass, As, A]) SetPlayout(player game.Player[S, Ass, As, A]) {
 	e.LeafNodeEvaluator = func(state *S) (game.Evals, error) {
-		final, err := e.gameEngine.Playout(*state)
+		final, err := e.gameLogic.Playout(*state, player)
 		if err != nil {
 			return game.Evals{}, err
 		}
-		scores, err := e.gameEngine.Logic.EvaluateResultScores(&final)
+		scores, err := e.gameLogic.EvaluateResultScores(&final)
 		return scores.ToEvals(), err
 	}
 }
 
 func (e *Engine[S, Ass, As, A]) NewNode(state *S) (*Node[S, Ass, As, A], error) {
-	legalActionTable := e.gameEngine.Logic.LegalActionTableProvider(state)
+	legalActionTable := e.gameLogic.LegalActionTableProvider(state)
 	policies := e.PoliciesProvider(state, legalActionTable)
 	if len(policies) == 0 {
 		return &Node[S, Ass, As, A]{}, fmt.Errorf("len(SeparateActionPolicy) == 0 である為、新しくNodeを生成出来ません。")
@@ -114,12 +114,12 @@ func (e *Engine[S, Ass, As, A]) SelectExpansionBackward(node *Node[S, Ass, As, A
 		jointAction := node.UCBManagers.RandMaxKeys(r)
 		selections = append(selections, selectionInfo[S, Ass, As, A]{node: node, jointAction: jointAction})
 
-		state, err = e.gameEngine.Logic.Transitioner(state, jointAction)
+		state, err = e.gameLogic.Transitioner(state, jointAction)
 		if err != nil {
 			return 0, err
 		}
 
-		isEnd, err = e.gameEngine.Logic.IsEnd(&state)
+		isEnd, err = e.gameLogic.IsEnd(&state)
 		if err != nil {
 			return 0, err
 		}
@@ -128,7 +128,7 @@ func (e *Engine[S, Ass, As, A]) SelectExpansionBackward(node *Node[S, Ass, As, A
 			break
 		}
 
-		nextNode, ok := node.NextNodes.FindByState(&state, e.gameEngine.Logic.Comparator)
+		nextNode, ok := node.NextNodes.FindByState(&state, e.gameLogic.Comparator)
 		if !ok {
 			//expansion
 			nextNode, err = e.NewNode(&state)
@@ -145,7 +145,7 @@ func (e *Engine[S, Ass, As, A]) SelectExpansionBackward(node *Node[S, Ass, As, A
 
 	var evals game.Evals
 	if isEnd {
-		scores, err := e.gameEngine.Logic.EvaluateResultScores(&state)
+		scores, err := e.gameLogic.EvaluateResultScores(&state)
 		if err != nil {
 			return 0, err
 		}

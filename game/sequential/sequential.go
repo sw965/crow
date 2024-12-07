@@ -147,24 +147,9 @@ func (l *Logic[S, As, A, Ag]) EvaluateAgentResultScores(state *S) (AgentResultSc
 	return l.ResultScoresEvaluator(placements)
 }
 
-type Player[S any, As ~[]A, A comparable] func(*S, As) (A, error)
-
-func NewRandActionPlayer[S any, As ~[]A, A comparable](r *rand.Rand) Player[S, As, A] {
-	return func(_ *S, legalActions As) (A, error) {
-		return omwrand.Choice(legalActions, r), nil
-	}
-}
-
-type AgentPlayers[S any, As ~[]A, A, Ag comparable] map[Ag]Player[S, As, A]
-
-type Engine[S any, As ~[]A, A, Ag comparable] struct {
-	Logic        Logic[S, As, A, Ag]
-	AgentPlayers AgentPlayers[S, As, A, Ag]
-}
-
-func (e *Engine[S, As, A, Ag]) Playout(state S) (S, error) {
+func (l *Logic[S, As, A, Ag]) Playout(state S, players AgentPlayers[S, As, A, Ag]) (S, error) {
 	for {
-		isEnd, err := e.Logic.IsEnd(&state)
+		isEnd, err := l.IsEnd(&state)
 		if err != nil {
 			var s S
 			return s, err
@@ -174,9 +159,9 @@ func (e *Engine[S, As, A, Ag]) Playout(state S) (S, error) {
 			break
 		}
 
-		agent := e.Logic.CurrentTurnAgentGetter(&state)
-		player := e.AgentPlayers[agent]
-		legalActions := e.Logic.LegalActionsProvider(&state)
+		agent := l.CurrentTurnAgentGetter(&state)
+		player := players[agent]
+		legalActions := l.LegalActionsProvider(&state)
 
 		action, err := player(&state, legalActions)
 		if err != nil {
@@ -184,7 +169,7 @@ func (e *Engine[S, As, A, Ag]) Playout(state S) (S, error) {
 			return s, err
 		}
 
-		state, err = e.Logic.Transitioner(state, &action)
+		state, err = l.Transitioner(state, &action)
 		if err != nil {
 			var s S
 			return s, err
@@ -193,15 +178,15 @@ func (e *Engine[S, As, A, Ag]) Playout(state S) (S, error) {
 	return state, nil
 }
 
-func (e *Engine[S, As, A, Ag]) ComparePlayerStrength(state S, n int) (AgentResultScores[Ag], error) {
+func (l *Logic[S, As, A, Ag]) ComparePlayerStrength(state S, players AgentPlayers[S, As, A, Ag], n int) (AgentResultScores[Ag], error) {
 	avgs := AgentResultScores[Ag]{}
 	for i := 0; i < n; i++ {
-		final, err := e.Playout(state)
+		final, err := l.Playout(state, players)
 		if err != nil {
 			return nil, err
 		}
 
-		scores, err := e.Logic.EvaluateAgentResultScores(&final)
+		scores, err := l.EvaluateAgentResultScores(&final)
 		if err != nil {
 			return nil, err
 		}
@@ -213,50 +198,15 @@ func (e *Engine[S, As, A, Ag]) ComparePlayerStrength(state S, n int) (AgentResul
 	return avgs, nil
 }
 
-func (e *Engine[S, As, A, Ag]) NewStates(init S, n int, r *rand.Rand) ([]S, error) {
-	if n <= 0 {
-		return []S{}, fmt.Errorf("引数のnが0以下です。0より大きい値にしてください。")
+type Player[S any, As ~[]A, A comparable] func(*S, As) (A, error)
+
+func NewRandActionPlayer[S any, As ~[]A, A comparable](r *rand.Rand) Player[S, As, A] {
+	return func(_ *S, legalActions As) (A, error) {
+		return omwrand.Choice(legalActions, r), nil
 	}
-
-	states := make([]S, 0, n)
-	c := 0
-
-	for {
-		state := init
-		for {
-			isEnd, err := e.Logic.IsEnd(&state)
-			if err != nil {
-				return []S{}, err
-			}
-	
-			if isEnd {
-				break
-			}
-
-			states = append(states, state)
-			c += 1
-
-			if c == n {
-				return states, nil
-			}
-
-			agent := e.Logic.CurrentTurnAgentGetter(&state)
-			player := e.AgentPlayers[agent]
-			legalActions := e.Logic.LegalActionsProvider(&state)
-	
-			action, err := player(&state, legalActions)
-			if err != nil {
-				return []S{}, err
-			}
-	
-			state, err = e.Logic.Transitioner(state, &action)
-			if err != nil {
-				return []S{}, err
-			}
-		}
-	}
-	return states, nil
 }
+
+type AgentPlayers[S any, As ~[]A, A, Ag comparable] map[Ag]Player[S, As, A]
 
 type Policy[A comparable] map[A]float64
 type PolicyProvider[S any, As ~[]A, A comparable] func(*S, As) Policy[A]
