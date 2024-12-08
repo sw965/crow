@@ -17,7 +17,7 @@ type Parameter struct {
 func NewZerosParameter(r, c int) Parameter {
 	return Parameter{
 		W:tensor.NewD2Zeros(r, c),
-		B:tensor.NewD1Zeros(c),
+		B:tensor.NewD1Zeros(r),
 	}
 }
 
@@ -32,7 +32,7 @@ func (p *Parameter) WriteJSON(path string) error {
 }
 
 type Model struct {
-	Parameter Parameter
+	Parameter            Parameter
 	OutputCalculator     func(tensor.D1) tensor.D1
 	OutputDifferentiator func(tensor.D1, tensor.D1) (tensor.D1, error)
 	YLossCalculator      func(tensor.D1, tensor.D1) (float64, error)
