@@ -132,6 +132,7 @@ func (m *Model) ComputeGrad(xs tensor.D3, ts tensor.D2, p int) (tensor.D2, tenso
 				dw, err := tensor.D2MulD1Row(dudw, dLdu)
 				if err != nil {
 					errCh <- err
+					return
 				}
 
 				err = gradWs[gorutineI].Add(dw)
