@@ -128,7 +128,7 @@ func (m *Model) ComputeGrad(xs tensor.D3, ts tensor.D2, p int) (tensor.D2, tenso
 			}
 	
 			//∂L/∂w
-			dw, err := tensor.D2MulD1Row(dudw, dLdu)
+			dw, err := tensor.D2MulD1Col(dudw, dLdu)
 			if err != nil {
 				errCh <- err
 				return
