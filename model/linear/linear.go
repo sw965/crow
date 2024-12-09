@@ -98,59 +98,61 @@ func (m *Model) ComputeGrad(xs tensor.D3, ts tensor.D2, p int) (tensor.D2, tenso
 	errCh := make(chan error, p)
 	defer close(errCh)
 
-	for gorutineI, idxs := range parallel.DistributeIndicesEvenly(n, p) {
-		go func(idxs []int, gorutineI int) {
-			for _, idx := range idxs {
-				x := xs[idx]
-				t := ts[idx]
+	write := func(idxs []int, gorutineI int) {
+		for _, idx := range idxs {
+			x := xs[idx]
+			t := ts[idx]
 
-				y, err := m.Predict(x)
-				if err != nil {
-					errCh <- err
-					return
-				}
-		
-				dLdy, err := m.YLossDifferentiator(y, t)
-				if err != nil {
-					errCh <- err
-					return
-				}
-		
-				dLdu, err := m.OutputDifferentiator(y, dLdy)
-				if err != nil {
-					errCh <- err
-					return
-				}
-		
-				_, dudw, err := ml2d.LinearSumDerivative(x, m.Parameter.W)
-				if err != nil {
-					errCh <- err
-					return
-				}
-		
-				//∂L/∂w
-				dw, err := tensor.D2MulD1Row(dudw, dLdu)
-				if err != nil {
-					errCh <- err
-					return
-				}
-
-				err = gradWs[gorutineI].Add(dw)
-				if err != nil {
-					errCh <- err
-					return
-				}
-
-				//∂L/∂b
-				db := dLdu
-				err = gradBs[gorutineI].Add(db)
-				if err != nil {
-					errCh <- err
-					return
-				}
+			y, err := m.Predict(x)
+			if err != nil {
+				errCh <- err
+				return
 			}
-			errCh <- nil
-		}(idxs, gorutineI)
+	
+			dLdy, err := m.YLossDifferentiator(y, t)
+			if err != nil {
+				errCh <- err
+				return
+			}
+	
+			dLdu, err := m.OutputDifferentiator(y, dLdy)
+			if err != nil {
+				errCh <- err
+				return
+			}
+	
+			_, dudw, err := ml2d.LinearSumDerivative(x, m.Parameter.W)
+			if err != nil {
+				errCh <- err
+				return
+			}
+	
+			//∂L/∂w
+			dw, err := tensor.D2MulD1Row(dudw, dLdu)
+			if err != nil {
+				errCh <- err
+				return
+			}
+
+			err = gradWs[gorutineI].Add(dw)
+			if err != nil {
+				errCh <- err
+				return
+			}
+
+			//∂L/∂b
+			db := dLdu
+			err = gradBs[gorutineI].Add(db)
+			if err != nil {
+				errCh <- err
+				return
+			}
+		}
+		errCh <- nil
+	}
+
+	for gorutineI, idxs := range parallel.DistributeIndicesEvenly(n, p) {
+		write(idxs, gorutineI)
 	}
 
 	for i := 0; i < p; i++ {
