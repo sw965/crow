@@ -3,12 +3,10 @@ package ml1d
 import (
 	"fmt"
 	"math"
-	"math/rand"
 	"github.com/sw965/crow/ml/scalar"
 	"github.com/sw965/crow/tensor"
 	"github.com/sw965/omw/fn"
 	omwmath "github.com/sw965/omw/math"
-	omwrand "github.com/sw965/omw/math/rand"
 )
 
 func Sigmoid(x tensor.D1) tensor.D1 {
@@ -21,26 +19,6 @@ func SigmoidGrad(y tensor.D1) tensor.D1 {
 
 func SigmoidDerivative(x tensor.D1) tensor.D1 {
 	return fn.Map[tensor.D1](x, scalar.SigmoidDerivative)
-}
-
-func SigmoidToTanh(y tensor.D1) tensor.D1 {
-	return fn.Map[tensor.D1](y, scalar.SigmoidToTanh)
-}
-
-func Tanh(x tensor.D1) tensor.D1 {
-	return fn.Map[tensor.D1](x, math.Tanh)
-}
-
-func TanhGrad(y tensor.D1) tensor.D1 {
-	return fn.Map[tensor.D1](y, scalar.TanhGrad)
-}
-
-func TanhDerivative(x tensor.D1) tensor.D1 {
-	return fn.Map[tensor.D1](x, scalar.TanhDerivative)
-}
-
-func TanhToSigmoid(y tensor.D1) tensor.D1 {
-	return fn.Map[tensor.D1](y, scalar.TanhToSigmoid)
 }
 
 func Softmax(x tensor.D1) tensor.D1 {
@@ -64,7 +42,7 @@ func LinearSum(x, w tensor.D1, b float64) (float64, error) {
 	return y, err
 }
 
-//バイアス項(b)の微分は常に1である為、ここでは計算しない
+//バイアス項(b)の微分は常に1であり、連鎖律において計算する必要性がない為、計算を省く。
 func LinearSumDerivative(x, w tensor.D1) (tensor.D1, tensor.D1, error) {
 	n := len(x)
 	gradX := make(tensor.D1, n)
@@ -77,147 +55,23 @@ func LinearSumDerivative(x, w tensor.D1) (tensor.D1, tensor.D1, error) {
 }
 
 func ReLU(x tensor.D1) tensor.D1 {
-	y := make(tensor.D1, len(x))
-	for i := range x {
-		xi := x[i]
-		if xi > 0 {
-			y[i] = xi
-		} else {
-			y[i] = 0
-		}
-	}
-	return y
+	return fn.Map[tensor.D1](x, scalar.ReLU)
 }
 
 func ReLUDerivative(x tensor.D1) tensor.D1 {
-	grad := make(tensor.D1, len(x))
-	for i := range x {
-		if x[i] > 0 {
-			grad[i] = 1
-		} else {
-			grad[i] = 0
-		}
-	}
-	return grad
+	return fn.Map[tensor.D1](x, scalar.ReLUDerivative)
 }
 
-func LeakyReLU(x tensor.D1, alpha float64) tensor.D1 {
-	y := make(tensor.D1, len(x))
-	for i := range x {
-		xi := x[i]
-		if xi > 0 {
-			y[i] = xi
-		} else {
-			y[i] = alpha * xi
-		}
+func LeakyReLU(alpha float64) func(tensor.D1)tensor.D1 {
+	return func(x tensor.D1) tensor.D1 {
+		return fn.Map[tensor.D1](x, scalar.LeakyReLU(alpha))
 	}
-	return y
 }
 
-func LeakyReLUDerivative(x tensor.D1, alpha float64) tensor.D1 {
-	grad := make(tensor.D1, len(x))
-	for i := range x {
-		xi := x[i]
-		if xi > 0 {
-			grad[i] = 1
-		} else {
-			grad[i] = alpha
-		}
+func LeakyReLUDerivative(alpha float64) func(tensor.D1)tensor.D1 {
+	return func(x tensor.D1) tensor.D1 {
+		return fn.Map[tensor.D1](x, scalar.LeakyReLUDerivative(alpha))
 	}
-	return grad
-}
-
-func ParamReLUDerivative(x tensor.D1, alpha float64) (tensor.D1, tensor.D1) {
-	gradX := make(tensor.D1, len(x))
-	vectorizedGradAlpha := make(tensor.D1, len(x))
-	for i := range x {
-		xi := x[i]
-		if xi > 0 {
-			gradX[i] = 1
-			vectorizedGradAlpha[i] = 0
-		} else {
-			gradX[i] = alpha
-			vectorizedGradAlpha[i] = xi
-		}
-	}
-	return gradX, vectorizedGradAlpha
-}
-
-func RandReLU(x tensor.D1, min, max float64, isTrain bool, r *rand.Rand) (tensor.D1, float64) {
-	y := make(tensor.D1, len(x))
-	var noise float64
-	if isTrain {
-		noise = omwrand.Float64(min, max, r)
-	} else {
-		noise = (min + max) / 2.0
-	}
-	for i := range y {
-		xi := x[i]
-		if xi > 0 {
-			y[i] = xi
-		} else {
-			y[i] = noise * xi
-		}
-	}
-	return y, noise
-}
-
-func ParamRandReLU(x tensor.D1, alpha, min, max float64, isTrain bool, r *rand.Rand) (tensor.D1, float64) {
-	y := make(tensor.D1, len(x))
-	var noise float64
-	if isTrain {
-		noise = omwrand.Float64(min, max, r)
-	} else {
-		noise = (min + max) / 2.0
-	}
-	for i := range y {
-		xi := x[i]
-		if xi > 0 {
-			y[i] = xi
-		} else {
-			y[i] = alpha * noise * xi
-		}
-	}
-	return y, noise
-}
-
-func ParamRandReLUDerivative(x tensor.D1, alpha, noise float64) (tensor.D1, tensor.D1) {
-	gradX := make(tensor.D1, len(x))
-	vectorizedGradAlpha := make(tensor.D1, len(x))
-	for i := range x {
-		xi := x[i]
-		if xi > 0 {
-			gradX[i] = 1
-			vectorizedGradAlpha[i] = 0
-		} else {
-			gradX[i] = alpha * noise
-			vectorizedGradAlpha[i] = noise * xi
-		}
-	}
-	return gradX, vectorizedGradAlpha
-}
-
-func Dropout(x tensor.D1, p float64, isTrain bool, r *rand.Rand) (tensor.D1, tensor.D1) {
-	n := len(x)
-	y := make(tensor.D1, n)
-	mask := make(tensor.D1, n)
-	if isTrain {
-		for i := range y {
-			if p > r.Float64() {
-				y[i] = 0
-			} else {
-				y[i] = x[i]
-				mask[i] = 1
-			}
-		}
-	} else {
-		q := 1.0 - p
-		for i := range y {
-			y[i] = q * x[i]
-			mask[i] = 1
-		}
-	}
-	return y, mask
 }
 
 func CrossEntropyError(y, t tensor.D1) (float64, error) {

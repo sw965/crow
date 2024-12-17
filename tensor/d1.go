@@ -2,7 +2,6 @@ package tensor
 
 import (
 	"fmt"
-	"github.com/sw965/omw/fn"
 	omwmath "github.com/sw965/omw/math"
 	"golang.org/x/exp/slices"
 )
@@ -91,8 +90,29 @@ func (d1 D1) Max() float64 {
 	return omwmath.Max(d1...)
 }
 
-func (d1 D1) MapFunc(f func(float64) float64) D1 {
-	return fn.Map[D1](d1, f)
+func (d1 D1) Reshape3D(dep, row, col int) (D3, error) {
+    if len(d1) != dep*row*col {
+        return nil, fmt.Errorf("指定したサイズ (%d, %d, %d) と入力データ長 %d が一致しません", dep, row, col, len(d1))
+    }
+
+    d3 := make(D3, dep)
+    for i := 0; i < dep; i++ {
+        d3[i] = make(D2, row)
+        for j := 0; j < row; j++ {
+            d3[i][j] = make(D1, col)
+        }
+    }
+
+    idx := 0
+    for i := 0; i < dep; i++ {
+        for j := 0; j < row; j++ {
+            for k := 0; k < col; k++ {
+                d3[i][j][k] = d1[idx]
+                idx++
+            }
+        }
+    }
+    return d3, nil
 }
 
 func D1AddScalar(d1 D1, s float64) D1 {

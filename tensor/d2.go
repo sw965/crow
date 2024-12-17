@@ -3,6 +3,7 @@ package tensor
 import (
 	"fmt"
 	"golang.org/x/exp/slices"
+	omwmath "github.com/sw965/omw/math"
 )
 
 type D2 []D1
@@ -203,20 +204,13 @@ func (d2 D2) Clone() D2 {
 	return y
 }
 
-func (d2 D2) MaxRow() D1 {
-	max := make(D1, len(d2))
-	for i := range d2 {
-		max[i] = d2[i].Max()
+func (d2 D2) Equal(other D2) bool {
+	for i, d1 := range d2 {
+		if !slices.Equal(d1, other[i]) {
+			return false
+		}
 	}
-	return max
-}
-
-func (d2 D2) MapFunc(f func(float64) float64) D2 {
-	y := make(D2, len(d2))
-	for i := range d2 {
-		y[i] = d2[i].MapFunc(f)
-	}
-	return y
+	return true
 }
 
 func (d2 D2) Size() int {
@@ -225,6 +219,19 @@ func (d2 D2) Size() int {
 		n += len(d1)
 	}
 	return n
+}
+
+func (d2 D2) SumByRow() D1 {
+	sums := make(D1, len(d2))
+	for i, d1 := range d2 {
+		sums[i] = omwmath.Sum(d1...)
+	}
+	return sums
+}
+
+func (d2 D2) SumByCol() D1 {
+	t := d2.Transpose()
+	return t.SumByRow()
 }
 
 func (d2 D2) Flatten() D1 {

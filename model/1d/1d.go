@@ -15,9 +15,10 @@ import (
 )
 
 type Parameter struct {
-	D1 tensor.D1
-	D2 tensor.D2
-	D3 tensor.D3
+	Scalars tensor.D1
+	D1s tensor.D2
+	D2s tensor.D3
+	D3s []tensor.D3
 }
 
 func LoadParameterJSON(path string) (Parameter, error) {
@@ -32,14 +33,15 @@ func (p *Parameter) WriteJSON(path string) error {
 
 type Sequential struct {
 	Parameter Parameter
-	Forwards layer1d.Forwards
+	Forwards layer.Forwards
 
 	YLossCalculator      func(tensor.D1, tensor.D1) (float64, error)
 	YLossDifferentiator func(tensor.D1, tensor.D1) (tensor.D1, error)
 
-	Param1DLossCalculator func(tensor.D1) float64
-	Param2DLossCalculator func(tensor.D2) float64
-	Param3DLossCalculator func(tensor.D3) float64
+	ParamScalarsLossCalculator func(tensor.D1) float64
+	Param1DsLossCalculator func(tensor.D2) float64
+	Param2DsLossCalculator func(tensor.D3) float64
+	Param3DsLossCalculator func([]tensor.D3) float64
 
 	Param1DLossDifferentiator func(tensor.D1) tensor.D1
 	Param2DLossDifferentiator func(tensor.D2) tensor.D2
@@ -50,97 +52,66 @@ type Sequential struct {
 
 func NewSequential(param Parameter) Sequential {
 	return Sequential{
-		Parameter:                 param,
-		Param1DLossCalculator:     func(_ tensor.D1) float64 { return 0.0 },
-		Param1DLossDifferentiator: tensor.NewD1ZerosLike,
-		Param2DLossCalculator:     func(_ tensor.D2) float64 { return 0.0 },
-		Param2DLossDifferentiator: tensor.NewD2ZerosLike,
-		Param3DLossCalculator:     func(_ tensor.D3) float64 { return 0.0 },
-		Param3DLossDifferentiator: tensor.NewD3ZerosLike,
+		Parameter:                  param,
+		ParamScalarsLossCalculator: func(_ tensor.D1) float64 { return 0.0 },
+		ParamScalarsLossDifferentiator: tensor.NewD1ZerosLike,
+
+		Param1DsLossCalculator:     func(_ tensor.D2) float64 { return 0.0 },
+		Param1DsLossDifferentiator: tensor.NewD2ZerosLike,
+
+		Param2DsLossCalculator:     func(_ tensor.D3) float64 { return 0.0 },
+		Param2DsLossDifferentiator: tensor.NewD3ZerosLike,
+
+		Param3DsLossCalculator    : func(_ []tensor.D3) float64 { return 0.0},
+		Param3DsLossDifferentiator: func(d4 []tensor.D3) []tensor.D3 {
+			zeros := make([]tensor.D3, len(d4))
+			for i, d3 := range d4 {
+				zeros[i] = tensor.NewD3ZerosLike(d3)
+			}
+			return zeros
+		}
 	}
 }
 
-func NewLinear(xn int, output layer1d.Forward, c float64) Sequential {
-	param := Parameter{
-		D1: tensor.D1{0.0},
-		D2: tensor.D2{tensor.NewD1Zeros(xn)},
-	}
+func (s *Sequential) SetSumSquaredError() {
+	s.YLossCalculator = ml1d.SumSquaredError
+	s.YLossDifferentiator = ml1d.SumSquaredErrorDerivative
+}
 
-	forwards := layer1d.Forwards{
-		layer1d.NewLinearSumForward(param.D2[0], &param.D1[0]),
+func (s *Sequential) SetCrossEntropyError() {
+	s.YLossCalculator = ml1d.CrossEntropyError
+	s.YLossDifferentiator = ml1d.CrossEntropyErrorDerivative
+}
+
+func NewLinearSum(param Parameter, output layer1d.Forward, c float64) Sequential {
+	forwards := layer.Forwards{
+		layer.NewLinearSumForward(param.D2s[0], param.D1s[0]),
 		output,
 	}
 
 	linearSum := NewSequential(param)
 	linearSum.Forwards = forwards
-	linearSum.YLossCalculator = ml1d.SumSquaredError
-	linearSum.YLossDifferentiator = ml1d.SumSquaredErrorDerivative
-	linearSum.Param2DLossCalculator = ml2d.L2Regularization(c)
-	linearSum.Param2DLossDifferentiator = ml2d.L2RegularizationDerivative(c)
+	linearSum.Param2DsLossCalculator = ml2d.L2Regularization(c)
+	linearSum.Param2DsLossDifferentiator = ml2d.L2RegularizationDerivative(c)
 	return linearSum
 }
 
-func NewIdentityLinear(xn int, c float64) Sequential {
-	return NewLinear(xn, layer1d.IdentityForward, c)
+func NewIdentityLinearSum(param Parameter, c float64) Sequential {
+	ls := NewLinearSum(param, layer.IdentityForward, c)
+	ls.SetSumSquaredError()
+	return ls
 }
 
-func NewSigmoidLinear(xn int, c float64) Sequential {
-	return NewLinear(xn, layer1d.SigmoidForward, c)
+func NewSigmoidLinearSum(param Parameter, c float64) Sequential {
+	ls := NewLinearSum(param, layer.SigmoidForward, c)
+	ls.SetSumSquaredError()
+	return ls
 }
 
-func NewAffine(ns []int, output layer1d.Forward, loss func(tensor.D1, tensor.D1) (float64, error), derivative func(tensor.D1, tensor.D1) (tensor.D1, error), c float64, r *rand.Rand) Sequential {
-	layerN := len(ns) - 1
-	param := Parameter{
-		D1: make(tensor.D1, layerN-1),
-		D2: make(tensor.D2, layerN),
-		D3: make(tensor.D3, layerN),
-	}
-
-	for i := 0; i < layerN-1; i++ {
-		param.D1[i] = 0.1
-	}
-
-	for i := 0; i < layerN; i++ {
-		param.D2[i] = tensor.NewD1Zeros(ns[i+1])
-	}
-
-	for i := 0; i < layerN; i++ {
-		param.D3[i] = tensor.NewD2He(ns[i], ns[i+1], r)
-	}
-
-	var forwards layer1d.Forwards
-	for i := 0; i < layerN; i++ {
-		affine := layer1d.NewAffineForward(param.D3[i], param.D2[i])
-		forwards = append(forwards, affine)
-
-		//最後は、出力層を追加する
-		if i == (layerN - 1) {
-			forwards = append(forwards, output)
-		} else {
-			pReLU := layer1d.NewParamReLUForward(&param.D1[i])
-			forwards = append(forwards, pReLU)
-		}
-	}
-
-	affine := NewSequential(param)
-	affine.Forwards = forwards
-	affine.YLossCalculator = loss
-	affine.YLossDifferentiator = derivative
-	affine.Param3DLossCalculator = ml3d.L2Regularization(c)
-	affine.Param3DLossDifferentiator = ml3d.L2RegularizationDerivative(c)
-	return affine
-}
-
-func NewSigmoidAffine(ns []int, c float64, r *rand.Rand) Sequential {
-	return NewAffine(ns, layer1d.SigmoidForward, ml1d.SumSquaredError, ml1d.SumSquaredErrorDerivative, c, r)
-}
-
-func NewTanhAffine(ns []int, c float64, r *rand.Rand) Sequential {
-	return NewAffine(ns, layer1d.TanhForward, ml1d.SumSquaredError, ml1d.SumSquaredErrorDerivative, c, r)
-}
-
-func NewSoftmaxAffine(ns []int, c float64, r *rand.Rand) Sequential {
-	return NewAffine(ns, layer1d.SoftmaxForwardForCrossEntropy, ml1d.CrossEntropyError, ml1d.CrossEntropyErrorDerivative, c, r)
+func NewSoftmaxLinearSum(param Parameter, c float64) Sequential {
+	ls := NewLinearSum(param, layer.SoftmaxForwardForCrossEntropy, c)
+	ls.SetCrossEntropyError()
+	return ls
 }
 
 func (m *Sequential) SetParameter(param *Parameter) {
@@ -202,12 +173,12 @@ func (m *Sequential) Accuracy(x, t tensor.D2) (float64, error) {
 func (m *Sequential) BackPropagate(x, t tensor.D1) (layer1d.GradBuffer, error) {
 	y, backwards, err := m.Forwards.Propagate(x)
 	if err != nil {
-		return layer1d.GradBuffer{}, err
+		return nil err
 	}
 
 	dLdy, err := m.YLossDifferentiator(y, t)
 	if err != nil {
-		return layer1d.GradBuffer{}, err
+		return layer1d.GradBuffer, err
 	}
 
 	_, gradBuffer, err := backwards.Propagate(dLdy)

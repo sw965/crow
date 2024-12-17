@@ -17,21 +17,40 @@ func SigmoidDerivative(x float64) float64 {
 	return SigmoidGrad(y)
 }
 
-func SigmoidToTanh(y float64) float64 {
-	return 2*y - 1.0
+func ReLU(x float64) float64 {
+	if x > 0 {
+		return x
+	} else {
+		return 0
+	}
 }
 
-func TanhGrad(y float64) float64 {
-	return 1.0 - (y * y)
+func ReLUDerivative(x float64) float64 {
+	if x > 0 {
+		return 1
+	} else {
+		return 0
+	}
 }
 
-func TanhDerivative(x float64) float64 {
-	y := math.Tanh(x)
-	return TanhGrad(y)
+func LeakyReLU(alpha float64) func(float64) float64 {
+	return func(x float64) float64 {
+		if x > 0 {
+			return x
+		} else {
+			return x * alpha
+		}
+	}
 }
 
-func TanhToSigmoid(y float64) float64 {
-	return (y + 1.0) / 2.0
+func LeakyReLUDerivative(alpha float64) func(float64) float64 {
+	return func(x float64) float64 {
+		if x > 0 {
+			return 1
+		} else {
+			return alpha
+		}
+	}
 }
 
 func NumericalDifferentiation(x float64, f func(float64) float64) float64 {

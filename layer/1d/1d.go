@@ -15,6 +15,7 @@ type GradBuffer  struct {
 	D1 tensor.D1
 	D2 tensor.D2
 	D3 tensor.D3
+	D4 []tensor.D3
 }
 
 func NewGradBuffer(c int) GradBuffer {
@@ -22,14 +23,21 @@ func NewGradBuffer(c int) GradBuffer {
 		D1:make(tensor.D1, 0, c),
 		D2:make(tensor.D2, 0, c),
 		D3:make(tensor.D3, 0, c),
+		D4:make([]tensor.D4, 0, c),
 	}
 }
 
 func (g *GradBuffer) NewZerosLike() GradBuffer {
+	d4 := make([]tensor.D3, len(g.D4))
+	for i, d3 := range g.D3 {
+		d4[i] = tensor.NewD3ZerosLike(d3)
+	}
+
 	return GradBuffer{
 		D1:tensor.NewD1ZerosLike(g.D1),
 		D2:tensor.NewD2ZerosLike(g.D2),
 		D3:tensor.NewD3ZerosLike(g.D3),
+		D4:d4,
 	}
 }
 
@@ -46,6 +54,13 @@ func (g *GradBuffer) Add(other *GradBuffer) error {
 	if err != nil {
 		return err
 	}
+
+	for i, d3 := range other.D4 {
+		err := g.D4[i].Add(d3)
+		if err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -53,6 +68,7 @@ func (g *GradBuffer) Reverse() {
 	g.D1 = omwslices.Reverse(g.D1)
 	g.D2 = omwslices.Reverse(g.D2)
 	g.D3 = omwslices.Reverse(g.D3)
+	g.D4 = omwslices.Reverse(g.D4)
 }
 
 func (g *GradBuffer) ComputeL2Norm() float64 {

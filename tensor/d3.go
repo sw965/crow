@@ -12,12 +12,49 @@ func (d3 D3) AddScalar(s float64) {
 	}
 }
 
-func (d3 D3) Add(other D3) error {
-	if len(d3) != len(d3) {
-		return fmt.Errorf("tensor.D3の行数が一致しないため、加算できません")
+func (d3 D3) AddD1Depth(d1 D1) error {
+	if len(d3) != len(d1) {
+		return fmt.Errorf("tensor.D3の奥数とtensor.D1の要素数が一致しないため、加算できません。")
 	}
 	for i := range d3 {
-		err := d3[i].Add(other[i])
+		d3[i].AddScalar(d1[i])
+	}
+	return nil
+}
+
+func (d3 D3) AddD1Row(d1 D1) error {
+	for i := range d3 {
+		err := d3[i].AddD1Row(d1)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (d3 D3) AddD1Col(d1 D1) error {
+	for i := range d3 {
+		err := d3[i].AddD1Col(d1)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (d3 D3) AddD2(d2 D2) error {
+	for i := range d3 {
+		err := d3[i].Add(d2)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (d3 D3) Add(d2 D3) error {
+	for i := range d3 {
+		err := d3[i].Add(d2[i])
 		if err != nil {
 			return err
 		}
@@ -31,12 +68,52 @@ func (d3 D3) SubScalar(s float64) {
 	}
 }
 
-func (d3 D3) Sub(other D3) error {
-	if len(d3) != len(d3) {
+func (d3 D3) SubD1Depth(d1 D1) error {
+	if len(d3) != len(d1) {
+		return fmt.Errorf("tensor.D3の奥数とtensor.D1の要素数が一致しないため、減算できません。")
+	}
+	for i := range d3 {
+		d3[i].SubScalar(d1[i])
+	}
+	return nil
+}
+
+func (d3 D3) SubD1Row(d1 D1) error {
+	for i := range d3 {
+		err := d3[i].SubD1Row(d1)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (d3 D3) SubD1Col(d1 D1) error {
+	for i := range d3 {
+		err := d3[i].SubD1Col(d1)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (d3 D3) SubD2(d2 D2) error {
+	for i := range d3 {
+		err := d3[i].Sub(d2)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (d3 D3) Sub(d2 D3) error {
+	if len(d3) != len(d2) {
 		return fmt.Errorf("tensor.D3の行数が一致しないため、減算できません")
 	}
 	for i := range d3 {
-		err := d3[i].Sub(other[i])
+		err := d3[i].Sub(d2[i])
 		if err != nil {
 			return err
 		}
@@ -50,12 +127,52 @@ func (d3 D3) MulScalar(s float64) {
 	}
 }
 
-func (d3 D3) Mul(other D3) error {
-	if len(d3) != len(d3) {
+func (d3 D3) MulD1Depth(d1 D1) error {
+	if len(d3) != len(d1) {
+		return fmt.Errorf("tensor.D3の奥数とtensor.D1の要素数が一致しないため、乗算できません。")
+	}
+	for i := range d3 {
+		d3[i].MulScalar(d1[i])
+	}
+	return nil
+}
+
+func (d3 D3) MulD1Row(d1 D1) error {
+	for i := range d3 {
+		err := d3[i].MulD1Row(d1)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (d3 D3) MulD1Col(d1 D1) error {
+	for i := range d3 {
+		err := d3[i].MulD1Col(d1)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (d3 D3) MulD2(d2 D2) error {
+	for i := range d3 {
+		err := d3[i].Mul(d2)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (d3 D3) Mul(d2 D3) error {
+	if len(d3) != len(d2) {
 		return fmt.Errorf("tensor.D3の行数が一致しないため、乗算できません")
 	}
 	for i := range d3 {
-		err := d3[i].Mul(other[i])
+		err := d3[i].Mul(d2[i])
 		if err != nil {
 			return err
 		}
@@ -69,12 +186,52 @@ func (d3 D3) DivScalar(s float64) {
 	}
 }
 
-func (d3 D3) Div(other D3) error {
-	if len(d3) != len(d3) {
+func (d3 D3) DivD1Depth(d1 D1) error {
+	if len(d3) != len(d1) {
+		return fmt.Errorf("tensor.D3の奥数とtensor.D1の要素数が一致しないため、除算できません。")
+	}
+	for i := range d3 {
+		d3[i].DivScalar(d1[i])
+	}
+	return nil
+}
+
+func (d3 D3) DivD1Row(d1 D1) error {
+	for i := range d3 {
+		err := d3[i].DivD1Row(d1)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (d3 D3) DivD1Col(d1 D1) error {
+	for i := range d3 {
+		err := d3[i].DivD1Col(d1)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (d3 D3) DivD2(d2 D2) error {
+	for i := range d3 {
+		err := d3[i].Div(d2)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (d3 D3) Div(d2 D3) error {
+	if len(d3) != len(d2) {
 		return fmt.Errorf("tensor.D3の行数が一致しないため、除算できません")
 	}
 	for i := range d3 {
-		err := d3[i].Div(other[i])
+		err := d3[i].Div(d2[i])
 		if err != nil {
 			return err
 		}
@@ -96,20 +253,13 @@ func (d3 D3) Clone() D3 {
 	return y
 }
 
-func (d3 D3) MaxRow() D2 {
-	max := make(D2, len(d3))
-	for i := range d3 {
-		max[i] = d3[i].MaxRow()
+func (d3 D3) Equal(d2 D3) bool {
+	for i, d2Elem := range d3 {
+		if !d2Elem.Equal(d2[i]) {
+			return false
+		}
 	}
-	return max
-}
-
-func (d3 D3) MapFunc(f func(float64) float64) D3 {
-	y := make(D3, len(d3))
-	for i := range d3 {
-		y[i] = d3[i].MapFunc(f)
-	}
-	return y
+	return true
 }
 
 func (d3 D3) Size() int {
@@ -134,6 +284,30 @@ func D3AddScalar(d3 D3, s float64) D3 {
 	return y
 }
 
+func D3AddD1Depth(d3 D3, d1 D1) (D3, error) {
+	y := d3.Clone()
+	err := y.AddD1Depth(d1)
+	return y, err
+}
+
+func D3AddD1Row(d3 D3, d1 D1) (D3, error) {
+	y := d3.Clone()
+	err := y.AddD1Row(d1)
+	return y, err
+}
+
+func D3AddD1Col(d3 D3, d1 D1) (D3, error) {
+	y := d3.Clone()
+	err := y.AddD1Col(d1)
+	return y, err
+}
+
+func D3AddD2(d3 D3, d2 D2) (D3, error) {
+	y := d3.Clone()
+	err := y.AddD2(d2)
+	return y, err
+}
+
 func D3Add(a, b D3) (D3, error) {
 	y := a.Clone()
 	err := y.Add(b)
@@ -144,6 +318,30 @@ func D3SubScalar(d3 D3, s float64) D3 {
 	y := d3.Clone()
 	y.SubScalar(s)
 	return y
+}
+
+func D3SubD1Depth(d3 D3, d1 D1) (D3, error) {
+	y := d3.Clone()
+	err := y.SubD1Depth(d1)
+	return y, err
+}
+
+func D3SubD1Row(d3 D3, d1 D1) (D3, error) {
+	y := d3.Clone()
+	err := y.SubD1Row(d1)
+	return y, err
+}
+
+func D3SubD1Col(d3 D3, d1 D1) (D3, error) {
+	y := d3.Clone()
+	err := y.SubD1Col(d1)
+	return y, err
+}
+
+func D3SubD2(d3 D3, d2 D2) (D3, error) {
+	y := d3.Clone()
+	err := y.SubD2(d2)
+	return y, err
 }
 
 func D3Sub(a, b D3) (D3, error) {
@@ -158,6 +356,30 @@ func D3MulScalar(d3 D3, s float64) D3 {
 	return y
 }
 
+func D3MulD1Depth(d3 D3, d1 D1) (D3, error) {
+	y := d3.Clone()
+	err := y.MulD1Depth(d1)
+	return y, err
+}
+
+func D3MulD1Row(d3 D3, d1 D1) (D3, error) {
+	y := d3.Clone()
+	err := y.MulD1Row(d1)
+	return y, err
+}
+
+func D3MulD1Col(d3 D3, d1 D1) (D3, error) {
+	y := d3.Clone()
+	err := y.MulD1Col(d1)
+	return y, err
+}
+
+func D3MulD2(d3 D3, d2 D2) (D3, error) {
+	y := d3.Clone()
+	err := y.MulD2(d2)
+	return y, err
+}
+
 func D3Mul(a, b D3) (D3, error) {
 	y := a.Clone()
 	err := y.Mul(b)
@@ -168,6 +390,30 @@ func D3DivScalar(d3 D3, s float64) D3 {
 	y := d3.Clone()
 	y.DivScalar(s)
 	return y
+}
+
+func D3DivD1Depth(d3 D3, d1 D1) (D3, error) {
+	y := d3.Clone()
+	err := y.DivD1Depth(d1)
+	return y, err
+}
+
+func D3DivD1Row(d3 D3, d1 D1) (D3, error) {
+	y := d3.Clone()
+	err := y.DivD1Row(d1)
+	return y, err
+}
+
+func D3DivD1Col(d3 D3, d1 D1) (D3, error) {
+	y := d3.Clone()
+	err := y.DivD1Col(d1)
+	return y, err
+}
+
+func D3DivD2(d3 D3, d2 D2) (D3, error) {
+	y := d3.Clone()
+	err := y.DivD2(d2)
+	return y, err
 }
 
 func D3Div(a, b D3) (D3, error) {
