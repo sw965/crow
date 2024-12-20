@@ -87,6 +87,10 @@ func (s *Sequential) AppendGAPLayer() {
 	s.Forwards = append(s.Forwards, layer.GAPForward)
 }
 
+func (s *Sequential) AppendSigmoidLayer() {
+	s.Forwards = append(s.Forwards, layer.SigmoidForward)
+}
+
 func (s *Sequential) AppendSoftmaxForCrossEntropyLayer() {
 	s.Forwards = append(s.Forwards, layer.SoftmaxForwardForCrossEntropy)
 }
