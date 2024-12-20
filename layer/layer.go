@@ -9,112 +9,58 @@ import (
 	"github.com/sw965/omw/fn"
 	omwmath "github.com/sw965/omw/math"
 	omwslices "github.com/sw965/omw/slices"
-	"math"
 )
 
-type GradBuffer  struct {
-	Scalars tensor.D1
-	D1s     tensor.D2
-	D2s     tensor.D3
-	D3s     []tensor.D3
+type GradBuffer struct {
+	Biases  tensor.D2
+	Weights tensor.D3
+	Filters []tensor.D4
 }
 
 func NewGradBuffer(c int) GradBuffer {
 	return GradBuffer{
-		Scalars:make(tensor.D1, 0, c),
-		D1s:make(tensor.D2, 0, c),
-		D2s:make(tensor.D3, 0, c),
-		D3s:make([]tensor.D3, 0, c),
+		Biases:make(tensor.D2, 0, c),
+		Weights:make(tensor.D3, 0, c),
+		Filters:make([]tensor.D4, 0, c),
 	}
 }
 
 func (g *GradBuffer) NewZerosLike() GradBuffer {
-	d3s := make([]tensor.D3, len(g.D3s))
-	for i, d3 := range g.D3s {
-		d3s[i] = tensor.NewD3ZerosLike(d3)
+	d5Zeros := make([]tensor.D4, len(g.Filters))
+	for i := range d5Zeros {
+		d5Zeros[i] = tensor.NewD4ZerosLike(g.Filters[i])
 	}
-
 	return GradBuffer{
-		Scalars:tensor.NewD1ZerosLike(g.Scalars),
-		D1s:tensor.NewD2ZerosLike(g.D1s),
-		D2s:tensor.NewD3ZerosLike(g.D2s),
-		D3s:d3s,
+		Biases:tensor.NewD2ZerosLike(g.Biases),
+		Weights:tensor.NewD3ZerosLike(g.Weights),
+		Filters:d5Zeros,
 	}
 }
 
 func (g *GradBuffer) Add(other *GradBuffer) error {
-	err := g.Scalars.Add(other.Scalars)
+	err := g.Biases.Add(other.Biases)
 	if err != nil {
 		return err
 	}
-	err = g.D1s.Add(other.D1s)
-	if err != nil {
-		return err
-	}
-	err = g.D2s.Add(other.D2s)
+	err = g.Weights.Add(other.Weights)
 	if err != nil {
 		return err
 	}
 
-	for i, d3 := range other.D3s {
-		err := g.D3s[i].Add(d3)
+	for i := range g.Filters {
+		err := g.Filters[i].Add(other.Filters[i])
 		if err != nil {
 			return err
 		}
 	}
+
 	return nil
 }
 
 func (g *GradBuffer) Reverse() {
-	g.Scalars = omwslices.Reverse(g.Scalars)
-	g.D1s = omwslices.Reverse(g.D1s)
-	g.D2s = omwslices.Reverse(g.D2s)
-	g.D3s = omwslices.Reverse(g.D3s)
-}
-
-func (g *GradBuffer) ComputeL2Norm() float64 {
-	sqSum := 0.0
-	for _, e := range g.Scalars {
-		sqSum += (e * e)
-	}
-
-	for _, ei := range g.D1s {
-		for _, eij := range ei {
-			sqSum += (eij * eij)
-		}
-	}
-
-	for _, ei := range g.D2s {
-		for _, eij := range ei {
-			for _, eijk := range eij {
-				sqSum += (eijk * eijk)
-			}
-		}
-	}
-
-	for _, ei := range g.D3s {
-		for _, eij := range ei {
-			for _, eijk := range eij {
-				for _, eijkl := range eijk {
-					sqSum += (eijkl * eijkl)
-				}
-			}
-		}
-	}
-	return math.Sqrt(sqSum)
-}
-
-func (g *GradBuffer) ClipUsingL2Norm(maxNorm float64) {
-	norm := g.ComputeL2Norm()
-	scale := maxNorm / norm
-	if scale < 1.0 {
-		g.Scalars.MulScalar(scale)
-		g.D1s.MulScalar(scale)
-		g.D2s.MulScalar(scale)
-		for i := range g.D3s {
-			g.D3s[i].MulScalar(scale)
-		}
-	}
+	g.Biases = omwslices.Reverse(g.Biases)
+	g.Weights = omwslices.Reverse(g.Weights)
+	g.Filters = omwslices.Reverse(g.Filters)
 }
 
 type GradBuffers []GradBuffer
@@ -150,10 +96,9 @@ func (bs Backwards) Propagate(chain tensor.D1) (tensor.D3, GradBuffer, error) {
 	bs = omwslices.Reverse(bs)
 	n := len(bs)
 	gb := &GradBuffer{
-		Scalars:make(tensor.D1, 0, n),
-		D1s:make(tensor.D2, 0, n),
-		D2s:make(tensor.D3, 0, n),
-		D3s:make([]tensor.D3, 0, n),
+		Biases:make(tensor.D2, 0, n),
+		Weights:make(tensor.D3, 0, n),
+		Filters:make([]tensor.D4, 0, n),
 	}
 	var err error
 	dx := tensor.D3{tensor.D2{chain}}
@@ -195,11 +140,11 @@ func NewFullyConnectedForward(w tensor.D2, b tensor.D1) Forward {
 
 			// ∂L/∂w
 			dw := x[0].Transpose().DotProduct(chain[0])
-			gb.D2s = append(gb.D2s, dw)
+			gb.Weights = append(gb.Weights, dw)
 
 			// ∂L/∂b
 			db := chain[0][0]
-			gb.D1s = append(gb.D1s, db)
+			gb.Biases = append(gb.Biases, db)
 
 			return tensor.D3{dx}, gb, nil
 		}
@@ -209,14 +154,14 @@ func NewFullyConnectedForward(w tensor.D2, b tensor.D1) Forward {
 	}
 }
 
-func NewConvolutionForward(filter tensor.D3, b tensor.D1, stride int) Forward {
+func NewConvForward(filter tensor.D4, b tensor.D1) Forward {
 	return func(x tensor.D3, backwards Backwards) (tensor.D3, Backwards, error) {
-		y := ml3d.Convolution(x, filter, stride)
+		y := ml3d.Conv(x, filter)
 		err := y.AddD1Depth(b)
 		var backward Backward
 		backward = func(chain tensor.D3, gb *GradBuffer) (tensor.D3, *GradBuffer, error) {
-			dx, dw := ml3d.ConvolutionDerivative(x, filter, chain, stride)
-			gb.D3s = append(gb.D3s, dw)
+			dx, dFilter := ml3d.ConvDerivative(x, filter, chain)
+			gb.Filters = append(gb.Filters, dFilter)
 
 			cd := len(chain)
 			// ∂L/∂b
@@ -224,7 +169,7 @@ func NewConvolutionForward(filter tensor.D3, b tensor.D1, stride int) Forward {
 			for i := 0; i < cd; i++ {
 				db[i] = omwmath.Sum(chain[i].Flatten()...)
 			}
-			gb.D1s = append(gb.D1s, db)
+			gb.Biases = append(gb.Biases, db)
 			return dx, gb, nil
 		}
 		backwards = append(backwards, backward)
@@ -327,11 +272,11 @@ func NewLinearSumForward(w tensor.D2, b tensor.D1) Forward {
 			if err != nil {
 				return nil, nil, err
 			}
-			gb.D2s = append(gb.D2s, dw)
+			gb.Weights = append(gb.Weights, dw)
 
 			//∂L/∂b
 			db := chain[0][0]
-			gb.D1s = append(gb.D1s, db)
+			gb.Biases = append(gb.Biases, db)
 			return tensor.D3{dx}, gb, err
 		}
 		backwards = append(backwards, backward)
@@ -349,6 +294,33 @@ func FlatForward(x tensor.D3, backwards Backwards) (tensor.D3, Backwards, error)
 	}
 	backwards = append(backwards, backward)
 	return tensor.D3{tensor.D2{y}}, backwards, nil
+}
+
+func GAPForward(x tensor.D3, backwards Backwards) (tensor.D3, Backwards, error) {
+    y := make(tensor.D1, len(x))
+    d, h, w := len(x), len(x[0]), len(x[0][0])
+    size := float64(h * w)
+    for i := range y {
+        y[i] = omwmath.Sum(x[i].Flatten()...) / size
+    }
+
+    var backward Backward
+    backward = func(chain tensor.D3, gb *GradBuffer) (tensor.D3, *GradBuffer, error) {
+		c := chain[0][0]
+        dx := make(tensor.D3, d)
+        for i := 0; i < d; i++ {
+            dx[i] = make(tensor.D2, h)
+            for j := 0; j < h; j++ {
+                dx[i][j] = make(tensor.D1, w)
+                for k := 0; k < w; k++ {
+                    dx[i][j][k] = c[i] / size
+                }
+            }
+        }
+        return dx, gb, nil
+    }
+    backwards = append(backwards, backward)
+    return tensor.D3{tensor.D2{y}}, backwards, nil
 }
 
 func IdentityForward(x tensor.D3, backwards Backwards) (tensor.D3, Backwards, error) {

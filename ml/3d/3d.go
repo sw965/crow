@@ -4,7 +4,6 @@ import (
 	"github.com/sw965/crow/ml/2d"
 	"github.com/sw965/crow/tensor"
 	"github.com/sw965/omw/fn"
-	omwmath "github.com/sw965/omw/math"
 )
 
 func Sigmoid(x tensor.D3) tensor.D3 {
@@ -35,99 +34,116 @@ func LeakyReLUDerivative(alpha float64) func(tensor.D3) tensor.D3 {
 	}
 }
 
-func Convolution(x, filter tensor.D3, stride int) tensor.D3 {
-	xDepth := len(x)
-	xHeight := len(x[0])
-	xWidth := len(x[0][0])
+func Conv(x tensor.D3, filter tensor.D4) tensor.D3 {
+    xD := len(x)
+    xH := len(x[0])
+    xW := len(x[0][0])
 
-	filterDepth := len(filter)
-	filterHeight := len(filter[0])
-	filterWidth := len(filter[0][0])
+    yD := len(filter)          // 出力チャネル数(=フィルタ数)
+    fH := len(filter[0][0])    // フィルタの高さ
+    fW := len(filter[0][0][0]) // フィルタの幅
 
-	yDepth := xDepth - filterDepth + 1
-	yHeight := (xHeight-filterHeight)/stride + 1
-	yWidth := (xWidth-filterWidth)/stride + 1
+    // 出力 (y) の次元計算（ストライド1、パディングなし想定）
+    yH := xH - fH + 1
+    yW := xW - fW + 1
 
-	y := make(tensor.D3, yDepth)
-	for d := range y {
-		y[d] = make(tensor.D2, yHeight)
-		for h := range y[d] {
-			y[d][h] = make(tensor.D1, yWidth)
-		}
-	}
+    y := make(tensor.D3, yD)
+    for od := 0; od < yD; od++ {
+        y[od] = make(tensor.D2, yH)
+        for h := 0; h < yH; h++ {
+            y[od][h] = make(tensor.D1, yW)
+        }
+    }
 
-	for d := 0; d <= xDepth-filterDepth; d++ {
-		for h := 0; h <= xHeight-filterHeight; h += stride {
-			for w := 0; w <= xWidth-filterWidth; w += stride {
-				sum := 0.0
-				for fd := 0; fd < filterDepth; fd++ {
-					for fh := 0; fh < filterHeight; fh++ {
-						for fw := 0; fw < filterWidth; fw++ {
-							sum += x[d+fd][h+fh][w+fw] * filter[fd][fh][fw]
-						}
-					}
-				}
-				y[d][h/stride][w/stride] = sum
-			}
-		}
-	}
-	return y
+    for od := 0; od < yD; od++ {
+        for h := 0; h < yH; h++ {
+            for wi := 0; wi < yW; wi++ {
+                sum := 0.0
+                for id := 0; id < xD; id++ {
+                    for kh := 0; kh < fH; kh++ {
+                        for kw := 0; kw < fW; kw++ {
+                            sum += x[id][h+kh][wi+kw] * filter[od][id][kh][kw]
+                        }
+                    }
+                }
+                y[od][h][wi] = sum
+            }
+        }
+    }
+
+    return y
 }
 
-func ConvolutionDerivative(x, filter, chain tensor.D3, stride int) (tensor.D3, tensor.D3) {
-	xDepth := len(x)
-	xHeight := len(x[0])
-	xWidth := len(x[0][0])
+func ConvDerivative(x tensor.D3, filter tensor.D4, chain tensor.D3) (tensor.D3, tensor.D4) {
+    xD := len(x)
+    xH := len(x[0])
+    xW := len(x[0][0])
 
-	filterDepth := len(filter)
-	filterHeight := len(filter[0])
-	filterWidth := len(filter[0][0])
+    yD := len(filter)
+    fD := len(filter[0])
+    fH := len(filter[0][0])
+    fW := len(filter[0][0][0])
 
-	gradX := make(tensor.D3, xDepth)
-	for d := range gradX {
-		gradX[d] = make(tensor.D2, xHeight)
-		for h := range gradX[d] {
-			gradX[d][h] = make(tensor.D1, xWidth)
-		}
-	}
+    yH := xH - fH + 1
+    yW := xW - fW + 1
 
-	gradFilter := make(tensor.D3, filterDepth)
-	for d := range gradFilter {
-		gradFilter[d] = make(tensor.D2, filterHeight)
-		for h := range gradFilter[d] {
-			gradFilter[d][h] = make(tensor.D1, filterWidth)
-		}
-	}
+    // dx, dfilter の初期化
+    dx := make(tensor.D3, xD)
+    for id := 0; id < xD; id++ {
+        dx[id] = make(tensor.D2, xH)
+        for h := 0; h < xH; h++ {
+            dx[id][h] = make(tensor.D1, xW)
+        }
+    }
 
-	for d := 0; d <= xDepth-filterDepth; d++ {
-		for h := 0; h <= xHeight-filterHeight; h += stride {
-			for w := 0; w <= xWidth-filterWidth; w += stride {
-				cv := chain[d][h/stride][w/stride]
-				for fd := 0; fd < filterDepth; fd++ {
-					for fh := 0; fh < filterHeight; fh++ {
-						for fw := 0; fw < filterWidth; fw++ {
-							gradFilter[fd][fh][fw] += cv * x[d+fd][h+fh][w+fw]
-							gradX[d+fd][h+fh][w+fw] += cv * filter[fd][fh][fw]
-						}
-					}
-				}
-			}
-		}
-	}
+    dfilter := make(tensor.D4, yD)
+    for od := 0; od < yD; od++ {
+        dfilter[od] = make(tensor.D3, fD)
+        for id := 0; id < fD; id++ {
+            dfilter[od][id] = make(tensor.D2, fH)
+            for kh := 0; kh < fH; kh++ {
+                dfilter[od][id][kh] = make(tensor.D1, fW)
+            }
+        }
+    }
 
-	return gradX, gradFilter
-}
+    for od := 0; od < yD; od++ {
+        for id := 0; id < fD; id++ {
+            for kh := 0; kh < fH; kh++ {
+                for kw := 0; kw < fW; kw++ {
+                    sum := 0.0
+                    for h := 0; h < yH; h++ {
+                        for w := 0; w < yW; w++ {
+                            sum += chain[od][h][w] * x[id][h+kh][w+kw]
+                        }
+                    }
+                    dfilter[od][id][kh][kw] = sum
+                }
+            }
+        }
+    }
 
-func L2Regularization(c float64) func(tensor.D3) float64 {
-	return func(w tensor.D3) float64 {
-		return omwmath.Sum(fn.Map[tensor.D1](w, ml2d.L2Regularization(c))...)
-	}
-}
+    for id := 0; id < xD; id++ {
+        for iH := 0; iH < xH; iH++ {
+            for iW := 0; iW < xW; iW++ {
+                sum := 0.0
+                for od := 0; od < yD; od++ {
+                    for kh := 0; kh < fH; kh++ {
+                        for kw := 0; kw < fW; kw++ {
+                            h := iH - kh
+                            w := iW - kw
+                            if h >= 0 && h < yH && w >= 0 && w < yW {
+                                sum += chain[od][h][w] * filter[od][id][kh][kw]
+                            }
+                        }
+                    }
+                }
+                dx[id][iH][iW] = sum
+            }
+        }
+    }
 
-func L2RegularizationDerivative(c float64) func(tensor.D3) tensor.D3 {
-	return func(w tensor.D3) tensor.D3 {
-		return fn.Map[tensor.D3](w, ml2d.L2RegularizationDerivative(c))
-	}
+    return dx, dfilter
 }
 
 func NumericalDifferentiation(x tensor.D3, f func(tensor.D3) float64) tensor.D3 {

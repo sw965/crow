@@ -29,10 +29,18 @@ func NewD3OnesLike(d3 D3) D3 {
 	return fn.Map[D3](d3, NewD2OnesLike)
 }
 
-func NewD3RandUniform(r, c, d int, min, max float64, rng *rand.Rand) D3 {
-	ret := make(D3, r)
+func NewD3RandUniform(d, r, c int, min, max float64, rng *rand.Rand) D3 {
+	ret := make(D3, d)
 	for i := range ret {
-		ret[i] = NewD2RandUniform(c, d, min, max, rng)
+		ret[i] = NewD2RandUniform(r, c, min, max, rng)
 	}
 	return ret
+}
+
+func NewD3He(d, r, c int, rng *rand.Rand) D3 {
+	he := make(D3, d)
+	for i := range he {
+		he[i] = NewD2He(r, c, rng)
+	}
+	return he
 }

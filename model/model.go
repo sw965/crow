@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/sw965/crow/layer"
 	"github.com/sw965/crow/tensor"
+	"github.com/sw965/crow/ml/1d"
 	omwjson "github.com/sw965/omw/json"
 	omwslices "github.com/sw965/omw/slices"
 	omwrand "github.com/sw965/omw/math/rand"
@@ -12,9 +13,9 @@ import (
 )
 
 type Parameter struct {
-	D1s tensor.D2
-	D2s tensor.D3
-	D3s []tensor.D3
+	Biases tensor.D2
+	Weights tensor.D3
+	Filters []tensor.D4
 }
 
 func LoadParameterJSON(path string) (Parameter, error) {
@@ -36,11 +37,58 @@ type Sequential struct {
 }
 
 func (s *Sequential) SetParameter(param *Parameter) {
-	s.Parameter.D1s.Copy(param.D1s)
-	s.Parameter.D2s.Copy(param.D2s)
-	for i := range s.Parameter.D3s {
-		s.Parameter.D3s[i].Copy(param.D3s[i])
+	s.Parameter.Biases.Copy(param.Biases)
+	s.Parameter.Weights.Copy(param.Weights)
+	for i := range s.Parameter.Filters {
+		for j := range s.Parameter.Filters[i] {
+			s.Parameter.Filters[i][j].Copy(param.Filters[i][j])
+		}
 	}
+}
+
+func (s *Sequential) SetCrossEntropyError() {
+	s.YLossCalculator = ml1d.CrossEntropyError
+	s.YLossDifferentiator = ml1d.CrossEntropyErrorDerivative
+}
+
+func (s *Sequential) AppendConvLayer(r, c, d, ch int, rn *rand.Rand) {
+	he := make(tensor.D4, ch)
+	for i := 0; i < ch; i++ {
+		he[i] = tensor.NewD3He(d, r, c, rn)
+	}
+	b := tensor.NewD1Zeros(ch)
+
+	s.Parameter.Filters = append(s.Parameter.Filters, he)
+	s.Parameter.Biases = append(s.Parameter.Biases, b)
+	s.Forwards = append(s.Forwards, layer.NewConvForward(he, b))
+}
+
+func (s *Sequential) AppendFullyConnectedLayer(r, c int, rn *rand.Rand) {
+	he := tensor.NewD2He(r, c, rn)
+	b := tensor.NewD1Zeros(c)
+	s.Parameter.Weights = append(s.Parameter.Weights, he)
+	s.Parameter.Biases = append(s.Parameter.Biases, b)
+	s.Forwards = append(s.Forwards, layer.NewFullyConnectedForward(he, b))
+}
+
+func (s *Sequential) AppendReLULayer() {
+	s.Forwards = append(s.Forwards, layer.ReLUForward)
+}
+
+func (s *Sequential) AppendLeakyReLULayer(alpha float64) {
+	s.Forwards = append(s.Forwards, layer.NewLeakyReLUForward(alpha))
+}
+
+func (s *Sequential) AppendFlatLayer() {
+	s.Forwards = append(s.Forwards, layer.FlatForward)
+}
+
+func (s *Sequential) AppendGAPLayer() {
+	s.Forwards = append(s.Forwards, layer.GAPForward)
+}
+
+func (s *Sequential) AppendSoftmaxForCrossEntropyLayer() {
+	s.Forwards = append(s.Forwards, layer.SoftmaxForwardForCrossEntropy)
 }
 
 func (s *Sequential) Predict(x tensor.D3) (tensor.D1, error) {
@@ -48,7 +96,7 @@ func (s *Sequential) Predict(x tensor.D3) (tensor.D1, error) {
 	return y[0][0], err
 }
 
-func (s *Sequential) MeanLoss(x []tensor.D3, t tensor.D2) (float64, error) {
+func (s *Sequential) MeanLoss(x tensor.D4, t tensor.D2) (float64, error) {
 	n := len(x)
 	if n != len(t) {
 		return 0.0, fmt.Errorf("バッチ数が一致しません。")
@@ -69,7 +117,7 @@ func (s *Sequential) MeanLoss(x []tensor.D3, t tensor.D2) (float64, error) {
 	return mean, nil
 }
 
-func (s *Sequential) Accuracy(x []tensor.D3, t tensor.D2) (float64, error) {
+func (s *Sequential) Accuracy(x tensor.D4, t tensor.D2) (float64, error) {
 	n := len(x)
 	if n != len(t) {
 		return 0.0, fmt.Errorf("バッチ数が一致しません。")
@@ -103,7 +151,7 @@ func (s *Sequential) BackPropagate(x tensor.D3, t tensor.D1) (layer.GradBuffer, 
 	return gradBuffer, err
 }
 
-func (s *Sequential) ComputeGrad(features []tensor.D3, labels tensor.D2, p int) (layer.GradBuffer, error) {
+func (s *Sequential) ComputeGrad(features tensor.D4, labels tensor.D2, p int) (layer.GradBuffer, error) {
 	firstGradBuffer, err := s.BackPropagate(features[0], labels[0])
 	if err != nil {
 		return layer.GradBuffer{}, err
@@ -147,44 +195,50 @@ func (s *Sequential) ComputeGrad(features []tensor.D3, labels tensor.D2, p int) 
 	total.Add(&firstGradBuffer)
 	
 	nf := float64(n)
-	total.D1s.DivScalar(nf)
-	total.D2s.DivScalar(nf)
-	for i := range total.D3s {
-		total.D3s[i].DivScalar(nf)
+	total.Biases.DivScalar(nf)
+	total.Weights.DivScalar(nf)
+	for i := range total.Filters {
+		total.Filters[i].DivScalar(nf)
 	}
 	return total, nil
 }
 
-func (s *Sequential) Train(features []tensor.D3, labels tensor.D2, mbc *MiniBatchConfig, r *rand.Rand) error {
+func (s *Sequential) Train(features tensor.D4, labels tensor.D2, c *MiniBatchConfig, r *rand.Rand) error {
+	lr := c.LearningRate
+	batchSize := c.BatchSize
+	p := c.Parallel
+
 	n := len(features)
-	if n < mbc.BatchSize {
+
+	if n < batchSize {
 		return fmt.Errorf("データ数 < バッチサイズである為、モデルの訓練を出来ません、")
 	}
 
-	if mbc.Epoch <= 0 {
+	if c.Epoch <= 0 {
 		return fmt.Errorf("エポック数が0以下である為、モデルの訓練を開始出来ません。")
 	}
 
-	iter := n / mbc.BatchSize * mbc.Epoch
+	iter := n / batchSize * c.Epoch
 	for i := 0; i < iter; i++ {
-		idxs := omwrand.Ints(mbc.BatchSize, 0, n, r)
+		idxs := omwrand.Ints(batchSize, 0, n, r)
 		xs := omwslices.ElementsByIndices(features, idxs...)
 		ts := omwslices.ElementsByIndices(labels, idxs...)
-		grad, err := s.ComputeGrad(xs, ts, mbc.Parallel)
+		grad, err := s.ComputeGrad(xs, ts, p)
 		if err != nil {
 			return err
 		}
 
-		grad.D1s.MulScalar(mbc.LearningRate)
-		grad.D2s.MulScalar(mbc.LearningRate)
-		for i := range grad.D3s {
-			grad.D3s[i].MulScalar(mbc.LearningRate)
+		grad.Biases.MulScalar(lr)
+		grad.Weights.MulScalar(lr)
+		for j := range grad.Filters {
+			grad.Filters[j].MulScalar(lr)
 		}
 		
-		s.Parameter.D1s.Sub(grad.D1s)
-		s.Parameter.D2s.Sub(grad.D2s)
-		for i := range s.Parameter.D3s {
-			s.Parameter.D3s[i].Sub(grad.D3s[i])
+		s.Parameter.Biases.Sub(grad.Biases)
+		s.Parameter.Weights.Sub(grad.Weights)
+
+		for j := range grad.Filters {
+			s.Parameter.Filters[j].Sub(grad.Filters[j])
 		}
 	}
 	return nil

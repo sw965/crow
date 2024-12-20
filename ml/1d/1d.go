@@ -124,26 +124,6 @@ func SumSquaredErrorDerivative(y, t tensor.D1) (tensor.D1, error) {
 	return grad, nil
 }
 
-func L2Regularization(c float64) func(tensor.D1) float64 {
-	return func(w tensor.D1) float64 {
-		sqSum := 0.0
-		for _, wi := range w {
-			sqSum += wi * wi
-		}
-		return 0.5 * c * sqSum
-	}
-}
-
-func L2RegularizationDerivative(c float64) func(tensor.D1) tensor.D1 {
-	return func(w tensor.D1) tensor.D1 {
-		grad := make(tensor.D1, len(w))
-		for i, wi := range w {
-			grad[i] = c * wi
-		}
-		return grad
-	}
-}
-
 func NumericalDifferentiation(x tensor.D1, f func(tensor.D1) float64) tensor.D1 {
 	h := 0.001
 	grad := make(tensor.D1, len(x))

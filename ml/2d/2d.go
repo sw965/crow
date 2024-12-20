@@ -4,7 +4,6 @@ import (
 	"github.com/sw965/crow/ml/1d"
 	"github.com/sw965/crow/tensor"
 	"github.com/sw965/omw/fn"
-	omwmath "github.com/sw965/omw/math"
 )
 
 func Sigmoid(x tensor.D2) tensor.D2 {
@@ -65,18 +64,6 @@ func LinearSumDerivative(x, w tensor.D2) (tensor.D2, tensor.D2, error) {
 		gradW[i] = gradWi
 	}
 	return gradX, gradW, nil
-}
-
-func L2Regularization(c float64) func(tensor.D2) float64 {
-	return func(w tensor.D2) float64 {
-		return omwmath.Sum(fn.Map[tensor.D1](w, ml1d.L2Regularization(c))...)
-	}
-}
-
-func L2RegularizationDerivative(c float64) func(tensor.D2) tensor.D2 {
-	return func(w tensor.D2) tensor.D2 {
-		return fn.Map[tensor.D2](w, ml1d.L2RegularizationDerivative(c))
-	}
 }
 
 func NumericalDifferentiation(x tensor.D2, f func(tensor.D2) float64) tensor.D2 {
