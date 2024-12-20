@@ -46,6 +46,11 @@ func (s *Sequential) SetParameter(param *Parameter) {
 	}
 }
 
+func (s *Sequential) SetSumSquaredError() {
+	s.YLossCalculator = ml1d.SumSquaredError
+	s.YLossDifferentiator = ml1d.SumSquaredErrorDerivative
+}
+
 func (s *Sequential) SetCrossEntropyError() {
 	s.YLossCalculator = ml1d.CrossEntropyError
 	s.YLossDifferentiator = ml1d.CrossEntropyErrorDerivative
