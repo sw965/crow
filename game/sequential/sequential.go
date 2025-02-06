@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"sort"
 	"math/rand"
-	"golang.org/x/exp/maps"
-	omwmath "github.com/sw965/omw/math"
 	omwrand "github.com/sw965/omw/math/rand"
 )
 
@@ -74,14 +72,6 @@ func (p AgentPlacements[G]) Validate() error {
 
 type PlacementsJudger[S any, Ag comparable] func(*S) (AgentPlacements[Ag], error)
 type AgentResultScores[Ag comparable] map[Ag]float64
-
-func (ss AgentResultScores[Ag]) ToAgentEvals() AgentEvals[Ag] {
-	es := AgentEvals[Ag]{}
-	for k, v := range ss {
-		es[k] = Eval(v)
-	}
-	return es
-}
 
 func (ss AgentResultScores[Ag]) DivScalar(a float64) {
 	for k := range ss {
@@ -207,51 +197,3 @@ func NewRandActionPlayer[S any, As ~[]A, A comparable](r *rand.Rand) Player[S, A
 }
 
 type AgentPlayers[S any, As ~[]A, A, Ag comparable] map[Ag]Player[S, As, A]
-
-type Policy[A comparable] map[A]float64
-type PolicyProvider[S any, As ~[]A, A comparable] func(*S, As) Policy[A]
-
-func UniformPolicyProvider[S any, As ~[]A, A comparable](state *S, legalActions As) Policy[A] {
-	n := len(legalActions)
-	p := 1.0 / float64(n)
-	policy := Policy[A]{}
-	for _, a := range legalActions {
-		policy[a] = p
-	}
-	return policy
-}
-
-type Eval float64
-type AgentEvals[Ag comparable] map[Ag]Eval
-
-func (es AgentEvals[Ag]) Add(other AgentEvals[Ag]) {
-	for k, v := range other {
-		es[k] += v
-	}
-}
-
-func (es AgentEvals[Ag]) DivScalar(e Eval) {
-	for k := range es {
-		es[k] /= e
-	}
-}
-
-type Selector[A comparable] func(Policy[A]) A
-
-func NewThresholdWeightedSelector[A comparable](t float64, r *rand.Rand) Selector[A] {
-	return func(policy Policy[A]) A {
-		max := omwmath.Max(maps.Values(policy)...)
-		threshold := max * t
-		n := len(policy)
-		options := make([]A, 0, n)
-		weights := make([]float64, 0, n)
-		for action, p := range policy {
-			if p >= threshold {
-				options = append(options, action)
-				weights = append(weights, p)
-			}
-		}
-		idx := omwrand.IntByWeight(weights, r)
-		return options[idx]
-	}
-}

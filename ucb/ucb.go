@@ -122,7 +122,7 @@ func (m Manager[KS, K]) TrialPercentPerKey() map[K]float64 {
 	return ps
 }
 
-func (m Manager[Ks, K]) F(t float64, r *rand.Rand) K {
+func (m Manager[Ks, K]) SelectKeyByTrialPercent(t float64, r *rand.Rand) K {
 	ps := m.TrialPercentPerKey()
 	max := omwmath.Max(maps.Values(ps)...)
 	n := len(ps)
@@ -164,4 +164,12 @@ func (ms Managers[KS, K]) AverageValues() []float64 {
 		vs[i] = m.AverageValue()
 	}
 	return vs
+}
+
+func (ms Managers[KS, K]) SelectKeysByTrialPercent(t float64, r *rand.Rand) KS {
+	ks := make(KS, len(ms))
+	for i, m := range ms {
+		ks[i] = m.SelectKeyByTrialPercent(t, r)
+	}
+	return ks
 }

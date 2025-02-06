@@ -3,36 +3,7 @@ package ml2d
 import (
 	"github.com/sw965/crow/ml/1d"
 	"github.com/sw965/crow/tensor"
-	"github.com/sw965/omw/fn"
 )
-
-func Sigmoid(x tensor.D2) tensor.D2 {
-	return fn.Map[tensor.D2](x, ml1d.Sigmoid)
-}
-
-func SigmoidGrad(x tensor.D2) tensor.D2 {
-	return fn.Map[tensor.D2](x, ml1d.SigmoidGrad)
-}
-
-func ReLU(x tensor.D2) tensor.D2 {
-	return fn.Map[tensor.D2](x, ml1d.ReLU)
-}
-
-func ReLUDerivative(x tensor.D2) tensor.D2 {
-	return fn.Map[tensor.D2](x, ml1d.ReLUDerivative)
-}
-
-func LeakyReLU(alpha float64) func(tensor.D2) tensor.D2 {
-	return func(x tensor.D2) tensor.D2 {
-		return fn.Map[tensor.D2](x, ml1d.LeakyReLU(alpha))
-	}
-}  
-
-func LeakyReLUDerivative(alpha float64) func(tensor.D2) tensor.D2 {
-	return func(x tensor.D2) tensor.D2 {
-		return fn.Map[tensor.D2](x, ml1d.LeakyReLUDerivative(alpha))
-	}
-}
 
 func LinearSum(x, w tensor.D2, b tensor.D1) (tensor.D1, error) {
 	y := make(tensor.D1, len(x))
@@ -48,7 +19,7 @@ func LinearSum(x, w tensor.D2, b tensor.D1) (tensor.D1, error) {
 	return y, nil
 }
 
-//バイアス項(b)の微分は常に1であり、連鎖律において計算する必要性がない為、計算を省く。
+//バイアス項(b)の微分は常に1であり、連鎖律において計算する必要がない為、計算を省く。
 func LinearSumDerivative(x, w tensor.D2) (tensor.D2, tensor.D2, error) {
 	n := len(x)
 	gradX := make(tensor.D2, n)

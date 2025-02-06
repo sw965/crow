@@ -8,7 +8,9 @@ import (
 	game "github.com/sw965/crow/game/sequential"
 )
 
-type LeafNodeEvaluator[S any, Ag comparable] func(*S) (game.AgentEvals[Ag], error)
+type AgentLeafNodeEvals[Ag comparable] map[Ag]float64
+
+type LeafNodeEvaluator[S any, Ag comparable] func(*S) (AgentLeafNodeEvals[Ag], error)
 
 type Node[S any, As ~[]A, A, Ag comparable] struct {
 	State      S
@@ -39,7 +41,7 @@ type selectionInfo[S any, As ~[]A, A, Ag comparable] struct {
 
 type selectionInfoSlice[S any, As ~[]A, A, Ag comparable] []selectionInfo[S, As, A, Ag]
 
-func (ss selectionInfoSlice[S, As, A, Ag]) backward(evals game.AgentEvals[Ag]) {
+func (ss selectionInfoSlice[S, As, A, Ag]) backward(evals AgentLeafNodeEvals[Ag]) {
 	for _, s := range ss {
 		node := s.node
 		action := s.action
@@ -49,10 +51,41 @@ func (ss selectionInfoSlice[S, As, A, Ag]) backward(evals game.AgentEvals[Ag]) {
 	}
 }
 
+type Policy[A comparable] map[A]float64
+type PolicyProvider[S any, As ~[]A, A comparable] func(*S, As) Policy[A]
+
+func UniformPolicyProvider[S any, As ~[]A, A comparable](state *S, legalActions As) Policy[A] {
+	n := len(legalActions)
+	p := 1.0 / float64(n)
+	policy := Policy[A]{}
+	for _, a := range legalActions {
+		policy[a] = p
+	}
+	return policy
+}
+
+type AgentTotalEvals[Ag comparable] map[Ag]float64
+
+func (e AgentTotalEvals[Ag]) Add(evals AgentLeafNodeEvals[Ag]) {
+	for k, v := range evals {
+		e[k] += v
+	}
+}
+
+func (e AgentTotalEvals[Ag]) ToAverage(s float64) AgentAverageEvals[Ag] {
+	avgs := AgentAverageEvals[Ag]{}
+	for k, v := range e {
+		avgs[k] = v / s
+	}
+	return avgs
+}
+
+type AgentAverageEvals[Ag comparable] map[Ag]float64
+
 type Engine[S any, As ~[]A, A, Ag comparable] struct {
 	gameLogic         game.Logic[S, As, A, Ag]
 	UCBFunc           ucb.Func
-	PolicyProvider    game.PolicyProvider[S, As, A]
+	PolicyProvider    PolicyProvider[S, As, A]
 	LeafNodeEvaluator LeafNodeEvaluator[S, Ag]
 	NextNodesCap      int
 }
@@ -66,17 +99,21 @@ func (e *Engine[S, As, A, Ag]) SetGameLogic(gl game.Logic[S, As, A, Ag]) {
 }
 
 func (e *Engine[S, As, A, Ag]) SetUniformPolicyProvider() {
-	e.PolicyProvider = game.UniformPolicyProvider[S, As, A]
+	e.PolicyProvider = UniformPolicyProvider[S, As, A]
 }
 
 func (e *Engine[S, As, A, Ag]) SetPlayout(players game.AgentPlayers[S, As, A, Ag]) {
-	e.LeafNodeEvaluator = func(state *S) (game.AgentEvals[Ag], error) {
+	e.LeafNodeEvaluator = func(state *S) (AgentLeafNodeEvals[Ag], error) {
 		final, err := e.gameLogic.Playout(*state, players)
 		if err != nil {
-			return game.AgentEvals[Ag]{}, err
+			return AgentLeafNodeEvals[Ag]{}, err
 		}
 		scores, err := e.gameLogic.EvaluateAgentResultScores(&final)
-		return scores.ToAgentEvals(), err
+		evals := make(AgentLeafNodeEvals[Ag], len(scores))
+		for k, v := range scores {
+			evals[k] = v
+		}
+		return evals, err
 	}
 }
 
@@ -96,7 +133,7 @@ func (e *Engine[S, As, A, Ag]) NewNode(state *S) (*Node[S, As, A, Ag], error) {
 	return &Node[S, As, A, Ag]{State: *state, Agent: agent, UCBManager: u, NextNodes: nextNodes}, nil
 }
 
-func (e *Engine[S, As, A, Ag]) SelectExpansionBackward(node *Node[S, As, A, Ag], capacity int, r *rand.Rand) (game.AgentEvals[Ag], int, error) {
+func (e *Engine[S, As, A, Ag]) SelectExpansionBackward(node *Node[S, As, A, Ag], capacity int, r *rand.Rand) (AgentLeafNodeEvals[Ag], int, error) {
 	state := node.State
 	selections := make(selectionInfoSlice[S, As, A, Ag], 0, capacity)
 	var err error
@@ -108,12 +145,12 @@ func (e *Engine[S, As, A, Ag]) SelectExpansionBackward(node *Node[S, As, A, Ag],
 
 		state, err = e.gameLogic.Transitioner(state, &action)
 		if err != nil {
-			return game.AgentEvals[Ag]{}, 0, err
+			return AgentLeafNodeEvals[Ag]{}, 0, err
 		}
 
 		isEnd, err = e.gameLogic.IsEnd(&state)
 		if err != nil {
-			return game.AgentEvals[Ag]{}, 0, err
+			return AgentLeafNodeEvals[Ag]{}, 0, err
 		}
 
 		if isEnd {
@@ -125,7 +162,7 @@ func (e *Engine[S, As, A, Ag]) SelectExpansionBackward(node *Node[S, As, A, Ag],
 			//expansion
 			nextNode, err = e.NewNode(&state)
 			if err != nil {
-				return game.AgentEvals[Ag]{}, 0, err
+				return AgentLeafNodeEvals[Ag]{}, 0, err
 			}
 			node.NextNodes = append(node.NextNodes, nextNode)
 			//新しくノードを作成したら、selectを終了する
@@ -135,17 +172,19 @@ func (e *Engine[S, As, A, Ag]) SelectExpansionBackward(node *Node[S, As, A, Ag],
 		node = nextNode
 	}
 
-	var evals game.AgentEvals[Ag]
+	var evals AgentLeafNodeEvals[Ag]
 	if isEnd {
 		scores, err := e.gameLogic.EvaluateAgentResultScores(&state)
 		if err != nil {
-			return game.AgentEvals[Ag]{}, 0, err
+			return AgentLeafNodeEvals[Ag]{}, 0, err
 		}
-		evals = scores.ToAgentEvals()
+		for k, v := range scores {
+			evals[k] = v
+		}
 	} else {
 		evals, err = e.LeafNodeEvaluator(&state)
 		if err != nil {
-			return game.AgentEvals[Ag]{}, 0, err
+			return AgentLeafNodeEvals[Ag]{}, 0, err
 		}		
 	}
 
@@ -153,27 +192,27 @@ func (e *Engine[S, As, A, Ag]) SelectExpansionBackward(node *Node[S, As, A, Ag],
 	return evals, len(selections), err
 }
 
-func (e *Engine[S, As, A, Ag]) Search(rootNode *Node[S, As, A, Ag], simulation int, r *rand.Rand) (game.AgentEvals[Ag], error) {
+func (e *Engine[S, As, A, Ag]) Search(rootNode *Node[S, As, A, Ag], simulation int, r *rand.Rand) (map[Ag]float64, error) {
 	if e.NextNodesCap <= 0 {
-		return game.AgentEvals[Ag]{}, fmt.Errorf("Engine.NextNodesCap > 0 でなければなりません。")
+		return AgentLeafNodeEvals[Ag]{}, fmt.Errorf("Engine.NextNodesCap > 0 でなければなりません。")
 	}
 
-	avgs := game.AgentEvals[Ag]{}
+	totals := AgentTotalEvals[Ag]{}
 	capacity := 0
 	for i := 0; i < simulation; i++ {
 		evals, depth, err := e.SelectExpansionBackward(rootNode, capacity, r)
 		if err != nil {
-			return game.AgentEvals[Ag]{}, err
+			return AgentLeafNodeEvals[Ag]{}, err
 		}
-		avgs.Add(evals)
+		totals.Add(evals)
 		capacity = depth + 1
 	}
 
-	avgs.DivScalar(game.Eval(simulation))
+	avgs := totals.ToAverage(float64(simulation))
 	return avgs, nil
 }
 
-func (e *Engine[S, As, A, Ag]) NewPlayer(simulation int, selector game.Selector[A], r *rand.Rand) game.Player[S, As, A] {
+func (e *Engine[S, As, A, Ag]) NewPlayer(simulation int, t float64, r *rand.Rand) game.Player[S, As, A] {
 	return func(state *S, _ As) (A, error) {
 		rootNode, err := e.NewNode(state)
 		if err != nil {
@@ -187,13 +226,7 @@ func (e *Engine[S, As, A, Ag]) NewPlayer(simulation int, selector game.Selector[
 			return a, err
 		}
 		
-		trialPercents := rootNode.UCBManager.TrialPercentPerKey()
-		policy := game.Policy[A]{}
-		for k, v := range trialPercents {
-			policy[k] = v
-		}
-
-		action := selector(policy)
+		action := rootNode.UCBManager.SelectKeyByTrialPercent(t, r)
 		return action, nil
 	}
 }
