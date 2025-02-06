@@ -172,7 +172,7 @@ func (e *Engine[S, As, A, Ag]) SelectExpansionBackward(node *Node[S, As, A, Ag],
 		node = nextNode
 	}
 
-	var evals AgentLeafNodeEvals[Ag]
+	evals := AgentLeafNodeEvals[Ag]{}
 	if isEnd {
 		scores, err := e.gameLogic.EvaluateAgentResultScores(&state)
 		if err != nil {
