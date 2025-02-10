@@ -6,6 +6,7 @@ import (
 	omwrand "github.com/sw965/omw/math/rand"
 	"github.com/sw965/crow/ucb"
 	game "github.com/sw965/crow/game/sequential"
+	"sync"
 )
 
 type AgentLeafNodeEvals[Ag comparable] map[Ag]float64
@@ -17,6 +18,7 @@ type Node[S any, As ~[]A, A, Ag comparable] struct {
 	Agent      Ag
 	UCBManager ucb.Manager[As, A]
 	NextNodes  Nodes[S, As, A, Ag]
+	lock       sync.Mutex
 }
 
 func (node *Node[S, As, A, Ag]) Trial() int {
@@ -88,6 +90,7 @@ type Engine[S any, As ~[]A, A, Ag comparable] struct {
 	PolicyProvider    PolicyProvider[S, As, A]
 	LeafNodeEvaluator LeafNodeEvaluator[S, Ag]
 	NextNodesCap      int
+	VirtualLoss float64
 }
 
 func (e *Engine[S, As, A, Ag]) GetGameLogic() game.Logic[S, As, A, Ag]{
@@ -192,6 +195,104 @@ func (e *Engine[S, As, A, Ag]) SelectExpansionBackward(node *Node[S, As, A, Ag],
 	return evals, len(selections), err
 }
 
+func (e *Engine[S, As, A, Ag]) SelectExpansionBackwardWithVirtualLoss(node *Node[S, As, A, Ag], capacity int, r *rand.Rand) (AgentLeafNodeEvals[Ag], int, error) {
+	state := node.State
+	selections := make(selectionInfoSlice[S, As, A, Ag], 0, capacity)
+	var err error
+	var isEnd bool
+
+	for {
+		// --- 選択フェーズ ---
+		// まずノードのUCB値から最良候補を求める
+		node.lock.Lock()
+		bestActions := node.UCBManager.MaxKeys()
+		node.lock.Unlock()
+
+		// 複数候補からランダムに１つ選択
+		action := omwrand.Choice(bestActions, r)
+
+		// 選択直後にバーチャルロスの更新を行う：
+		// ・Trial（訪問回数）をインクリメント
+		// ・TotalValue に -VirtualLoss を加算
+		node.lock.Lock()
+		node.UCBManager[action].Trial++                      // 仮の訪問カウント
+		node.UCBManager[action].TotalValue -= e.VirtualLoss    // 仮のロスを加える
+		node.lock.Unlock()
+
+		// 選択した枝の情報を記録
+		selections = append(selections, selectionInfo[S, As, A, Ag]{node: node, action: action})
+
+		// 状態遷移
+		state, err = e.gameLogic.Transitioner(state, &action)
+		if err != nil {
+			return AgentLeafNodeEvals[Ag]{}, 0, err
+		}
+
+		// 終局判定
+		isEnd, err = e.gameLogic.IsEnd(&state)
+		if err != nil {
+			return AgentLeafNodeEvals[Ag]{}, 0, err
+		}
+		if isEnd {
+			break
+		}
+
+		// 次ノードの探索（排他のためロックを使用）
+		node.lock.Lock()
+		nextNode, ok := node.NextNodes.FindByState(&state, e.gameLogic.Comparator)
+		node.lock.Unlock()
+
+		if !ok {
+			// ノードが存在しなければ展開（Expansion）
+			nextNode, err = e.NewNode(&state)
+			if err != nil {
+				return AgentLeafNodeEvals[Ag]{}, 0, err
+			}
+			node.lock.Lock()
+			node.NextNodes = append(node.NextNodes, nextNode)
+			node.lock.Unlock()
+			// 新ノードを展開したら選択フェーズを終了
+			break
+		}
+
+		// 同一状態のノードが既に存在する場合はそちらに移動
+		node = nextNode
+	}
+
+	// --- シミュレーション（Playout）フェーズ ---
+	var evals AgentLeafNodeEvals[Ag]
+	if isEnd {
+		scores, err := e.gameLogic.EvaluateAgentResultScores(&state)
+		if err != nil {
+			return AgentLeafNodeEvals[Ag]{}, 0, err
+		}
+		evals = make(AgentLeafNodeEvals[Ag])
+		for k, v := range scores {
+			evals[k] = v
+		}
+	} else {
+		evals, err = e.LeafNodeEvaluator(&state)
+		if err != nil {
+			return AgentLeafNodeEvals[Ag]{}, 0, err
+		}
+	}
+
+	// --- バックアップ（Backward）フェーズ ---
+	// ここで、選択時に加えたバーチャルロスを打ち消す更新を行う
+	for _, s := range selections {
+		s.node.lock.Lock()
+		// バックアップ時は、実際のシミュレーション結果に加え、先に差し引いた VirtualLoss を打ち消すために +VirtualLoss する
+		// （すなわち最終的な更新は、TotalValue に (simulation_result) が加わる）
+		s.node.UCBManager[s.action].TotalValue += (evals[s.node.Agent] + e.VirtualLoss)
+		s.node.lock.Unlock()
+	}
+
+	return evals, len(selections), nil
+}
+
+// -------------------------------------------------------------------------
+// Search関数では、VirtualLossの値が正の場合に並列探索用の関数を呼び出す例
+// -------------------------------------------------------------------------
 func (e *Engine[S, As, A, Ag]) Search(rootNode *Node[S, As, A, Ag], simulation int, r *rand.Rand) (map[Ag]float64, error) {
 	if e.NextNodesCap <= 0 {
 		return AgentLeafNodeEvals[Ag]{}, fmt.Errorf("Engine.NextNodesCap > 0 でなければなりません。")
@@ -200,7 +301,14 @@ func (e *Engine[S, As, A, Ag]) Search(rootNode *Node[S, As, A, Ag], simulation i
 	totals := AgentTotalEvals[Ag]{}
 	capacity := 0
 	for i := 0; i < simulation; i++ {
-		evals, depth, err := e.SelectExpansionBackward(rootNode, capacity, r)
+		var evals AgentLeafNodeEvals[Ag]
+		var depth int
+		var err error
+		if e.VirtualLoss > 0 {
+			evals, depth, err = e.SelectExpansionBackwardWithVirtualLoss(rootNode, capacity, r)
+		} else {
+			evals, depth, err = e.SelectExpansionBackward(rootNode, capacity, r)
+		}
 		if err != nil {
 			return AgentLeafNodeEvals[Ag]{}, err
 		}
