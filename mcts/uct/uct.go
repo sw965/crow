@@ -8,8 +8,15 @@ import (
 	omwrand "github.com/sw965/omw/math/rand"
 )
 
-type LeafNodeEvalByAgent[G comparable] map[G]float64
+type RootNodeEvalByAgent[G comparable] map[G]float64
 
+func (es RootNodeEvalByAgent[G]) DivScalar(s float64) {
+	for k := range es {
+		es[k] /= s
+	}
+}
+
+type LeafNodeEvalByAgent[G comparable] map[G]float64
 type LeafNodeEvaluator[S any, G comparable] func(*S) (LeafNodeEvalByAgent[G], error)
 
 type Node[S any, As ~[]A, A, G comparable] struct {
@@ -166,29 +173,26 @@ func (e *Engine[S, As, A, G]) SelectExpansionBackward(node *Node[S, As, A, G], c
 	return evals, len(selections), err
 }
 
-func (e *Engine[S, As, A, G]) Search(rootNode *Node[S, As, A, G], simulation int, r *rand.Rand) (map[G]float64, error) {
+func (e *Engine[S, As, A, G]) Search(rootNode *Node[S, As, A, G], simulation int, r *rand.Rand) (RootNodeEvalByAgent[G], error) {
 	if e.NextNodesCap <= 0 {
-		return LeafNodeEvalByAgent[G]{}, fmt.Errorf("Engine.NextNodesCap > 0 でなければなりません。")
+		return RootNodeEvalByAgent[G]{}, fmt.Errorf("Engine.NextNodesCap > 0 でなければなりません。")
 	}
 
-	totals := map[G]float64{}
+	rootEvals := RootNodeEvalByAgent[G]{}
 	capacity := 0
 	for i := 0; i < simulation; i++ {
-		evals, depth, err := e.SelectExpansionBackward(rootNode, capacity, r)
+		leafEvals, depth, err := e.SelectExpansionBackward(rootNode, capacity, r)
 		if err != nil {
-			return LeafNodeEvalByAgent[G]{}, err
+			return RootNodeEvalByAgent[G]{}, err
 		}
-		for k, _ := range evals {
-			totals[k] += 1
+		for k, v := range leafEvals {
+			rootEvals[k] += v
 		}
 		capacity = depth + 1
 	}
 
-	avgs := map[G]float64{}
-	for k, v := range totals {
-		avgs[k] = v / float64(simulation)
-	}
-	return avgs, nil
+	rootEvals.DivScalar(float64(simulation))
+	return rootEvals, nil
 }
 
 func (e *Engine[S, As, A, G]) NewPlayer(simulation int, t float64, r *rand.Rand) game.Player[S, As, A] {
