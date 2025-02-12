@@ -1,11 +1,12 @@
 package ucb
 
 import (
+	"fmt"
+	"math"
+	"math/rand"
 	"golang.org/x/exp/maps"
 	omwmath "github.com/sw965/omw/math"
 	omwrand "github.com/sw965/omw/math/rand"
-	"math"
-	"math/rand"
 )
 
 type Func func(float64, float64, int, int) float64
@@ -86,10 +87,6 @@ func (m Manager[KS, K]) MaxKeys() KS {
 	return ks
 }
 
-func (m Manager[KS, K]) RandMaxKey(r *rand.Rand) K {
-	return omwrand.Choice(m.MaxKeys(), r)
-}
-
 func (m Manager[KS, K]) MaxTrialKeys() KS {
 	max := m.MaxTrial()
 	ks := make(KS, 0, len(m))
@@ -101,10 +98,6 @@ func (m Manager[KS, K]) MaxTrialKeys() KS {
 	return ks
 }
 
-func (m Manager[KS, K]) RandMaxTrialKey(r *rand.Rand) K {
-	return omwrand.Choice(m.MaxTrialKeys(), r)
-}
-
 func (m Manager[KS, K]) MaxTrial() int {
 	trials := make([]int, 0, len(m))
 	for _, v := range m {
@@ -113,7 +106,7 @@ func (m Manager[KS, K]) MaxTrial() int {
 	return omwmath.Max(trials...)
 }
 
-func (m Manager[KS, K]) TrialPercentPerKey() map[K]float64 {
+func (m Manager[KS, K]) TrialPercentByKey() map[K]float64 {
 	total := m.TotalTrial()
 	ps := map[K]float64{}
 	for k, v := range m {
@@ -122,11 +115,15 @@ func (m Manager[KS, K]) TrialPercentPerKey() map[K]float64 {
 	return ps
 }
 
-func (m Manager[Ks, K]) SelectKeyByTrialPercent(t float64, r *rand.Rand) K {
-	ps := m.TrialPercentPerKey()
+func (m Manager[KS, K]) SelectKeyByTrialPercentAboveFractionOfMax(t float64, r *rand.Rand) (K, error) {
+	if t > 1.0 || t < 0.0 {
+		var k K
+		return k, fmt.Errorf("閾値は0.0 <= t <= 1.0 でなければならない")
+	}
+	ps := m.TrialPercentByKey()
 	max := omwmath.Max(maps.Values(ps)...)
 	n := len(ps)
-	options := make(Ks, 0, n)
+	options := make(KS, 0, n)
 	ws := make([]float64, 0, n)
 
 	for a, p := range ps {
@@ -137,39 +134,7 @@ func (m Manager[Ks, K]) SelectKeyByTrialPercent(t float64, r *rand.Rand) K {
 	}
 
 	idx := omwrand.IntByWeight(ws, r)
-	return options[idx]
+	return options[idx], nil
 }
 
 type Managers[KS ~[]K, K comparable] []Manager[KS, K]
-
-func (ms Managers[KS, K]) RandMaxKeys(r *rand.Rand) KS {
-	ks := make(KS, len(ms))
-	for i, m := range ms {
-		ks[i] = m.RandMaxKey(r)
-	}
-	return ks
-}
-
-func (ms Managers[KS, K]) RandMaxTrialKeys(r *rand.Rand) KS {
-	ks := make(KS, len(ms))
-	for i, m := range ms {
-		ks[i] = m.RandMaxTrialKey(r)
-	}
-	return ks
-}
-
-func (ms Managers[KS, K]) AverageValues() []float64 {
-	vs := make([]float64, len(ms))
-	for i, m := range ms {
-		vs[i] = m.AverageValue()
-	}
-	return vs
-}
-
-func (ms Managers[KS, K]) SelectKeysByTrialPercent(t float64, r *rand.Rand) KS {
-	ks := make(KS, len(ms))
-	for i, m := range ms {
-		ks[i] = m.SelectKeyByTrialPercent(t, r)
-	}
-	return ks
-}

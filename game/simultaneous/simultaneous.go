@@ -5,7 +5,6 @@ import (
     "sort"
     "math/rand"
     omwrand "github.com/sw965/omw/math/rand"
-    "github.com/sw965/crow/game/sequential"
 )
 
 type LegalActionTableProvider[S any, Ass ~[]As, As ~[]A, A comparable] func(*S) Ass
@@ -14,14 +13,14 @@ type Comparator[S any] func(*S, *S) bool
 
 type Placements []int
 
-func (p Placements) Validate() error {
-    n := len(p)
+func (ps Placements) Validate() error {
+    n := len(ps)
     if n == 0 {
         return nil
     }
 
     ranks := make([]int, 0, n)
-    for _, rank := range p {
+    for _, rank := range ps {
         if rank < 1 {
             return fmt.Errorf("順位は1以上の正の整数でなければなりません")
         }
@@ -52,14 +51,6 @@ func (p Placements) Validate() error {
 
 type PlacementsJudger[S any] func(*S) (Placements, error)
 type ResultScores []float64
-
-func (ss ResultScores) ToEvals() Evals {
-	es := make(Evals, len(ss))
-	for i, s := range ss {
-		es[i] = Eval(s)
-	}
-	return es
-}
 
 func (ss ResultScores) DivScalar(a float64) {
 	for i := range ss {
@@ -118,7 +109,8 @@ func (l Logic[S, Ass, As, A]) EvaluateResultScores(s *S) (ResultScores, error) {
     return l.ResultScoresEvaluator(placements)
 }
 
-func (l *Logic[S, Ass, As, A]) Playout(state S, player Player[S, Ass, As, A]) (S, error) {
+func (l *Logic[S, Ass, As, A]) Playout(state S, players Players[S, Ass, As, A]) (S, error) {
+    n := len(players)
     for {
         isEnd, err := l.IsEnd(&state)
         if err != nil {
@@ -131,11 +123,15 @@ func (l *Logic[S, Ass, As, A]) Playout(state S, player Player[S, Ass, As, A]) (S
         }
 
         legalActionTable := l.LegalActionTableProvider(&state)
-        jointAction, err := player(&state, legalActionTable)
-		if err != nil {
-			var s S
-			return s, err
-		}
+        jointAction := make(As, n)
+        for i, player := range players {
+            ja, err := player(&state, legalActionTable)
+            if err != nil {
+                var s S
+                return s, err
+            }
+            jointAction[i] = ja[i]
+        }
 
         state, err = l.Transitioner(state, jointAction)
         if err != nil {
@@ -146,10 +142,10 @@ func (l *Logic[S, Ass, As, A]) Playout(state S, player Player[S, Ass, As, A]) (S
     return state, nil
 }
 
-func (l *Logic[S, Ass, As, A]) ComparePlayerStrength(state S, player Player[S, Ass, As, A], playerNum, gameNum int) (ResultScores, error) {
-    avgs := make(ResultScores, playerNum)
+func (l *Logic[S, Ass, As, A]) ComparePlayerStrength(state S, players Players[S, Ass, As, A], gameNum int) (ResultScores, error) {
+    avgs := make(ResultScores, len(players))
     for i := 0; i < gameNum; i++ {
-        final, err := l.Playout(state, player)
+        final, err := l.Playout(state, players)
         if err != nil {
             return nil, err
         }
@@ -166,52 +162,19 @@ func (l *Logic[S, Ass, As, A]) ComparePlayerStrength(state S, player Player[S, A
     return avgs, nil
 }
 
-type Player[S any, Ass ~[]As, As ~[]A, A comparable] func(*S, Ass) (As, error)
-
-func NewRandActionPlayer[S any, Ass ~[]As, As ~[]A, A comparable](r *rand.Rand) Player[S, Ass, As, A] {
+func (l *Logic[S, Ass, As, A]) NewRandActionPlayer(r *rand.Rand) Player[S, Ass, As, A] {
     return func(state *S, legalActionTable Ass) (As, error) {
         jointAction := make(As, len(legalActionTable))
-		for i, legalActions := range legalActionTable {
-			jointAction[i] = omwrand.Choice(legalActions, r)
-		}
-		return jointAction, nil
-    }
-}
-
-type Policy[A comparable] map[A]float64
-type Policies[A comparable] []Policy[A]
-
-type PoliciesProvider[S any, Ass ~[]As, As ~[]A, A comparable] func(*S, Ass) Policies[A]
-
-func UniformPoliciesProvider[S any, Ass ~[]As, As ~[]A, A comparable](state *S, legalActionTable Ass) Policies[A] {
-	policies := make(Policies[A], len(legalActionTable))
-	for i, legalActions := range legalActionTable {
-		n := len(legalActions)
-		p := 1.0 / float64(n)
-		policy := Policy[A]{}
-		for _, a := range legalActions {
-			policy[a] = p
-		}
-		policies[i] = policy
-	}
-	return policies
-}
-
-type Eval float64
-type Evals []Eval
-
-type Selector[As ~[]A, A comparable] func(Policies[A]) As
-
-func NewThresholdWeightedSelector[As ~[]A, A comparable](t float64, r *rand.Rand) Selector[As, A] {
-    return func(ps Policies[A]) As {
-        jointAction := make(As, len(ps))
-        for i, p := range ps {
-            sp := sequential.Policy[A]{}
-            for k, v := range p {
-                sp[k] = v
-            }
-            jointAction[i] = sequential.NewThresholdWeightedSelector[A](t, r)(sp)
+        for i, actions := range legalActionTable {
+            jointAction[i] = omwrand.Choice(actions, r)
         }
-        return jointAction
+        return jointAction, nil
     }
 }
+
+func (l *Logic[S, Ass, As, A]) MakePlayers(n int) Players[S, Ass, As, A] {
+    return make(Players[S, Ass, As, A], n)
+}
+
+type Player[S any, Ass ~[]As, As ~[]A, A comparable] func(*S, Ass) (As, error)
+type Players[S any, Ass ~[]As, As ~[]A, A comparable] []Player[S, Ass, As, A]

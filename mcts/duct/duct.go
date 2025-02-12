@@ -5,11 +5,13 @@ import (
 	game "github.com/sw965/crow/game/simultaneous"
 	"github.com/sw965/crow/ucb"
 	"math/rand"
+	omwrand "github.com/sw965/omw/math/rand"
 )
 
 // https://www.terry-u16.net/entry/decoupled-uct
 
-type LeafNodeEvaluator[S any] func(*S) (game.Evals, error)
+type LeafNodeEvals []float64
+type LeafNodeEvaluator[S any] func(*S) (LeafNodeEvals, error)
 
 type Node[S any, Ass ~[]As, As ~[]A, A comparable] struct {
 	State       S
@@ -35,7 +37,7 @@ type selectionInfo[S any, Ass ~[]As, As ~[]A, A comparable] struct {
 
 type selectionInfoSlice[S any, Ass ~[]As, As ~[]A, A comparable] []selectionInfo[S, Ass, As, A]
 
-func (ss selectionInfoSlice[S, Ass, As, A]) backward(evals game.Evals) {
+func (ss selectionInfoSlice[S, Ass, As, A]) backward(evals LeafNodeEvals) {
 	for _, s := range ss {
 		node := s.node
 		jointAction := s.jointAction
@@ -46,49 +48,63 @@ func (ss selectionInfoSlice[S, Ass, As, A]) backward(evals game.Evals) {
 	}
 }
 
+type Policy[A comparable] map[A]float64
+type Policies[A comparable] []Policy[A]
+type PoliciesProvider[S any, Ass ~[]As, As ~[]A, A comparable] func(*S, Ass) Policies[A]
+
+func UniformPoliciesProvider[S any, Ass ~[]As, As ~[]A, A comparable](state *S, legalActionTable Ass) Policies[A] {
+	policies := make(Policies[A], len(legalActionTable))
+	for i, actions := range legalActionTable {
+		n := len(actions)
+		p := 1.0 / float64(n)
+		policy := Policy[A]{}
+		for _, a := range actions {
+			policy[a] = p
+		}
+		policies[i] = policy
+	}
+	return policies
+}
+
 type Engine[S any, Ass ~[]As, As ~[]A, A comparable] struct {
-	gameLogic         game.Logic[S, Ass, As, A]
+	GameLogic         game.Logic[S, Ass, As, A]
 	UCBFunc           ucb.Func
-	PoliciesProvider  game.PoliciesProvider[S, Ass, As, A]
+	PoliciesProvider  PoliciesProvider[S, Ass, As, A]
 	LeafNodeEvaluator LeafNodeEvaluator[S]
 	NextNodesCap      int
 }
 
-func (e *Engine[S, Ass, As, A]) GetGameLogic() game.Logic[S, Ass, As, A] {
-	return e.gameLogic
-}
-
-func (e *Engine[S, Ass, As, A]) SetGameLogic(gl game.Logic[S, Ass, As, A]) {
-	e.gameLogic = gl
-}
-
 func (e *Engine[S, Ass, As, A]) SetUniformPoliciesProvider() {
-	e.PoliciesProvider = game.UniformPoliciesProvider[S, Ass, As, A]
+	e.PoliciesProvider = UniformPoliciesProvider[S, Ass, As, A]
 }
 
-func (e *Engine[S, Ass, As, A]) SetPlayout(player game.Player[S, Ass, As, A]) {
-	e.LeafNodeEvaluator = func(state *S) (game.Evals, error) {
-		final, err := e.gameLogic.Playout(*state, player)
+func (e *Engine[S, Ass, As, A]) SetPlayout(player game.Players[S, Ass, As, A]) {
+	e.LeafNodeEvaluator = func(state *S) (LeafNodeEvals, error) {
+		final, err := e.GameLogic.Playout(*state, player)
 		if err != nil {
-			return game.Evals{}, err
+			return LeafNodeEvals{}, err
 		}
-		scores, err := e.gameLogic.EvaluateResultScores(&final)
-		return scores.ToEvals(), err
+		scores, err := e.GameLogic.EvaluateResultScores(&final)
+		evals := make(LeafNodeEvals, len(scores))
+		for i, s := range scores {
+			evals[i] = s
+		}
+		return evals, err
 	}
 }
 
 func (e *Engine[S, Ass, As, A]) NewNode(state *S) (*Node[S, Ass, As, A], error) {
-	legalActionTable := e.gameLogic.LegalActionTableProvider(state)
+	legalActionTable := e.GameLogic.LegalActionTableProvider(state)
 	policies := e.PoliciesProvider(state, legalActionTable)
 	if len(policies) == 0 {
-		return &Node[S, Ass, As, A]{}, fmt.Errorf("len(SeparateActionPolicy) == 0 である為、新しくNodeを生成出来ません。")
+		return &Node[S, Ass, As, A]{}, fmt.Errorf("len(Policies) == 0 である為、新しくNodeを生成出来ません。")
 	}
 
 	ms := make(ucb.Managers[As, A], len(policies))
 	for playerI, policy := range policies {
 		m := ucb.Manager[As, A]{}
 		if len(policy) == 0 {
-			return &Node[S, Ass, As, A]{}, fmt.Errorf("%d番目のプレイヤーのActionPolicyが空である為、新しくNodeを生成出来ません。", playerI)
+			return &Node[S, Ass, As, A]{}, fmt.Errorf("%d番目のプレイヤーのPolicyが空である為、新しくNodeを生成出来ません。", playerI)
 		}
 		for a, p := range policy {
 			m[a] = &ucb.Calculator{Func: e.UCBFunc, P: p}
@@ -111,15 +127,20 @@ func (e *Engine[S, Ass, As, A]) SelectExpansionBackward(node *Node[S, Ass, As, A
 	var isEnd bool
 
 	for {
-		jointAction := node.UCBManagers.RandMaxKeys(r)
+		jointAction := make(As, len(node.UCBManagers))
+		for playerI, m := range node.UCBManagers {
+			ks := m.MaxKeys()
+			jointAction[playerI] = omwrand.Choice(ks, r)
+		}
+
 		selections = append(selections, selectionInfo[S, Ass, As, A]{node: node, jointAction: jointAction})
 
-		state, err = e.gameLogic.Transitioner(state, jointAction)
+		state, err = e.GameLogic.Transitioner(state, jointAction)
 		if err != nil {
 			return 0, err
 		}
 
-		isEnd, err = e.gameLogic.IsEnd(&state)
+		isEnd, err = e.GameLogic.IsEnd(&state)
 		if err != nil {
 			return 0, err
 		}
@@ -128,7 +149,7 @@ func (e *Engine[S, Ass, As, A]) SelectExpansionBackward(node *Node[S, Ass, As, A
 			break
 		}
 
-		nextNode, ok := node.NextNodes.FindByState(&state, e.gameLogic.Comparator)
+		nextNode, ok := node.NextNodes.FindByState(&state, e.GameLogic.Comparator)
 		if !ok {
 			//expansion
 			nextNode, err = e.NewNode(&state)
@@ -143,13 +164,16 @@ func (e *Engine[S, Ass, As, A]) SelectExpansionBackward(node *Node[S, Ass, As, A
 		node = nextNode
 	}
 
-	var evals game.Evals
+	var evals LeafNodeEvals
 	if isEnd {
-		scores, err := e.gameLogic.EvaluateResultScores(&state)
+		scores, err := e.GameLogic.EvaluateResultScores(&state)
 		if err != nil {
 			return 0, err
 		}
-		evals = scores.ToEvals()
+		evals = make(LeafNodeEvals, len(scores))
+		for i, s := range scores {
+			evals[i] = s
+		}
 	} else {
 		evals, err = e.LeafNodeEvaluator(&state)
 		//selections.backwardの前にエラー処理をしない場合、index out of range が起きる事がある。
@@ -178,7 +202,7 @@ func (e *Engine[S, Ass, As, A]) Search(rootNode *Node[S, Ass, As, A], simulation
 	return nil
 }
 
-func (e *Engine[S, Ass, As, A]) NewPlayer(simulation int, selector game.Selector[As, A], r *rand.Rand) game.Player[S, Ass, As, A] {
+func (e *Engine[S, Ass, As, A]) NewPlayer(simulation int, t float64, r *rand.Rand) game.Player[S, Ass, As, A] {
 	return func(state *S, _ Ass) (As, error) {
 		rootNode, err := e.NewNode(state)
 		if err != nil {
@@ -190,16 +214,14 @@ func (e *Engine[S, Ass, As, A]) NewPlayer(simulation int, selector game.Selector
 			return As{}, err
 		}
 
-		ps := make(game.Policies[A], len(rootNode.UCBManagers))
+		jointAction := make(As, len(rootNode.UCBManagers))
 		for i, m := range rootNode.UCBManagers {
-			trialPercents := m.TrialPercentPerKey()
-			p := game.Policy[A]{}
-			for k, v := range trialPercents {
-				p[k] = v
+			action, err := m.SelectKeyByTrialPercentAboveFractionOfMax(t, r)
+			if err != nil {
+				return As{}, err
 			}
-			ps[i] = p		
+			jointAction[i] = action
 		}
-		jointAction := selector(ps)
 		return jointAction, nil
 	}
 }

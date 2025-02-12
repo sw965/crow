@@ -90,12 +90,15 @@ func TestDUCT(t *testing.T) {
 
 	mcts := duct.Engine[RockPaperScissors, HandTable, Hands, Hand]{
 		NextNodesCap:3,
+		GameLogic:gameLogic,
 	}
-	mcts.SetGameLogic(gameLogic)
 
 	mcts.SetUniformPoliciesProvider()
 	mcts.UCBFunc = ucb.NewAlphaGoFunc(math.Sqrt(2))
-	mcts.SetPlayout(game.NewRandActionPlayer[RockPaperScissors, HandTable, Hands, Hand](r))
+	randActionPlayers := gameLogic.MakePlayers(2)
+	randActionPlayers[0] = gameLogic.NewRandActionPlayer(r)
+	randActionPlayers[1] = gameLogic.NewRandActionPlayer(r)
+	mcts.SetPlayout(randActionPlayers)
 
 	fmt.Println(mcts.PoliciesProvider(&RockPaperScissors{}, legalActionTableProvider(&RockPaperScissors{})))
 	rootNode, err := mcts.NewNode(&RockPaperScissors{})

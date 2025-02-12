@@ -10,22 +10,22 @@ import (
 type LegalActionsProvider[S any, As ~[]A, A comparable] func(*S) As
 type Transitioner[S any, A comparable] func(S, *A) (S, error)
 type Comparator[S any] func(*S, *S) bool
-type CurrentTurnAgentGetter[S any, Ag comparable] func(*S) Ag
+type CurrentTurnAgentGetter[S any, G comparable] func(*S) G
 
 // ゲームが終了していない場合は、空である事を想定。
-type AgentPlacements[Ag comparable] map[Ag]int
+type PlacementByAgent[G comparable] map[G]int
 
-func NewAgentPlacements[Agss ~[]Ags, Ags ~[]Ag, Ag comparable](agentTable Agss) (AgentPlacements[Ag], error) {
-	placements := AgentPlacements[Ag]{}
+func NewPlacementByAgent[Gss ~[]Gs, Gs ~[]G, G comparable](agentTable Gss) (PlacementByAgent[G], error) {
+	placements := PlacementByAgent[G]{}
 	rank := 1
 	for _, agents := range agentTable {
 		if len(agents) == 0 {
-			return AgentPlacements[Ag]{}, fmt.Errorf("順位 %d に対応するエージェントが存在しません", rank)
+			return PlacementByAgent[G]{}, fmt.Errorf("順位 %d に対応するエージェントが存在しません", rank)
 		}
 
 		for _, agent := range agents {
 			if _, ok := placements[agent]; ok {
-				return AgentPlacements[Ag]{}, fmt.Errorf("エージェント %v が複数回出現しています", agent)
+				return PlacementByAgent[G]{}, fmt.Errorf("エージェント %v が複数回出現しています", agent)
 			}
 			placements[agent] = rank
 		}
@@ -34,14 +34,14 @@ func NewAgentPlacements[Agss ~[]Ags, Ags ~[]Ag, Ag comparable](agentTable Agss) 
 	return placements, nil
 }
 
-func (p AgentPlacements[G]) Validate() error {
-	n := len(p)
+func (ps PlacementByAgent[G]) Validate() error {
+	n := len(ps)
 	if n == 0 {
 		return nil
 	}
 
 	ranks := make([]int, 0, n)
-	for _, rank := range p {
+	for _, rank := range ps {
 		if rank < 1 {
 			return fmt.Errorf("順位は1以上の正の整数でなければなりません")
 		}
@@ -70,35 +70,35 @@ func (p AgentPlacements[G]) Validate() error {
 	return nil
 }
 
-type PlacementsJudger[S any, Ag comparable] func(*S) (AgentPlacements[Ag], error)
-type AgentResultScores[Ag comparable] map[Ag]float64
+type PlacementsJudger[S any, G comparable] func(*S) (PlacementByAgent[G], error)
+type ResultScoreByAgent[G comparable] map[G]float64
 
-func (ss AgentResultScores[Ag]) DivScalar(a float64) {
-	for k := range ss {
-		ss[k] /= a
+func (r ResultScoreByAgent[G]) DivScalar(a float64) {
+	for k := range r {
+		r[k] /= a
 	}
 }
 
-type ResultScoresEvaluator[Ag comparable] func(AgentPlacements[Ag]) (AgentResultScores[Ag], error)
+type ResultScoresEvaluator[G comparable] func(PlacementByAgent[G]) (ResultScoreByAgent[G], error)
 
-type Logic[S any, As ~[]A, A, Ag comparable] struct {
+type Logic[S any, As ~[]A, A, G comparable] struct {
 	LegalActionsProvider     LegalActionsProvider[S, As, A]
 	Transitioner             Transitioner[S, A]
 	Comparator               Comparator[S]
-	CurrentTurnAgentGetter   CurrentTurnAgentGetter[S, Ag]
-	PlacementsJudger         PlacementsJudger[S, Ag]
-	ResultScoresEvaluator    ResultScoresEvaluator[Ag]
+	CurrentTurnAgentGetter   CurrentTurnAgentGetter[S, G]
+	PlacementsJudger         PlacementsJudger[S, G]
+	ResultScoresEvaluator    ResultScoresEvaluator[G]
 }
 
-func (l *Logic[S, As, A, Ag]) IsEnd(state *S) (bool, error) {
+func (l *Logic[S, As, A, G]) IsEnd(state *S) (bool, error) {
 	placements, err := l.PlacementsJudger(state)
 	return len(placements) != 0, err
 }
 
-func (l *Logic[S, As, A, Ag]) SetStandardResultScoresEvaluator() {
-	l.ResultScoresEvaluator = func(placements AgentPlacements[Ag]) (AgentResultScores[Ag], error) {
+func (l *Logic[S, As, A, G]) SetStandardResultScoresEvaluator() {
+	l.ResultScoresEvaluator = func(placements PlacementByAgent[G]) (ResultScoreByAgent[G], error) {
 		if err := placements.Validate(); err != nil {
-			return AgentResultScores[Ag]{} , err
+			return ResultScoreByAgent[G]{} , err
 		}
 
 		n := len(placements)
@@ -111,7 +111,7 @@ func (l *Logic[S, As, A, Ag]) SetStandardResultScoresEvaluator() {
 			}
 		}
 
-		scores := AgentResultScores[Ag]{}
+		scores := ResultScoreByAgent[G]{}
 
 		if n == 1 {
             for agent := range placements {
@@ -129,15 +129,15 @@ func (l *Logic[S, As, A, Ag]) SetStandardResultScoresEvaluator() {
 	}
 }
 
-func (l *Logic[S, As, A, Ag]) EvaluateAgentResultScores(state *S) (AgentResultScores[Ag], error) {
+func (l *Logic[S, As, A, G]) EvaluateResultScoreByAgent(state *S) (ResultScoreByAgent[G], error) {
 	placements, err := l.PlacementsJudger(state)
 	if err != nil {
-		return AgentResultScores[Ag]{}, err
+		return ResultScoreByAgent[G]{}, err
 	}
 	return l.ResultScoresEvaluator(placements)
 }
 
-func (l *Logic[S, As, A, Ag]) Playout(state S, players AgentPlayers[S, As, A, Ag]) (S, error) {
+func (l *Logic[S, As, A, G]) Playout(state S, players PlayerByAgent[S, As, A, G]) (S, error) {
 	for {
 		isEnd, err := l.IsEnd(&state)
 		if err != nil {
@@ -168,15 +168,15 @@ func (l *Logic[S, As, A, Ag]) Playout(state S, players AgentPlayers[S, As, A, Ag
 	return state, nil
 }
 
-func (l *Logic[S, As, A, Ag]) ComparePlayerStrength(state S, players AgentPlayers[S, As, A, Ag], n int) (AgentResultScores[Ag], error) {
-	avgs := AgentResultScores[Ag]{}
+func (l *Logic[S, As, A, G]) ComparePlayerStrength(state S, players PlayerByAgent[S, As, A, G], n int) (ResultScoreByAgent[G], error) {
+	avgs := ResultScoreByAgent[G]{}
 	for i := 0; i < n; i++ {
 		final, err := l.Playout(state, players)
 		if err != nil {
 			return nil, err
 		}
 
-		scores, err := l.EvaluateAgentResultScores(&final)
+		scores, err := l.EvaluateResultScoreByAgent(&final)
 		if err != nil {
 			return nil, err
 		}
@@ -188,12 +188,15 @@ func (l *Logic[S, As, A, Ag]) ComparePlayerStrength(state S, players AgentPlayer
 	return avgs, nil
 }
 
-type Player[S any, As ~[]A, A comparable] func(*S, As) (A, error)
-
-func NewRandActionPlayer[S any, As ~[]A, A comparable](r *rand.Rand) Player[S, As, A] {
+func (l *Logic[S, As, A, G]) NewRandActionPlayer(r *rand.Rand) Player[S, As, A] {
 	return func(_ *S, legalActions As) (A, error) {
 		return omwrand.Choice(legalActions, r), nil
 	}
 }
 
-type AgentPlayers[S any, As ~[]A, A, Ag comparable] map[Ag]Player[S, As, A]
+func (l *Logic[S, As, A, G]) MakePlayerByAgent() PlayerByAgent[S, As, A, G] {
+	return PlayerByAgent[S, As, A, G]{}
+}
+
+type Player[S any, As ~[]A, A comparable] func(*S, As) (A, error)
+type PlayerByAgent[S any, As ~[]A, A, G comparable] map[G]Player[S, As, A]
