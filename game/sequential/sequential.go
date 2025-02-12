@@ -138,10 +138,10 @@ func (l *Logic[S, As, A, G]) EvaluateResultScoreByAgent(state *S) (ResultScoreBy
 }
 
 func (l *Logic[S, As, A, G]) Replay(state S, actions As) ([]S, error) {
-	states := make([]S, 0, len(actions))
-	for _, action := range actions {
-		states = append(states, state)
+	states := make([]S, 0, len(actions)+1)
+	states = append(states, state)
 
+	for _, action := range actions {
 		isEnd, err := l.IsEnd(&state)
 		if err != nil {
 			return nil, err
@@ -155,6 +155,8 @@ func (l *Logic[S, As, A, G]) Replay(state S, actions As) ([]S, error) {
 		if err != nil {
 			return nil, err
 		}
+
+		states = append(states, state)
 	}
 	return states, nil
 }
