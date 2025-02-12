@@ -137,6 +137,28 @@ func (l *Logic[S, As, A, G]) EvaluateResultScoreByAgent(state *S) (ResultScoreBy
 	return l.ResultScoresEvaluator(placements)
 }
 
+func (l *Logic[S, As, A, G]) Replay(state S, actions As) ([]S, error) {
+	states := make([]S, 0, len(actions))
+	for _, action := range actions {
+		states = append(states, state)
+
+		isEnd, err := l.IsEnd(&state)
+		if err != nil {
+			return nil, err
+		}
+		
+		if isEnd {
+			break
+		}
+
+		state, err = l.Transitioner(state, &action)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return states, nil
+}
+
 func (l *Logic[S, As, A, G]) Playout(state S, players PlayerByAgent[S, As, A, G]) (S, error) {
 	for {
 		isEnd, err := l.IsEnd(&state)
