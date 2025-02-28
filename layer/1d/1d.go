@@ -170,51 +170,6 @@ func SoftmaxForwardForCrossEntropy(x tensor.D1, backwards Backwards) (tensor.D1,
     return y, backwards, nil
 }
 
-// func NewLinearSumForward(w tensor.D2, b tensor.D1) Forward {
-// 	return func(x tensor.D3, backwards Backwards) (tensor.D3, Backwards, error) {
-// 		if len(x) != 1 {
-// 			return nil, nil, fmt.Errorf("入力値が不適")
-// 		}
-
-// 		y, err := ml2d.LinearSum(x[0], w, b)
-// 		if err != nil {
-// 			return nil, nil, err
-// 		}
-
-// 		var backward Backward
-// 		backward = func(chain tensor.D3, gb *GradBuffer) (tensor.D3, *GradBuffer, error) {
-// 			if len(chain) != 1 {
-// 				return nil, nil, fmt.Errorf("LinearSumForward len(chain) != 1")
-// 			}
-
-// 			dydx, dydw, err := ml2d.LinearSumDerivative(x[0], w)
-// 			if err != nil {
-// 				return nil, nil, err
-// 			}
-
-// 			//∂L/∂x
-// 			dx, err := tensor.D2MulD1Col(dydx, chain[0][0])
-// 			if err != nil {
-// 				return nil, nil, err
-// 			}
-
-// 			//∂L/∂w
-// 			dw, err := tensor.D2MulD1Col(dydw, chain[0][0])
-// 			if err != nil {
-// 				return nil, nil, err
-// 			}
-// 			gb.Weights = append(gb.Weights, dw)
-
-// 			//∂L/∂b
-// 			db := chain[0][0]
-// 			gb.Biases = append(gb.Biases, db)
-// 			return tensor.D3{dx}, gb, err
-// 		}
-// 		backwards = append(backwards, backward)
-// 		return tensor.D3{tensor.D2{y}}, backwards, nil
-// 	}
-// }
-
 func IdentityForward(x tensor.D1, backwards Backwards) (tensor.D1, Backwards, error) {
 	y := fn.Identity[tensor.D1](x)
 	var backward Backward

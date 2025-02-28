@@ -8,7 +8,7 @@ import (
 	omwrand "github.com/sw965/omw/math/rand"
 )
 
-func TestCNN(t *testing.T) {
+func TestNN(t *testing.T) {
 	r := omwrand.NewMt19937()
 	model := nn.FullyConnected{}
 	model.SetCrossEntropyError()

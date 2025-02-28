@@ -152,8 +152,9 @@ func (nn *FullyConnected) ComputeGrad(xs, ts tensor.D2, p int) (layer1d.GradBuff
 	
 	write := func(idxs []int, gorutineI int) {
 		for _, idx := range idxs {
-			x := xs[idx]
-			t := ts[idx]
+			//firstGradBufferで、0番目のデータの勾配は計算済みなので0にアクセスしないように、+1とする。
+			x := xs[idx+1]
+			t := ts[idx+1]
 			gradBuffer, err := nn.BackPropagate(x, t)
 			if err != nil {
 				errCh <- err

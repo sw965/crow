@@ -90,7 +90,7 @@ func (e *Engine[S, As, A, G]) SetPlayout(players game.PlayerByAgent[S, As, A, G]
 			return LeafNodeEvalByAgent[G]{}, err
 		}
 		scores, err := e.GameLogic.EvaluateResultScoreByAgent(&final)
-		evals := make(LeafNodeEvalByAgent[G], len(scores))
+		evals := LeafNodeEvalByAgent[G]{}
 		for k, v := range scores {
 			evals[k] = v
 		}
