@@ -3,6 +3,7 @@ package linear
 import (
 	"fmt"
 	"math/rand"
+	"github.com/sw965/omw/fn"
 	omwrand "github.com/sw965/omw/math/rand"
 	omwslices "github.com/sw965/omw/slices"
 	omwjson "github.com/sw965/omw/json"
@@ -89,9 +90,7 @@ func (s *Sum) SetSigmoid() {
 
 func (s *Sum) SetSoftmaxForCrossEntropy() {
 	s.YCalculator = ml1d.Softmax
-	s.YDifferentiator = func(chain tensor.D1) tensor.D1 {
-		return chain
-	}
+	s.YDifferentiator = fn.Identity[tensor.D1]
 }
 
 func (s *Sum) SetSumSquaredError() {
@@ -105,7 +104,11 @@ func (s *Sum) SetCrossEntropyError() {
 }
 
 func (s *Sum) Predict(x tensor.D2) (tensor.D1, error) {
-	y, err := ml2d.LinearSum(x, s.Parameter.Weight, s.Parameter.Bias)
+	u, err := ml2d.LinearSum(x, s.Parameter.Weight, s.Parameter.Bias)
+	if err != nil {
+		return nil, nil
+	}
+	y := s.YCalculator(u)
 	return y, err
 }
 
