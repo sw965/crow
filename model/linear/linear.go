@@ -5,6 +5,7 @@ import (
 	"math/rand"
 	omwrand "github.com/sw965/omw/math/rand"
 	omwslices "github.com/sw965/omw/slices"
+	omwjson "github.com/sw965/omw/json"
 	"github.com/sw965/omw/parallel"
 	"github.com/sw965/crow/tensor"
 	"github.com/sw965/crow/ml/1d"
@@ -50,6 +51,16 @@ type Parameter struct {
 	Bias tensor.D1
 }
 
+func LoadParameterJSON(path string) (Parameter, error) {
+	param, err := omwjson.Load[Parameter](path)
+	return param, err
+}
+
+func (p *Parameter) WriteJSON(path string) error {
+	err := omwjson.Write[Parameter](p, path)
+	return err
+}
+
 func NewInitParameter(wns []int) Parameter {
 	xn := len(wns)
 	w := make(tensor.D2, xn)
@@ -69,11 +80,6 @@ type Sum struct {
 
 	YLossCalculator func(tensor.D1, tensor.D1) (float64, error)
 	YLossDifferentiator func(tensor.D1, tensor.D1) (tensor.D1, error)
-}
-
-func (s *Sum) SetParameter(param *Parameter) {
-	s.Parameter.Weight.Copy(param.Weight)
-	s.Parameter.Bias.Copy(param.Bias)
 }
 
 func (s *Sum) SetSigmoid() {
