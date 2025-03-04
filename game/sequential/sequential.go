@@ -5,6 +5,7 @@ import (
 	"sort"
 	"math/rand"
 	omwrand "github.com/sw965/omw/math/rand"
+	"github.com/sw965/omw/parallel"
 )
 
 type LegalActionsProvider[S any, As ~[]A, A comparable] func(*S) As
@@ -161,7 +162,7 @@ func (l *Logic[S, As, A, G]) Replay(state S, actions As) ([]S, error) {
 	return states, nil
 }
 
-func (l *Logic[S, As, A, G]) Playout(state S, players PlayerByAgent[S, As, A, G]) (S, error) {
+func (l *Logic[S, As, A, G]) Playout(state S, playerByAgent PlayerByAgent[S, As, A, G]) (S, error) {
 	for {
 		isEnd, err := l.IsEnd(&state)
 		if err != nil {
@@ -174,7 +175,7 @@ func (l *Logic[S, As, A, G]) Playout(state S, players PlayerByAgent[S, As, A, G]
 		}
 
 		agent := l.CurrentTurnAgentGetter(&state)
-		player := players[agent]
+		player := playerByAgent[agent]
 		legalActions := l.LegalActionsProvider(&state)
 
 		action, err := player(&state, legalActions)
@@ -192,10 +193,10 @@ func (l *Logic[S, As, A, G]) Playout(state S, players PlayerByAgent[S, As, A, G]
 	return state, nil
 }
 
-func (l *Logic[S, As, A, G]) ComparePlayerStrength(state S, players PlayerByAgent[S, As, A, G], n int) (ResultScoreByAgent[G], error) {
+func (l *Logic[S, As, A, G]) ComparePlayerStrengthByAgent(state S, playerByAgent PlayerByAgent[S, As, A, G], n int) (ResultScoreByAgent[G], error) {
 	avgs := ResultScoreByAgent[G]{}
 	for i := 0; i < n; i++ {
-		final, err := l.Playout(state, players)
+		final, err := l.Playout(state, playerByAgent)
 		if err != nil {
 			return nil, err
 		}
@@ -204,10 +205,48 @@ func (l *Logic[S, As, A, G]) ComparePlayerStrength(state S, players PlayerByAgen
 		if err != nil {
 			return nil, err
 		}
+
 		for k, v := range scores {
 			avgs[k] += v
 		}
 	}
+	avgs.DivScalar(float64(n))
+	return avgs, nil
+}
+
+func (l *Logic[S, As, A, G]) ComparePlayerStrengthByAgentParallel(state S, playerByAgent PlayerByAgent[S, As, A, G], n, p int) (ResultScoreByAgent[G], error) {
+	errCh := make(chan error, p)
+	defer close(errCh)
+	
+	results := make([]ResultScoreByAgent[G], n)
+	for gorutineI, idxs := range parallel.DistributeIndicesEvenly(n, p) {
+		go func(idxs []int, gorutineI int) {
+			for _, idx := range idxs {
+				avgs, err := l.ComparePlayerStrengthByAgent(state, playerByAgent, 1)
+				if err != nil {
+					errCh <- err
+					return
+				}
+				results[idx] = avgs
+				errCh <- err
+			}
+		}(idxs, gorutineI)
+	}
+
+	for i := 0; i < p; i++ {
+		err := <- errCh
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	avgs := ResultScoreByAgent[G]{}
+	for _, result := range results {
+		for k, v := range result {
+			avgs[k] += v
+		}
+	}
+
 	avgs.DivScalar(float64(n))
 	return avgs, nil
 }
