@@ -27,9 +27,9 @@ func Test(t *testing.T) {
 		initPop[i] = ind
 	}
 
-	fitness := func(ind ga.Individual[int]) float64 {
+	fitness := func(p ga.Population[int], idx int) float64 {
 		sum := 0
-		for _, gene := range ind {
+		for _, gene := range p[idx] {
 			sum += gene
 		}
 		return float64(sum)

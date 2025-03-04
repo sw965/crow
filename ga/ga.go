@@ -11,18 +11,18 @@ type Individual[T any] []T
 
 type Population[T any] []Individual[T]
 
-type Fitness[T any] func(Individual[T]) float64
+type Fitness[T any] func(Population[T], int) float64
 
 type Selector[T any] func(Population[T], Fitness[T], *rand.Rand) (Individual[T], error)
 
 func RouletteSelector[T any](p Population[T], fit Fitness[T], r *rand.Rand) (Individual[T], error) {
 	ws := make([]float64, len(p))
 	for i := range ws {
-		y := fit(p[i])
+		y := fit(p, i)
 		if y < 0.0 {
 			return nil, fmt.Errorf("ルーレット選択を用いる場合、適応関数の出力値は0以上でなければならない")
 		}
-		ws[i] = fit(p[i])
+		ws[i] = y
 	}
 	idx := omwrand.IntByWeight(ws, r)
 	return p[idx], nil
