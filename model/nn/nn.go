@@ -150,7 +150,7 @@ func (nn *FullyConnected) ComputeGrad(xs, ts tensor.D2, p int) (layer1d.GradBuff
 	errCh := make(chan error, p)
 	defer close(errCh)
 	
-	write := func(idxs []int) {
+	write := func(idxs []int, gorutineI int) {
 		for _, idx := range idxs {
 			//firstGradBufferで、0番目のデータの勾配は計算済みなので0にアクセスしないように、+1とする。
 			x := xs[idx+1]
@@ -166,7 +166,7 @@ func (nn *FullyConnected) ComputeGrad(xs, ts tensor.D2, p int) (layer1d.GradBuff
 	}
 	
 	for gorutineI, idxs := range parallel.DistributeIndicesEvenly(n-1, p) {
-		go write(idxs)
+		go write(idxs, gorutineI)
 	}
 	
 	for i := 0; i < p; i++ {
