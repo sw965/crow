@@ -162,7 +162,7 @@ func (l *Logic[S, As, A, G]) Replay(state S, actions As) ([]S, error) {
 	return states, nil
 }
 
-func (l *Logic[S, As, A, G]) Playout(state S, playerByAgent PlayerByAgent[S, As, A, G]) (S, error) {
+func (l *Logic[S, As, A, G]) Playout(state S, players PlayerByAgent[S, As, A, G]) (S, error) {
 	for {
 		isEnd, err := l.IsEnd(&state)
 		if err != nil {
@@ -175,7 +175,7 @@ func (l *Logic[S, As, A, G]) Playout(state S, playerByAgent PlayerByAgent[S, As,
 		}
 
 		agent := l.CurrentTurnAgentGetter(&state)
-		player := playerByAgent[agent]
+		player := players[agent]
 		legalActions := l.LegalActionsProvider(&state)
 
 		action, err := player(&state, legalActions)
@@ -193,10 +193,10 @@ func (l *Logic[S, As, A, G]) Playout(state S, playerByAgent PlayerByAgent[S, As,
 	return state, nil
 }
 
-func (l *Logic[S, As, A, G]) ComparePlayerStrengthByAgent(state S, playerByAgent PlayerByAgent[S, As, A, G], n int) (ResultScoreByAgent[G], error) {
+func (l *Logic[S, As, A, G]) ComparePlayerStrength(state S, players PlayerByAgent[S, As, A, G], n int) (ResultScoreByAgent[G], error) {
 	avgs := ResultScoreByAgent[G]{}
 	for i := 0; i < n; i++ {
-		final, err := l.Playout(state, playerByAgent)
+		final, err := l.Playout(state, players)
 		if err != nil {
 			return nil, err
 		}
@@ -214,23 +214,23 @@ func (l *Logic[S, As, A, G]) ComparePlayerStrengthByAgent(state S, playerByAgent
 	return avgs, nil
 }
 
-func (l *Logic[S, As, A, G]) ComparePlayerStrengthByAgentParallel(state S, playerByAgent PlayerByAgent[S, As, A, G], n, p int) (ResultScoreByAgent[G], error) {
+func (l *Logic[S, As, A, G]) ComparePlayerStrengthParallel(state S, players PlayerByAgent[S, As, A, G], n, p int) (ResultScoreByAgent[G], error) {
 	errCh := make(chan error, p)
 	defer close(errCh)
 	
 	results := make([]ResultScoreByAgent[G], n)
-	for gorutineI, idxs := range parallel.DistributeIndicesEvenly(n, p) {
-		go func(idxs []int, gorutineI int) {
+	for _, idxs := range parallel.DistributeIndicesEvenly(n, p) {
+		go func(idxs []int) {
 			for _, idx := range idxs {
-				avgs, err := l.ComparePlayerStrengthByAgent(state, playerByAgent, 1)
+				avgs, err := l.ComparePlayerStrength(state, players, 1)
 				if err != nil {
 					errCh <- err
 					return
 				}
 				results[idx] = avgs
-				errCh <- err
 			}
-		}(idxs, gorutineI)
+			errCh <- nil
+		}(idxs)
 	}
 
 	for i := 0; i < p; i++ {
