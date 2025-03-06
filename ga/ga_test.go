@@ -27,15 +27,15 @@ func Test(t *testing.T) {
 		initPop[i] = ind
 	}
 
-	fitness := func(p ga.Population[int], idx int) float64 {
+	evaluator := func(p ga.Population[int], idx int) ga.EvalY {
 		sum := 0
 		for _, gene := range p[idx] {
 			sum += gene
 		}
-		return float64(sum)
+		return ga.EvalY(sum)
 	}
 
-	selector := ga.RouletteSelector[int]
+	idxSelector := ga.RouletteIndexSelector
 	crossOperator := ga.UniformCrossOperator[int]
 
 	mutationOperator := func(ind ga.Individual[int], r *rand.Rand) ga.Individual[int] {
@@ -51,8 +51,8 @@ func Test(t *testing.T) {
 	}
 
 	engine := ga.Engine[int]{
-		Fitness:          fitness,
-		Selector:         selector,
+		Evaluator:        evaluator,
+		IndexSelector:    idxSelector,
 		CrossOperator:    crossOperator,
 		MutationOperator: mutationOperator,
 		CrossPercent:     0.5,
