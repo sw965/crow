@@ -13,11 +13,14 @@ func LinearRankingProb(n, rank int, s float64) float64 {
 	return 1.0 / float64(n) * (m  + (s - m) * (float64(n - rank) /float64(n - 1)))
 }
 
+const epsilon = 0.0001
+
 type Individual[T any] []T
 type Population[T any] []Individual[T]
 
 type FitnessY float64
 type FitnessYs []FitnessY
+
 type Fitness[T any] func(Population[T], int) FitnessY
 
 type IndexSelector func(FitnessYs, *rand.Rand) (int, error)
@@ -27,22 +30,22 @@ func RouletteIndexSelector(fitYs FitnessYs, r *rand.Rand) (int, error) {
 	for i, fitY := range fitYs {
 		ws[i] = float64(fitY)
 	}
-	idx, err := omwrand.IntByWeight(ws, r)
-	return idx, err
+	idx := omwrand.IntByWeight(ws, r, epsilon)
+	return idx, nil
 }
 
 func NewLinearRankingIndexSelector(s float64) IndexSelector {
 	return func(fitYs FitnessYs, r *rand.Rand) (int, error) {
 		argsorted := omwslices.Argsort(fitYs)
 		argsorted = omwslices.Reverse(argsorted)
-
+	
 		n := len(fitYs)
 		probs := make([]float64, len(fitYs))
 		for i := range probs {
 			probs[i] = LinearRankingProb(n, i, s)
 		}
-		idx, err := omwrand.IntByWeight(probs, r)
-		return idx, err
+		idx := omwrand.IntByWeight(probs, r, epsilon)
+		return argsorted[idx], nil
 	}
 }
 
@@ -80,22 +83,6 @@ type Engine[T any] struct {
 	MutationPercent  float64
 	EliteNum         int
 }
-/*
-	omwslices.Argsortの実装はこんな感じになってるよ。
-
-	func Argsort[S ~[]E, E constraints.Ordered](s S) []int {
-    idxs := make([]int, len(s))
-    for i := range s {
-        idxs[i] = i
-    }
-
-    slices.SortFunc(idxs, func(idx1, idx2 int) bool {
-		return s[idx1] < s[idx2]
-    })
-
-    return idxs
-}
-*/
 
 func (e *Engine[T]) Run(init Population[T], generation int, r *rand.Rand) (Population[T], error) {
 	N := len(init)
