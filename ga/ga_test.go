@@ -27,12 +27,12 @@ func Test(t *testing.T) {
 		initPop[i] = ind
 	}
 
-	evaluator := func(p ga.Population[int], idx int) ga.EvalY {
+	fitness := func(p ga.Population[int], idx int) ga.FitnessY {
 		sum := 0
 		for _, gene := range p[idx] {
 			sum += gene
 		}
-		return ga.EvalY(sum)
+		return ga.FitnessY(sum)
 	}
 
 	idxSelector := ga.RouletteIndexSelector
@@ -51,7 +51,7 @@ func Test(t *testing.T) {
 	}
 
 	engine := ga.Engine[int]{
-		Evaluator:        evaluator,
+		Fitness:          fitness,
 		IndexSelector:    idxSelector,
 		CrossOperator:    crossOperator,
 		MutationOperator: mutationOperator,

@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"math/rand"
 	"golang.org/x/exp/slices"
-	omwslices "github.com/sw965/omw/slices"
 	omwrand "github.com/sw965/omw/math/rand"
+	omwslices "github.com/sw965/omw/slices"
 )
 
 func LinearRankingProb(n, rank int, s float64) float64 {
@@ -16,19 +16,34 @@ func LinearRankingProb(n, rank int, s float64) float64 {
 type Individual[T any] []T
 type Population[T any] []Individual[T]
 
-type EvalY float64
-type EvalYs []EvalY
-type Evaluator[T any] func(Population[T], int) EvalY
+type FitnessY float64
+type FitnessYs []FitnessY
+type Fitness[T any] func(Population[T], int) FitnessY
 
-type IndexSelector func(EvalYs, *rand.Rand) (int, error)
+type IndexSelector func(FitnessYs, *rand.Rand) (int, error)
 
-func RouletteIndexSelector(evalYs EvalYs, r *rand.Rand) (int, error) {
-	ws := make([]float64, len(evalYs))
-	for i, evalY := range evalYs {
-		ws[i] = float64(evalY)
+func RouletteIndexSelector(fitYs FitnessYs, r *rand.Rand) (int, error) {
+	ws := make([]float64, len(fitYs))
+	for i, fitY := range fitYs {
+		ws[i] = float64(fitY)
 	}
-	idx := omwrand.IntByWeight(ws, r)
-	return idx, nil
+	idx, err := omwrand.IntByWeight(ws, r)
+	return idx, err
+}
+
+func NewLinearRankingIndexSelector(s float64) IndexSelector {
+	return func(fitYs FitnessYs, r *rand.Rand) (int, error) {
+		argsorted := omwslices.Argsort(fitYs)
+		argsorted = omwslices.Reverse(argsorted)
+
+		n := len(fitYs)
+		probs := make([]float64, len(fitYs))
+		for i := range probs {
+			probs[i] = LinearRankingProb(n, i, s)
+		}
+		idx, err := omwrand.IntByWeight(probs, r)
+		return idx, err
+	}
 }
 
 type CrossOperator[T any] func(Individual[T], Individual[T], *rand.Rand) (Individual[T], Individual[T], error)
@@ -57,16 +72,16 @@ func UniformCrossOperator[T any](parent1, parent2 Individual[T], r *rand.Rand) (
 type MutationOperator[T any] func(Individual[T], *rand.Rand) Individual[T]
 
 type Engine[T any] struct {
-	Evaluator        Evaluator[T]
+	Fitness          Fitness[T]
 	IndexSelector    IndexSelector
 	CrossOperator    CrossOperator[T]
 	MutationOperator MutationOperator[T]
 	CrossPercent     float64
 	MutationPercent  float64
+	EliteNum         int
 }
 /*
-	omwslices.Argsortを使えばいいかも
-	実装はこんな感じになってるよ。
+	omwslices.Argsortの実装はこんな感じになってるよ。
 
 	func Argsort[S ~[]E, E constraints.Ordered](s S) []int {
     idxs := make([]int, len(s))
@@ -80,7 +95,6 @@ type Engine[T any] struct {
 
     return idxs
 }
-	omwslices.Reverseを使う事も出来るよ。
 */
 
 func (e *Engine[T]) Run(init Population[T], generation int, r *rand.Rand) (Population[T], error) {
@@ -89,20 +103,29 @@ func (e *Engine[T]) Run(init Population[T], generation int, r *rand.Rand) (Popul
 
 	for i := 0; i < generation; i++ {
 		next := make(Population[T], 0, N)
-		evalYs := make(EvalYs, N)
-		for i := range current {
-			evalYs[i] = e.Evaluator(current, i)
+		fitYs := make(FitnessYs, N)
+		for j := range current {
+			fitYs[j] = e.Fitness(current, j)
+		}
+
+		// エリート戦略
+		idxs := omwslices.Argsort(fitYs)
+		idxs = omwslices.Reverse(idxs)
+		for j := 0; j < e.EliteNum; j++ {
+			eliteIdx := idxs[j]
+			elite := slices.Clone(current[eliteIdx])
+			next = append(next, elite)
 		}
 
 		for len(next) < N {
 			t := r.Float64()
 			if t < e.CrossPercent {
-				parent1Idx, err := e.IndexSelector(evalYs, r)
+				parent1Idx, err := e.IndexSelector(fitYs, r)
 				if err != nil {
 					return nil, err
 				}
 
-				parent2Idx, err := e.IndexSelector(evalYs, r)
+				parent2Idx, err := e.IndexSelector(fitYs, r)
 				if err != nil {
 					return nil, err
 				}
@@ -119,7 +142,7 @@ func (e *Engine[T]) Run(init Population[T], generation int, r *rand.Rand) (Popul
 					next = append(next, child2)
 				}
 			} else if t < e.CrossPercent+e.MutationPercent {
-				idx, err := e.IndexSelector(evalYs, r)
+				idx, err := e.IndexSelector(fitYs, r)
 				if err != nil {
 					return nil, err
 				}
@@ -127,7 +150,7 @@ func (e *Engine[T]) Run(init Population[T], generation int, r *rand.Rand) (Popul
 				mutated := e.MutationOperator(parent, r)
 				next = append(next, mutated)
 			} else {
-				idx, err := e.IndexSelector(evalYs, r)
+				idx, err := e.IndexSelector(fitYs, r)
 				if err != nil {
 					return nil, err
 				}
