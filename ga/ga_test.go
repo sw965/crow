@@ -1,11 +1,12 @@
 package ga_test
 
 import (
-	"testing"
-	"github.com/sw965/crow/ga" // 実際の環境に合わせて適切なインポートパスに変更してください
 	"fmt"
 	"math"
 	"math/rand"
+	"testing"
+	"github.com/sw965/crow/ga"
+	"golang.org/x/exp/slices"
 	omwrand "github.com/sw965/omw/math/rand"
 )
 
@@ -15,32 +16,29 @@ func Test(t *testing.T) {
 	popSize := 640
 	individualLen := 10
 
-	initPop := make(ga.Population[float64], popSize)
+	// 個体の型は []float64 として定義し、Population は [][]float64 となる
+	initPop := make(ga.Population[[]float64], popSize)
 	for i := 0; i < popSize; i++ {
-		ind := make(ga.Individual[float64], individualLen)
-		for j := range ind {
+		ind := make([]float64, individualLen)
+		for j := 0; j < individualLen; j++ {
 			ind[j] = omwrand.Float64(-10.0, 10.0, r)
 		}
 		initPop[i] = ind
 	}
 
-	// [0, 1, 2, 3, 4, 5, 6, 7, 8, 9] の重みが最適なパラメーターとなるような適応関数。
-	fitness := func(p ga.Population[float64], idx int) ga.FitnessY {
+	// [0, 1, 2, 3, 4, 5, 6, 7, 8, 9] に近い個体が最適になる適応関数
+	fitness := func(p ga.Population[[]float64], idx int) ga.FitnessY {
 		sum := 0.0
 		for i, gene := range p[idx] {
-			//期待する値との差が大きいほど、損失が大きくなるように。
 			sum += math.Abs(gene - float64(i))
 		}
-		/*
-			適応関数は、損失関数と違い、いいモデルである程、値が大きくなるようにしなければならないので、
-			マイナスを掛けて符号を逆にする。
-			この適応関数の場合、0が最大値(最も適応した状態)となる。
-		*/
+		// 損失が小さいほど適応度が高くなるように（最大値は 0）
 		return ga.FitnessY(-1.0 * sum)
 	}
 
-	mutationOperator := func(ind ga.Individual[float64], r *rand.Rand) ga.Individual[float64] {
-		mutated := make(ga.Individual[float64], len(ind))
+	// 突然変異オペレーター: ランダムに1箇所の遺伝子を少し変化させる
+	mutationOperator := func(ind []float64, r *rand.Rand) []float64 {
+		mutated := make([]float64, len(ind))
 		copy(mutated, ind)
 		idx := r.Intn(len(mutated))
 		if omwrand.Bool(r) {
@@ -51,21 +49,23 @@ func Test(t *testing.T) {
 		return mutated
 	}
 
-	engine := ga.Engine[float64]{
+	engine := ga.Engine[[]float64]{
 		Fitness:          fitness,
 		IndexSelector:    ga.NewLinearRankingIndexSelector(1.5),
 		CrossOperator:    ga.UniformCrossOperator[float64],
 		MutationOperator: mutationOperator,
+		CloneOperator:    slices.Clone[[]float64, float64],
 		CrossPercent:     0.5,
 		MutationPercent:  0.01,
-		EliteNum:8,
+		EliteNum:         8,
 	}
 
 	generations := 1000
 	finalPop, err := engine.Run(initPop, generations, r)
 	if err != nil {
-		panic(err)
+		t.Fatalf("Engine run failed: %v", err)
 	}
 
-	fmt.Println(finalPop[0])
+	// 最も適応度の高い個体（エリート個体の1つ）を出力
+	fmt.Println("Best individual:", finalPop[0])
 }
