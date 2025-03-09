@@ -133,11 +133,7 @@ func (m Manager[KS, K]) SelectKeyByTrialPercentAboveFractionOfMax(t float64, r *
 		}
 	}
 
-	idx, err := omwrand.IntByWeight(ws, r)
-	if err != nil {
-		var k K
-		return k, err
-	}
+	idx := omwrand.IntByWeight(ws, r, 0.0)
 	return options[idx], nil
 }
 
