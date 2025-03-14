@@ -2,11 +2,65 @@ package tensor
 
 import (
 	"fmt"
-	omwmath "github.com/sw965/omw/math"
+	"math"
+	"math/rand"
 	"golang.org/x/exp/slices"
+	omwrand "github.com/sw965/omw/math/rand"
 )
 
 type D1 []float64
+
+func NewD1Zeros(n int) D1 {
+	return make(D1, n)
+}
+
+func NewD1ZerosLike(d1 D1) D1 {
+	return NewD1Zeros(len(d1))
+}
+
+func NewD1Ones(n int) D1 {
+	ret := make(D1, n)
+	for i := range ret {
+		ret[i] = 1.0
+	}
+	return ret
+}
+
+func NewD1OnesLike(d1 D1) D1 {
+	n := len(d1)
+	return NewD1Ones(n)
+}
+
+func NewD1RandUniform(n int, min, max float64, r *rand.Rand) D1 {
+	ret := make(D1, n)
+	for i := range ret {
+		ret[i] = omwrand.Float64(min, max, r)
+	}
+	return ret
+}
+
+func NewD1He(n int, r *rand.Rand) D1 {
+	std := math.Sqrt(2.0 / float64(n))
+	he := make(D1, n)
+	for i := range he {
+		he[i] = r.NormFloat64() * std
+	}
+	return he
+}
+
+func NewD1Rademacher(n int, r *rand.Rand) D1 {
+	d1 := make(D1, n)
+	for i := range d1 {
+		var e float64
+		if omwrand.Bool(r) {
+			e = 1.0
+		} else {
+			e = -1.0
+		}
+		d1[i] = e
+	}
+	return d1
+}
 
 func (d1 D1) AddScalar(s float64) {
 	for i := range d1 {
@@ -86,33 +140,12 @@ func (d1 D1) Copy(src D1) {
 	}
 }
 
-func (d1 D1) Max() float64 {
-	return omwmath.Max(d1...)
-}
-
-func (d1 D1) Reshape3D(dep, row, col int) (D3, error) {
-    if len(d1) != dep*row*col {
-        return nil, fmt.Errorf("指定したサイズ (%d, %d, %d) と入力データ長 %d が一致しません", dep, row, col, len(d1))
-    }
-
-    d3 := make(D3, dep)
-    for i := 0; i < dep; i++ {
-        d3[i] = make(D2, row)
-        for j := 0; j < row; j++ {
-            d3[i][j] = make(D1, col)
-        }
-    }
-
-    idx := 0
-    for i := 0; i < dep; i++ {
-        for j := 0; j < row; j++ {
-            for k := 0; k < col; k++ {
-                d3[i][j][k] = d1[idx]
-                idx++
-            }
-        }
-    }
-    return d3, nil
+func (d1 D1) Reciprocal() D1 {
+	y := make(D1, len(d1))
+	for i, e := range d1 {
+		y[i] = 1.0 / e
+	}
+	return y
 }
 
 func D1AddScalar(d1 D1, s float64) D1 {

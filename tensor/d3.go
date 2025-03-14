@@ -2,9 +2,59 @@ package tensor
 
 import (
 	"fmt"
+	"math/rand"
+	"github.com/sw965/omw/fn"
 )
 
 type D3 []D2
+
+func NewD3Zeros(r, c, d int) D3 {
+	ret := make(D3, r)
+	for i := range ret {
+		ret[i] = NewD2Zeros(c, d)
+	}
+	return ret
+}
+
+func NewD3ZerosLike(d3 D3) D3 {
+	return fn.Map[D3](d3, NewD2ZerosLike)
+}
+
+func NewD3Ones(r, c, d int) D3 {
+	ret := make(D3, r)
+	for i := range ret {
+		ret[i] = NewD2Ones(c, d)
+	}
+	return ret
+}
+
+func NewD3OnesLike(d3 D3) D3 {
+	return fn.Map[D3](d3, NewD2OnesLike)
+}
+
+func NewD3RandUniform(d, r, c int, min, max float64, rng *rand.Rand) D3 {
+	ret := make(D3, d)
+	for i := range ret {
+		ret[i] = NewD2RandUniform(r, c, min, max, rng)
+	}
+	return ret
+}
+
+func NewD3He(d, r, c int, rng *rand.Rand) D3 {
+	he := make(D3, d)
+	for i := range he {
+		he[i] = NewD2He(r, c, rng)
+	}
+	return he
+}
+
+func NewD3Rademacher(d, r, c int, rnd *rand.Rand) D3 {
+	d3 := make(D3, d)
+	for i := range d3 {
+		d3[i] = NewD2Rademacher(r, c, rnd)
+	}
+	return d3
+}
 
 func (d3 D3) AddScalar(s float64) {
 	for i := range d3 {
@@ -253,21 +303,12 @@ func (d3 D3) Clone() D3 {
 	return y
 }
 
-func (d3 D3) Equal(d2 D3) bool {
-	for i, d2Elem := range d3 {
-		if !d2Elem.Equal(d2[i]) {
-			return false
-		}
-	}
-	return true
-}
-
 func (d3 D3) Size() int {
-	n := 0
+	size := 0
 	for _, d2 := range d3 {
-		n += d2.Size()
+		size += d2.Size()
 	}
-	return n
+	return size
 }
 
 func (d3 D3) Flatten() D1 {
@@ -276,6 +317,14 @@ func (d3 D3) Flatten() D1 {
 		flat = append(flat, d2.Flatten()...)
 	}
 	return flat
+}
+
+func (d3 D3) Reciprocal() D3 {
+	y := make(D3, len(d3))
+	for i, d2 := range d3 {
+		y[i] = d2.Reciprocal()
+	}
+	return y
 }
 
 func D3AddScalar(d3 D3, s float64) D3 {

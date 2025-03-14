@@ -62,6 +62,13 @@ func (p *Parameter) WriteJSON(path string) error {
 	return err
 }
 
+func (p *Parameter) Clone() Parameter {
+	return Parameter{
+		Weight:p.Weight.Clone(),
+		Bias:p.Bias.Clone(),
+	}
+}
+
 func NewInitParameter(wns []int) Parameter {
 	xn := len(wns)
 	w := make(tensor.D2, xn)
@@ -81,6 +88,11 @@ type Sum struct {
 
 	YLossCalculator func(tensor.D1, tensor.D1) (float64, error)
 	YLossDifferentiator func(tensor.D1, tensor.D1) (tensor.D1, error)
+}
+
+func (s *Sum) Clone() Sum {
+	s.Parameter = s.Parameter.Clone()
+	return *s
 }
 
 func (s *Sum) SetSigmoid() {

@@ -2,11 +2,60 @@ package tensor
 
 import (
 	"fmt"
+	"math/rand"
 	"golang.org/x/exp/slices"
-	omwmath "github.com/sw965/omw/math"
+	"github.com/sw965/omw/fn"
 )
 
 type D2 []D1
+
+func NewD2Zeros(r, c int) D2 {
+	ret := make(D2, r)
+	for i := range ret {
+		ret[i] = NewD1Zeros(c)
+	}
+	return ret
+}
+
+func NewD2ZerosLike(d2 D2) D2 {
+	return fn.Map[D2](d2, NewD1ZerosLike)
+}
+
+func NewD2Ones(r, c int) D2 {
+	ret := make(D2, r)
+	for i := range ret {
+		ret[i] = NewD1Ones(c)
+	}
+	return ret
+}
+
+func NewD2OnesLike(x D2) D2 {
+	return fn.Map[D2](x, NewD1OnesLike)
+}
+
+func NewD2RandUniform(r, c int, min, max float64, rng *rand.Rand) D2 {
+	ret := make(D2, r)
+	for i := range ret {
+		ret[i] = NewD1RandUniform(c, min, max, rng)
+	}
+	return ret
+}
+
+func NewD2He(r, c int, rng *rand.Rand) D2 {
+	he := make(D2, r)
+	for i := range he {
+		he[i] = NewD1He(c, rng)
+	}
+	return he
+}
+
+func NewD2Rademacher(r, c int, rnd *rand.Rand) D2 {
+	d2 := make(D2, r)
+	for i := range d2 {
+		d2[i] = NewD1Rademacher(c, rnd)
+	}
+	return d2
+}
 
 func (d2 D2) AddScalar(s float64) {
 	for i := range d2 {
@@ -204,34 +253,12 @@ func (d2 D2) Clone() D2 {
 	return y
 }
 
-func (d2 D2) Equal(other D2) bool {
-	for i, d1 := range d2 {
-		if !slices.Equal(d1, other[i]) {
-			return false
-		}
-	}
-	return true
-}
-
 func (d2 D2) Size() int {
-	n := 0
+	size := 0
 	for _, d1 := range d2 {
-		n += len(d1)
+		size += len(d1)
 	}
-	return n
-}
-
-func (d2 D2) SumByRow() D1 {
-	sums := make(D1, len(d2))
-	for i, d1 := range d2 {
-		sums[i] = omwmath.Sum(d1...)
-	}
-	return sums
-}
-
-func (d2 D2) SumByCol() D1 {
-	t := d2.Transpose()
-	return t.SumByRow()
+	return size
 }
 
 func (d2 D2) Flatten() D1 {
@@ -240,6 +267,14 @@ func (d2 D2) Flatten() D1 {
 		flat = append(flat, d1...)
 	}
 	return flat
+}
+
+func (d2 D2) Reciprocal() D2 {
+	y := make(D2, len(d2))
+	for i, d1 := range d2 {
+		y[i] = d1.Reciprocal()
+	}
+	return y
 }
 
 func D2AddScalar(d2 D2, s float64) D2 {
