@@ -48,20 +48,6 @@ func NewD1He(n int, r *rand.Rand) D1 {
 	return he
 }
 
-func NewD1Rademacher(n int, r *rand.Rand) D1 {
-	d1 := make(D1, n)
-	for i := range d1 {
-		var e float64
-		if omwrand.Bool(r) {
-			e = 1.0
-		} else {
-			e = -1.0
-		}
-		d1[i] = e
-	}
-	return d1
-}
-
 func (d1 D1) AddScalar(s float64) {
 	for i := range d1 {
 		d1[i] += s

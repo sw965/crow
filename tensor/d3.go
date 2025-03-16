@@ -48,14 +48,6 @@ func NewD3He(d, r, c int, rng *rand.Rand) D3 {
 	return he
 }
 
-func NewD3Rademacher(d, r, c int, rnd *rand.Rand) D3 {
-	d3 := make(D3, d)
-	for i := range d3 {
-		d3[i] = NewD2Rademacher(r, c, rnd)
-	}
-	return d3
-}
-
 func (d3 D3) AddScalar(s float64) {
 	for i := range d3 {
 		d3[i].AddScalar(s)

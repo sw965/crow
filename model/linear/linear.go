@@ -8,6 +8,7 @@ import (
 	omwslices "github.com/sw965/omw/slices"
 	omwjson "github.com/sw965/omw/json"
 	"github.com/sw965/omw/parallel"
+	crowmath "github.com/sw965/crow/math"
 	"github.com/sw965/crow/tensor"
 	"github.com/sw965/crow/ml/1d"
 	"github.com/sw965/crow/ml/2d"
@@ -69,6 +70,26 @@ func (p *Parameter) Clone() Parameter {
 	}
 }
 
+func (p *Parameter) AddGrad(grad *GradBuffer) error {
+	err := p.Weight.Add(grad.Weight)
+	if err != nil {
+		return err
+	}
+
+	err = p.Bias.Add(grad.Bias)
+	return err
+}
+
+func (p *Parameter) SubGrad(grad *GradBuffer) error {
+	err := p.Weight.Sub(grad.Weight)
+	if err != nil {
+		return err
+	}
+
+	err = p.Bias.Sub(grad.Bias)
+	return err
+}
+
 func NewInitParameter(wns []int) Parameter {
 	xn := len(wns)
 	w := make(tensor.D2, xn)
@@ -80,7 +101,58 @@ func NewInitParameter(wns []int) Parameter {
 	return Parameter{Weight:w, Bias:b}
 }
 
-type Sum struct {
+type Optimizer func(*Model, *GradBuffer) error 
+
+type SGD struct {
+	LearningRate float64
+}
+
+func (sgd *SGD) Optimizer(model *Model, grad *GradBuffer) error {
+	lr := sgd.LearningRate
+	grad.Bias.MulScalar(-lr)
+	grad.Weight.MulScalar(-lr)
+	err := model.Parameter.AddGrad(grad)
+	return err
+}
+
+type Momentum struct {
+	LearningRate float64
+	MomentumRate float64
+	velocity GradBuffer
+}
+
+func NewMomentum(model *Model) Momentum {
+	v := GradBuffer{
+		Weight:tensor.NewD2ZerosLike(model.Parameter.Weight),
+		Bias:tensor.NewD1ZerosLike(model.Parameter.Bias),
+	}
+
+	return Momentum{
+		LearningRate:0.01,
+		MomentumRate:0.9,
+		velocity:v,
+	}
+}
+
+func (m *Momentum) Optimizer(model *Model, grad *GradBuffer) error {
+	lr := m.LearningRate
+
+	m.velocity.Weight.MulScalar(m.MomentumRate)
+	m.velocity.Bias.MulScalar(m.MomentumRate)
+
+	grad.Weight.MulScalar(-lr)
+	grad.Bias.MulScalar(-lr)
+
+	err := m.velocity.Add(grad)
+	if err != nil {
+		return err
+	}
+
+	err = model.Parameter.AddGrad(&m.velocity)
+	return err
+}
+
+type Model struct {
 	Parameter Parameter
 
 	YCalculator func(tensor.D1) tensor.D1
@@ -88,43 +160,46 @@ type Sum struct {
 
 	YLossCalculator func(tensor.D1, tensor.D1) (float64, error)
 	YLossDifferentiator func(tensor.D1, tensor.D1) (tensor.D1, error)
+
+	//SPSAによる教師なし学習の為の損失関数。
+	ModelLossCaluclator func(*Model) (float64, error)
 }
 
-func (s *Sum) Clone() Sum {
-	s.Parameter = s.Parameter.Clone()
-	return *s
+func (m Model) Clone() Model {
+	m.Parameter = m.Parameter.Clone()
+	return m
 }
 
-func (s *Sum) SetSigmoid() {
-	s.YCalculator = ml1d.Sigmoid
-	s.YDifferentiator = ml1d.SigmoidGrad
+func (m *Model) SetSigmoid() {
+	m.YCalculator = ml1d.Sigmoid
+	m.YDifferentiator = ml1d.SigmoidGrad
 }
 
-func (s *Sum) SetSoftmaxForCrossEntropy() {
-	s.YCalculator = ml1d.Softmax
-	s.YDifferentiator = fn.Identity[tensor.D1]
+func (m *Model) SetSoftmaxForCrossEntropy() {
+	m.YCalculator = ml1d.Softmax
+	m.YDifferentiator = fn.Identity[tensor.D1]
 }
 
-func (s *Sum) SetSumSquaredError() {
-	s.YLossCalculator = ml1d.SumSquaredError
-	s.YLossDifferentiator = ml1d.SumSquaredErrorDerivative
+func (m *Model) SetSumSquaredError() {
+	m.YLossCalculator = ml1d.SumSquaredError
+	m.YLossDifferentiator = ml1d.SumSquaredErrorDerivative
 }
 
-func (s *Sum) SetCrossEntropyError() {
-	s.YLossCalculator = ml1d.CrossEntropyError
-	s.YLossDifferentiator = ml1d.CrossEntropyErrorDerivative
+func (m *Model) SetCrossEntropyError() {
+	m.YLossCalculator = ml1d.CrossEntropyError
+	m.YLossDifferentiator = ml1d.CrossEntropyErrorDerivative
 }
 
-func (s *Sum) Predict(x tensor.D2) (tensor.D1, error) {
-	u, err := ml2d.LinearSum(x, s.Parameter.Weight, s.Parameter.Bias)
+func (m *Model) Predict(x tensor.D2) (tensor.D1, error) {
+	u, err := ml2d.LinearSum(x, m.Parameter.Weight, m.Parameter.Bias)
 	if err != nil {
 		return nil, nil
 	}
-	y := s.YCalculator(u)
+	y := m.YCalculator(u)
 	return y, err
 }
 
-func (s *Sum) MeanLoss(xs tensor.D3, ts tensor.D2) (float64, error) {
+func (m *Model) MeanLoss(xs tensor.D3, ts tensor.D2) (float64, error) {
 	n := len(xs)
 	if n != len(ts) {
 		return 0.0, fmt.Errorf("バッチサイズが一致しません。")
@@ -132,11 +207,11 @@ func (s *Sum) MeanLoss(xs tensor.D3, ts tensor.D2) (float64, error) {
 
 	sum := 0.0
 	for i := range xs {
-		y, err := s.Predict(xs[i])
+		y, err := m.Predict(xs[i])
 		if err != nil {
 			return 0.0, err
 		}
-		yLoss, err := s.YLossCalculator(y, ts[i])
+		yLoss, err := m.YLossCalculator(y, ts[i])
 		if err != nil {
 			return 0.0, err
 		}
@@ -146,7 +221,7 @@ func (s *Sum) MeanLoss(xs tensor.D3, ts tensor.D2) (float64, error) {
 	return mean, nil
 }
 
-func (s *Sum) Accuracy(xs tensor.D3, ts tensor.D2) (float64, error) {
+func (m *Model) Accuracy(xs tensor.D3, ts tensor.D2) (float64, error) {
 	n := len(xs)
 	if n != len(ts) {
 		return 0.0, fmt.Errorf("バッチサイズが一致しません。")
@@ -154,7 +229,7 @@ func (s *Sum) Accuracy(xs tensor.D3, ts tensor.D2) (float64, error) {
 
 	correct := 0
 	for i := range xs {
-		y, err := s.Predict(xs[i])
+		y, err := m.Predict(xs[i])
 		if err != nil {
 			return 0.0, err
 		}
@@ -165,24 +240,24 @@ func (s *Sum) Accuracy(xs tensor.D3, ts tensor.D2) (float64, error) {
 	return float64(correct) / float64(n), nil
 }
 
-func (s *Sum) BackPropagate(x tensor.D2, t tensor.D1) (GradBuffer, error) {
+func (m *Model) BackPropagate(x tensor.D2, t tensor.D1) (GradBuffer, error) {
 	gb := GradBuffer{}
-	w := s.Parameter.Weight
-	b := s.Parameter.Bias
+	w := m.Parameter.Weight
+	b := m.Parameter.Bias
 
 	u, err := ml2d.LinearSum(x, w, b)
 	if err != nil {
 		return GradBuffer{}, err
 	}
 
-	y := s.YCalculator(u)
+	y := m.YCalculator(u)
 
-	dLdy, err := s.YLossDifferentiator(y, t)
+	dLdy, err := m.YLossDifferentiator(y, t)
 	if err != nil {
 		return GradBuffer{}, err
 	}
 
-	dydu := s.YDifferentiator(y)
+	dydu := m.YDifferentiator(y)
 
 	dLdu, err := tensor.D1Mul(dLdy, dydu)
 	if err != nil {
@@ -202,8 +277,8 @@ func (s *Sum) BackPropagate(x tensor.D2, t tensor.D1) (GradBuffer, error) {
 	return gb, nil
 }
 
-func (s *Sum) ComputeGrad(xs tensor.D3, ts tensor.D2, p int) (GradBuffer, error) {
-	firstGradBuffer, err := s.BackPropagate(xs[0], ts[0])
+func (m *Model) ComputeGrad(xs tensor.D3, ts tensor.D2, p int) (GradBuffer, error) {
+	firstGradBuffer, err := m.BackPropagate(xs[0], ts[0])
 	if err != nil {
 		return GradBuffer{}, err
 	}
@@ -222,7 +297,7 @@ func (s *Sum) ComputeGrad(xs tensor.D3, ts tensor.D2, p int) (GradBuffer, error)
 			//firstGradBufferで、0番目のデータの勾配は計算済みなので0にアクセスしないように、+1とする。
 			x := xs[idx+1]
 			t := ts[idx+1]
-			gradBuffer, err := s.BackPropagate(x, t)
+			gradBuffer, err := m.BackPropagate(x, t)
 			if err != nil {
 				errCh <- err
 				return
@@ -252,43 +327,129 @@ func (s *Sum) ComputeGrad(xs tensor.D3, ts tensor.D2, p int) (GradBuffer, error)
 	return total, nil
 }
 
-func (s *Sum) TrainBySGD(xs tensor.D3, ts tensor.D2, c *MiniBatchConfig, r *rand.Rand) error {
-	lr := c.LearningRate
-	batchSize := c.BatchSize
-	p := c.Parallel
+func (m *Model) EstimateGradBySPSA(c float64, r *rand.Rand) (GradBuffer, error) {
+	deltaW := tensor.NewD2ZerosLike(m.Parameter.Weight)
+	for i := range deltaW {
+		for j := range deltaW[i] {
+			var e float64
+			if omwrand.Bool(r) {
+				e = 1
+			} else {
+				e = -1
+			}
+			deltaW[i][j] = e
+		}
+	}
 
+	perturbationW := deltaW.Clone()
+	perturbationW.MulScalar(c)
+
+	deltaB := tensor.NewD1ZerosLike(m.Parameter.Bias)
+	for i := range deltaB {
+		var e float64
+		if omwrand.Bool(r) {
+			e = 1
+		} else {
+			e = -1
+		}
+		deltaB[i] = e
+	}
+
+	perturbationB := deltaB.Clone()
+	perturbationB.MulScalar(c)
+
+	grad := GradBuffer{
+		Weight:tensor.NewD2ZerosLike(m.Parameter.Weight),
+		Bias:tensor.NewD1ZerosLike(m.Parameter.Bias),
+	}
+
+	plusModel := m.Clone()
+
+	err := plusModel.Parameter.Weight.Add(perturbationW)
+	if err != nil {
+		return GradBuffer{}, err
+	}
+
+	err = plusModel.Parameter.Bias.Add(perturbationB)
+	if err != nil {
+		return GradBuffer{}, err
+	}
+
+	minusModel := m.Clone()
+
+	err = minusModel.Parameter.Weight.Sub(perturbationW)
+	if err != nil {
+		return GradBuffer{}, err
+	}
+
+	err = minusModel.Parameter.Bias.Sub(perturbationB)
+	if err != nil {
+		return GradBuffer{}, err
+	}
+
+	plusModelLoss, err := m.ModelLossCaluclator(&plusModel)
+	if err != nil {
+		return GradBuffer{}, err
+	}
+
+	minusModelLoss, err := m.ModelLossCaluclator(&minusModel)
+	if err != nil {
+		return GradBuffer{}, err
+	}
+
+	for i := range deltaW {
+		for j := range deltaW[i] {
+			grad.Weight[i][j] = crowmath.CentralDifference(plusModelLoss, minusModelLoss, perturbationW[i][j])
+		}
+	}
+
+	for i := range deltaB {
+		grad.Bias[i] = crowmath.CentralDifference(plusModelLoss, minusModelLoss, perturbationB[i])
+	}
+	return grad, nil
+}
+
+type MiniBatchTeacher struct {
+	Inputs tensor.D3
+	Labels tensor.D2
+	MiniBatchSize int
+	Epoch int
+	Optimizer Optimizer
+	Parallel int
+}
+
+func (mbt *MiniBatchTeacher) Teach(model *Model, r *rand.Rand) error {
+	xs := mbt.Inputs
+	ts := mbt.Labels
+	size := mbt.MiniBatchSize
+	epoch := mbt.Epoch
+	opt := mbt.Optimizer
+	p := mbt.Parallel
 	n := len(xs)
 
-	if n < batchSize {
+	if n < size {
 		return fmt.Errorf("データ数 < バッチサイズである為、モデルの訓練を出来ません、")
 	}
 
-	if c.Epoch <= 0 {
+	if epoch <= 0 {
 		return fmt.Errorf("エポック数が0以下である為、モデルの訓練を開始出来ません。")
 	}
 
-	iter := n / batchSize * c.Epoch
+	iter := n / size * epoch
 	for i := 0; i < iter; i++ {
-		idxs := omwrand.Ints(batchSize, 0, n, r)
+		idxs := omwrand.Ints(size, 0, n, r)
 		miniXs := omwslices.ElementsByIndices(xs, idxs...)
 		miniTs := omwslices.ElementsByIndices(ts, idxs...)
-		grad, err := s.ComputeGrad(miniXs, miniTs, p)
+
+		grad, err := model.ComputeGrad(miniXs, miniTs, p)
 		if err != nil {
 			return err
 		}
 
-		grad.Bias.MulScalar(lr)
-		grad.Weight.MulScalar(lr)
-		
-		s.Parameter.Bias.Sub(grad.Bias)
-		s.Parameter.Weight.Sub(grad.Weight)
+		err = opt(model, &grad)
+		if err != nil {
+			return err
+		}
 	}
 	return nil
-}
-
-type MiniBatchConfig struct {
-	LearningRate float64
-	BatchSize int
-	Epoch int
-	Parallel int
 }
