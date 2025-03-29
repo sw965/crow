@@ -85,7 +85,7 @@ func TestSPSA(t *testing.T) {
 		tensor.D1{1.5},
 	}
 	targetBias := tensor.D1{2.5, 3.5}
-	model.ModelLossCaluclator = func(m *linear.Model) (float64, error) {
+	model.LossFunc = func(m *linear.Model) (float64, error) {
 		loss := 0.0
 		for i, row := range m.Parameter.Weight {
 			for j, w := range row {
