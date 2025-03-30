@@ -1,183 +1,81 @@
 package shared_test
 
 import (
-	"testing"
 	"fmt"
-	"github.com/sw965/crow/tensor"
+	"testing"
 	"github.com/sw965/crow/model/linear/shared"
+	"github.com/sw965/crow/tensor"
 	omwrand "github.com/sw965/omw/math/rand"
 )
 
-func TestSupervisedLearning(t *testing.T) {
-	// --- テスト用データ ---
-	// 各サンプルは、入力ニューロンを表すマップ（キー "w1"）で表現
-	inputs := shared.Inputs[string]{
-		shared.Input[string]{{"w1": 0.0}},
-		shared.Input[string]{{"w1": 1.0}},
-	}
-	// 目標値：x=0 のとき 0.1、x=1 のとき 0.9（各出力は長さ1のスライス）
-	labels := tensor.D2{
-		{0.1},
-		{0.9},
-	}
-
-	// --- モデルの初期化 ---
-	// 重み "w1" は初期値 1.0、バイアス "b1" は初期値 0.0
-	param := shared.NewInitParameter[string, string]([]string{"w1"}, []string{"b1"})
-	model := shared.Model[string, string]{
-		Parameter: param,
-		BiasKeys:[]string{"b1"},
-	}
-	// 活性化関数に Sigmoid、損失関数に二乗和誤差を設定
-	model.SetSigmoid()
-	model.SetSumSquaredError()
-
-	// 訓練前の損失を計算
-	initialLoss, err := model.MeanLoss(inputs, labels)
-	if err != nil {
-		t.Fatalf("初期損失の計算エラー: %v", err)
-	}
-
-	// --- ミニバッチ学習の設定 ---
-	// ミニバッチサイズ1、エポック数1000（各サンプルにつき1000回更新）
-	teacher := shared.MiniBatchTeacher[string, string]{
-		Inputs:        inputs,
-		Labels:        labels,
-		MiniBatchSize: 1,
-		Epoch:         10000,
-		Optimizer:     (&shared.SGD[string, string]{LearningRate: 0.1}).Optimizer,
-		Parallel:      1,
-	}
-
-	r := omwrand.NewMt19937()
-	if err := teacher.Teach(&model, r); err != nil {
-		t.Fatalf("学習中のエラー: %v", err)
-	}
-
-	// 訓練後の損失を計算
-	finalLoss, err := model.MeanLoss(inputs, labels)
-	if err != nil {
-		t.Fatalf("学習後の損失計算エラー: %v", err)
-	}
-
-	t.Logf("初期損失: %f, 学習後損失: %f", initialLoss, finalLoss)
-	if finalLoss >= initialLoss {
-		t.Errorf("学習後の損失 (%f) が初期損失 (%f) 以上です。", finalLoss, initialLoss)
-	}
-
-	// 各サンプルに対する予測をログ出力
-	for i, inp := range inputs {
-		pred := model.Predict(inp)
-		t.Logf("サンプル %d: 予測: %v, 目標: %v", i, pred, labels[i])
-	}
-}
-
-// TestSPSA は、SPSA による勾配推定の動作をテストします。
-func TestSPSA(t *testing.T) {
-	// --- テスト用データ ---
-	inputs := shared.Inputs[string]{
-		shared.Input[string]{{"w1": 0.0}},
-		shared.Input[string]{{"w1": 1.0}},
-	}
-	labels := tensor.D2{
-		tensor.D1{0.1},
-		tensor.D1{0.9},
-	}
-	biasKeys := []string{"b1"}
-
-	// --- モデルの初期化 ---
-	param := shared.NewInitParameter[string, string]([]string{"w1"}, biasKeys)
-	model := shared.Model[string, string]{
-		Parameter: param,
-		BiasKeys:biasKeys,
-	}
-	model.SetSigmoid()
-	model.SetSumSquaredError()
-	// SPSA では、データ全体に対する損失関数を利用
-	model.LossFunc = func(m *shared.Model[string, string]) (float64, error) {
-		return m.MeanLoss(inputs, labels)
-	}
-
-	r := omwrand.NewMt19937()
-	c := 0.01 // 摂動の大きさ
-
-	grad, err := model.EstimateGradBySPSA(c, r)
-	if err != nil {
-		t.Fatalf("SPSA による勾配推定エラー: %v", err)
-	}
-
-	t.Logf("SPSA 推定勾配 - 重み: %v, バイアス: %v", grad.Weight, grad.Bias)
-
-	// 勾配が正しく計算されているか、キーの存在をチェック
-	if _, ok := grad.Weight["w1"]; !ok {
-		t.Error("w1 の勾配が計算されていません。")
-	}
-	if _, ok := grad.Bias["b1"]; !ok {
-		t.Error("b1 の勾配が計算されていません。")
-	}
-}
-
 func TestLearning(t *testing.T) {
+	// 乱数生成器
 	r := omwrand.NewMt19937()
 
-	// --- モデル初期化 ---
-	// 入力2次元、2クラス分類タスクを想定。
-	// 重みキーは "w1" と "w2"、バイアスキーは "b1" と "b2" を使用。
-	param := shared.NewInitParameter[string, string]([]string{"w1", "w2"}, []string{"b1", "b2"})
-	model := shared.Model[string, string]{
-		Parameter: param,
-		// LinearSum の計算では、各入力サンプルの i 番目のマップに対応して BiasKeys[i] を使用するため、
-		// サンプル毎に 2 つのマップが必要です。
-		BiasKeys: []string{"b1", "b2"},
+	// モデル初期化（2クラス分類用：入力は2要素からなる各サンプル）
+	var model shared.Model
+
+	// Parameter.Weight は 2×1 の行列、Bias は長さ2 のベクトルとして初期化
+	weight := make([][]*float64, 2)
+	for i := 0; i < 2; i++ {
+		weight[i] = make([]*float64, 1)
+		weight[i][0] = new(float64)
+		*weight[i][0] = 1.0
 	}
-	// 分類タスク用に Softmax とクロスエントロピー誤差を設定
+	bias := make([]*float64, 2)
+	for i := 0; i < 2; i++ {
+		bias[i] = new(float64)
+		*bias[i] = 0.0
+	}
+	model.Parameter = shared.Parameter{
+		Weight: weight,
+		Bias:   bias,
+	}
+
+	// 出力層の活性化関数と損失関数を設定（softmaxと交差エントロピー誤差）
 	model.SetSoftmaxForCrossEntropy()
 	model.SetCrossEntropyError()
 
-	// --- 学習用データセット生成 ---
-	// 各サンプルは、2つの入力マップから構成される
-	// 1つ目のマップはキー "w1" に対応する入力値 a、
-	// 2つ目のマップはキー "w2" に対応する入力値 b。
-	// ターゲットは、 a > b なら [1, 0]、それ以外なら [0, 1] とする。
+	// 学習用データセットの生成
+	// 各サンプルは tensor.D2 として、1要素ずつの2行からなる行列となる
+	// a, b の値に対し、 a > b なら [1, 0]、それ以外は [0, 1] をターゲットとする
 	sampleN := 10000
-	inputs := make(shared.Inputs[string], sampleN)
-	labels := make(tensor.D2, sampleN)
-
+	xs := make(tensor.D3, sampleN)
+	ts := make(tensor.D2, sampleN)
 	for i := 0; i < sampleN; i++ {
 		a := r.Float64()
 		b := r.Float64()
-		sample := shared.Input[string]{
-			{"w1": a},
-			{"w2": b},
+		xs[i] = tensor.D2{
+			tensor.D1{a},
+			tensor.D1{b},
 		}
-		inputs[i] = sample
 		if a > b {
-			labels[i] = tensor.D1{1.0, 0.0}
+			ts[i] = tensor.D1{1.0, 0.0}
 		} else {
-			labels[i] = tensor.D1{0.0, 1.0}
+			ts[i] = tensor.D1{0.0, 1.0}
 		}
 	}
 
-	// --- ミニバッチ学習 ---
-	// Momentum オプティマイザを利用（学習率は小さめに設定）
-	momentum := shared.NewMomentum[string, string](&model)
+	// Momentum オプティマイザの初期化
+	momentum := shared.NewMomentum(&model)
 	momentum.LearningRate = 0.00001
 
-	teacher := &shared.MiniBatchTeacher[string, string]{
-		Inputs:        inputs,
-		Labels:        labels,
+	teacher := &shared.MiniBatchTeacher{
+		Inputs:        xs,
+		Labels:        ts,
 		MiniBatchSize: 32,
 		Epoch:         1000,
 		Optimizer:     momentum.Optimizer,
 		Parallel:      4,
 	}
 
+	// 教師あり学習を実施
 	if err := teacher.Teach(&model, r); err != nil {
 		t.Fatalf("Training failed: %v", err)
 	}
 
-	// --- 正解率評価 ---
-	acc, err := model.Accuracy(inputs, labels)
+	// 訓練データに対する正解率評価
+	acc, err := model.Accuracy(xs, ts)
 	if err != nil {
 		t.Fatalf("Accuracy evaluation failed: %v", err)
 	}
@@ -186,110 +84,118 @@ func TestLearning(t *testing.T) {
 	if acc < 0.9 {
 		t.Fatalf("Training accuracy too low: %.2f%%", acc*100)
 	}
-
-	fmt.Println(model.Parameter)
+	fmt.Println("Trained Parameter:", model.Parameter)
 }
 
-// TestSPSA2 は、SPSA による勾配推定が解析的勾配と十分近いかを確認するテストです。
-func TestSPSA2(t *testing.T) {
+func TestSPSA(t *testing.T) {
 	r := omwrand.NewMt19937()
 
-	// --- モデル初期化 ---
-	// 2ニューロンモデルとして、重みとバイアスはマップで管理する
-	param := shared.NewInitParameter[string, string]([]string{"w1", "w2"}, []string{"b1", "b2"})
-	// 特定の値に設定
-	param.Weight["w1"] = 1.0
-	param.Weight["w2"] = 2.0
-	param.Bias["b1"] = 3.0
-	param.Bias["b2"] = 4.0
+	// モデル初期化：重みは 2×1、バイアスは長さ2 とする
+	var model shared.Model
 
-	model := shared.Model[string, string]{
-		Parameter: param,
-		// SPSA では入力は使用しないため、BiasKeys は順番に "b1", "b2" としておく
-		BiasKeys: []string{"b1", "b2"},
+	weight := make([][]*float64, 2)
+	weight[0] = make([]*float64, 1)
+	weight[0][0] = new(float64)
+	*weight[0][0] = 1.0
+	weight[1] = make([]*float64, 1)
+	weight[1][0] = new(float64)
+	*weight[1][0] = 2.0
+
+	bias := make([]*float64, 2)
+	bias[0] = new(float64)
+	*bias[0] = 3.0
+	bias[1] = new(float64)
+	*bias[1] = 4.0
+
+	model.Parameter = shared.Parameter{
+		Weight: weight,
+		Bias:   bias,
 	}
 
-	// 損失関数として、二乗誤差を用いる
-	// ターゲットは、各パラメータが以下の値になるように設定
-	targetWeight := map[string]float64{
-		"w1": 0.5,
-		"w2": 1.5,
+	// ターゲットパラメーター（解析的に勾配が求まるように設定）
+	targetWeight := tensor.D2{
+		tensor.D1{0.5},
+		tensor.D1{1.5},
 	}
-	targetBias := map[string]float64{
-		"b1": 2.5,
-		"b2": 3.5,
-	}
-	model.LossFunc = func(m *shared.Model[string, string]) (float64, error) {
+	targetBias := tensor.D1{2.5, 3.5}
+
+	// LossFunc は二乗誤差関数として、各パラメーターとターゲットとの差の二乗和を返す
+	model.LossFunc = func(m *shared.Model) (float64, error) {
 		loss := 0.0
-		for k, w := range m.Parameter.Weight {
-			diff := w - targetWeight[k]
-			loss += 0.5 * diff * diff
+		for i, row := range m.Parameter.Weight {
+			for j, ptr := range row {
+				diff := *ptr - targetWeight[i][j]
+				loss += 0.5 * diff * diff
+			}
 		}
-		for k, b := range m.Parameter.Bias {
-			diff := b - targetBias[k]
+		for i, ptr := range m.Parameter.Bias {
+			diff := *ptr - targetBias[i]
 			loss += 0.5 * diff * diff
 		}
 		return loss, nil
 	}
 
-	// 解析的な勾配は、パラメータとターゲットの差
-	trueGradWeight := map[string]float64{
-		"w1": 1.0 - 0.5, // 0.5
-		"w2": 2.0 - 1.5, // 0.5
+	// 解析的な勾配（現在のパラメーターとターゲットとの差）
+	trueGradWeight := tensor.D2{
+		tensor.D1{1.0 - 0.5}, // 0.5
+		tensor.D1{2.0 - 1.5}, // 0.5
 	}
-	trueGradBias := map[string]float64{
-		"b1": 3.0 - 2.5, // 0.5
-		"b2": 4.0 - 3.5, // 0.5
+	trueGradBias := tensor.D1{
+		3.0 - 2.5, // 0.5
+		4.0 - 3.5, // 0.5
 	}
 
-	// SPSA による勾配推定を多数回行い平均値を算出
+	// SPSA による勾配推定を多数回実施し平均値を求める
 	iterations := 10000
-	sumGradW := map[string]float64{
-		"w1": 0.0,
-		"w2": 0.0,
-	}
-	sumGradB := map[string]float64{
-		"b1": 0.0,
-		"b2": 0.0,
-	}
-
+	sumGradW := tensor.NewD2Zeros(len(model.Parameter.Weight), len(model.Parameter.Weight[0]))
+	sumGradB := tensor.NewD1Zeros(len(model.Parameter.Bias))
 	for i := 0; i < iterations; i++ {
 		grad, err := model.EstimateGradBySPSA(1e-3, r)
 		if err != nil {
 			t.Fatalf("EstimateGradBySPSA failed: %v", err)
 		}
-		for k, v := range grad.Weight {
-			sumGradW[k] += v
+		// 各要素を加算
+		for rowIdx, row := range grad.Weight {
+			for colIdx, v := range row {
+				sumGradW[rowIdx][colIdx] += v
+			}
 		}
-		for k, v := range grad.Bias {
-			sumGradB[k] += v
+		for i, v := range grad.Bias {
+			sumGradB[i] += v
 		}
 	}
-
-	avgGradW := make(map[string]float64)
-	avgGradB := make(map[string]float64)
-	for k, v := range sumGradW {
-		avgGradW[k] = v / float64(iterations)
+	// 平均値計算
+	avgGradW := make(tensor.D2, len(sumGradW))
+	for i, row := range sumGradW {
+		avgGradW[i] = make(tensor.D1, len(row))
+		for j, v := range row {
+			avgGradW[i][j] = v / float64(iterations)
+		}
 	}
-	for k, v := range sumGradB {
-		avgGradB[k] = v / float64(iterations)
+	avgGradB := make(tensor.D1, len(sumGradB))
+	for i, v := range sumGradB {
+		avgGradB[i] = v / float64(iterations)
 	}
 
-	t.Logf("Analytical Grad Weight: %v", trueGradWeight)
-	t.Logf("SPSA Estimated Grad Weight (avg): %v", avgGradW)
-	t.Logf("Analytical Grad Bias: %v", trueGradBias)
-	t.Logf("SPSA Estimated Grad Bias (avg): %v", avgGradB)
+	t.Logf("解析的勾配 Weight: %v", trueGradWeight)
+	t.Logf("SPSA勾配（平均） Weight: %v", avgGradW)
+	t.Logf("解析的勾配 Bias: %v", trueGradBias)
+	t.Logf("SPSA勾配（平均） Bias: %v", avgGradB)
 
-	// 許容誤差 tol 内に収まっているかチェック
+	// 推定された勾配が解析的勾配と十分に近いか確認（許容誤差 tol）
 	tol := 1e-2
-	for k, v := range avgGradW {
-		if diff := v - trueGradWeight[k]; diff < -tol || diff > tol {
-			t.Fatalf("Weight gradient mismatch for %s: estimated %v, analytical %v", k, v, trueGradWeight[k])
+	for i, row := range avgGradW {
+		for j, v := range row {
+			diff := v - trueGradWeight[i][j]
+			if diff < -tol || diff > tol {
+				t.Fatalf("Weight 勾配不一致 (%d,%d): 推定値 %v, 解析値 %v", i, j, v, trueGradWeight[i][j])
+			}
 		}
 	}
-	for k, v := range avgGradB {
-		if diff := v - trueGradBias[k]; diff < -tol || diff > tol {
-			t.Fatalf("Bias gradient mismatch for %s: estimated %v, analytical %v", k, v, trueGradBias[k])
+	for i, v := range avgGradB {
+		diff := v - trueGradBias[i]
+		if diff < -tol || diff > tol {
+			t.Fatalf("Bias 勾配不一致 (%d): 推定値 %v, 解析値 %v", i, v, trueGradBias[i])
 		}
 	}
 }

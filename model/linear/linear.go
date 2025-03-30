@@ -105,6 +105,7 @@ func (sgd *SGD) Optimizer(model *Model, grad *GradBuffer) error {
 	return err
 }
 
+// https://github.com/oreilly-japan/deep-learning-from-scratch/blob/master/common/optimizer.py
 type Momentum struct {
 	LearningRate float64
 	MomentumRate float64

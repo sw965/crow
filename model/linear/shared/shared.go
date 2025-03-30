@@ -7,63 +7,35 @@ import (
 	"github.com/sw965/crow/tensor"
 	"github.com/sw965/crow/ml/1d"
 	"github.com/sw965/omw/fn"
-	"golang.org/x/exp/maps"
 	omwrand "github.com/sw965/omw/math/rand"
 	omwslices "github.com/sw965/omw/slices"
 	"github.com/sw965/omw/parallel"
 )
 
-type GradBuffer[Wk, Bk comparable] struct {
-	Weight map[Wk]float64
-	Bias   map[Bk]float64
+type GradBuffer struct {
+	Weight tensor.D2
+	Bias   tensor.D1
 }
 
-func (g *GradBuffer[Wk, Bk]) NewZerosLike() GradBuffer[Wk, Bk] {
-	zeroW := make(map[Wk]float64)
-	for k := range g.Weight {
-		zeroW[k] = 0.0
-	}
-	zeroB := make(map[Bk]float64)
-	for k := range g.Bias {
-		zeroB[k] = 0.0
-	}
-	return GradBuffer[Wk, Bk]{
-		Weight: zeroW,
-		Bias:   zeroB,
+func (g *GradBuffer) NewZerosLike() GradBuffer {
+	return GradBuffer{
+		Weight:tensor.NewD2ZerosLike(g.Weight),
+		Bias:tensor.NewD1ZerosLike(g.Bias),
 	}
 }
 
-func (g *GradBuffer[Wk, Bk]) MulScalar(s float64) {
-	for k, v := range g.Weight {
-		g.Weight[k] = v * s
+func (g *GradBuffer) Add(other *GradBuffer) error {
+	err := g.Weight.Add(other.Weight)
+	if err != nil {
+		return err
 	}
-	for k, v := range g.Bias {
-		g.Bias[k] = v * s
-	}
+	err = g.Bias.Add(other.Bias)
+	return err
 }
 
-func (g *GradBuffer[Wk, Bk]) DivScalar(s float64) {
-	for k, v := range g.Weight {
-		g.Weight[k] = v / s
-	}
-	for k, v := range g.Bias {
-		g.Bias[k] = v / s
-	}
-}
+type GradBuffers []GradBuffer
 
-func (g *GradBuffer[Wk, Bk]) Add(other *GradBuffer[Wk, Bk]) error {
-	for k, v := range other.Weight {
-		g.Weight[k] += v
-	}
-	for k, v := range other.Bias {
-		g.Bias[k] += v
-	}
-	return nil
-}
-
-type GradBuffers[Wk, Bk comparable] []GradBuffer[Wk, Bk]
-
-func (gs GradBuffers[Wk, Bk]) Total() GradBuffer[Wk, Bk] {
+func (gs GradBuffers) Total() GradBuffer {
 	total := gs[0].NewZerosLike()
 	for _, g := range gs {
 		total.Add(&g)
@@ -71,93 +43,137 @@ func (gs GradBuffers[Wk, Bk]) Total() GradBuffer[Wk, Bk] {
 	return total
 }
 
-type Parameter[Wk, Bk comparable] struct {
-	Weight map[Wk]float64
-	Bias   map[Bk]float64
+type Parameter struct {
+	Weight [][]*float64
+	Bias   []*float64
 }
 
-func (p *Parameter[Wk, Bk]) Clone() Parameter[Wk, Bk] {
-	return Parameter[Wk, Bk]{
-		Weight: maps.Clone(p.Weight),
-		Bias:   maps.Clone(p.Bias),
+func (p *Parameter) Clone() Parameter {
+	seenW := make(map[*float64]*float64)
+
+	newWeight := make([][]*float64, len(p.Weight))
+	for i, wi := range p.Weight {
+		newWi := make([]*float64, len(wi))
+		for j, origPtr := range wi {
+			if newPtr, ok := seenW[origPtr]; ok {
+				newWi[j] = newPtr
+			} else {
+				newV := new(float64)
+				*newV = *origPtr
+				seenW[origPtr] = newV
+				newWi[j] = newV
+			}
+		}
+		newWeight[i] = newWi
+	}
+
+	seenB := make(map[*float64]*float64)
+	newBias := make([]*float64, len(p.Bias))
+	for i, origPtr := range p.Bias {
+		if newPtr, ok := seenB[origPtr]; ok {
+			newBias[i] = newPtr
+		} else {
+			newV := new(float64)
+			*newV = *origPtr
+			seenB[origPtr] = newV
+			newBias[i] = newV
+		}
+	}
+
+	return Parameter{
+		Weight: newWeight,
+		Bias:   newBias,
 	}
 }
 
-func (p *Parameter[Wk, Bk]) AddGrad(grad *GradBuffer[Wk, Bk]) error {
-	for k, v := range grad.Weight {
-		p.Weight[k] += v
+func (p *Parameter) AddGrad(grad *GradBuffer) error {
+	w := p.Weight
+	b := p.Bias
+	gw := grad.Weight
+	gb := grad.Bias
+
+	/*
+		パラメーターはポインターなので、加算をした場合、指定したインデックス以外の
+		パラメーターにも影響するが、1つの変数に対して、
+		複数の微分得られた場合は、微分結果を合計すればいいので、整合性に問題はない。
+	*/
+
+	for i := range w {
+		for j := range w[i] {
+			*w[i][j] += gw[i][j]
+		}
 	}
-	for k, v := range grad.Bias {
-		p.Bias[k] += v
+
+	for i := range b {
+		*b[i] += gb[i]
 	}
 	return nil
 }
 
-func NewInitParameter[Wk, Bk comparable](wks []Wk, bks []Bk) Parameter[Wk, Bk] {
-	w := make(map[Wk]float64)
-	for _, k := range wks {
-		w[k] = 1.0
-	}
-	b := make(map[Bk]float64)
-	for _, k := range bks {
-		b[k] = 0.0
-	}
-	return Parameter[Wk, Bk]{Weight: w, Bias: b}
-}
+type Optimizer func(*Model, *GradBuffer) error
 
-type Optimizer[Wk, Bk comparable] func(*Model[Wk, Bk], *GradBuffer[Wk, Bk]) error
-
-type SGD[Wk, Bk comparable] struct {
+type SGD struct {
 	LearningRate float64
 }
 
-func (sgd *SGD[Wk, Bk]) Optimizer(model *Model[Wk, Bk], grad *GradBuffer[Wk, Bk]) error {
+func (sgd *SGD) Optimizer(model *Model, grad *GradBuffer) error {
 	lr := sgd.LearningRate
-	grad.MulScalar(-lr)
+	grad.Weight.MulScalar(-lr)
+	grad.Bias.MulScalar(-lr)
 	err := model.Parameter.AddGrad(grad)
 	return err
 }
 
-type Momentum[Wk, Bk comparable] struct {
+// https://github.com/oreilly-japan/deep-learning-from-scratch/blob/master/common/optimizer.py
+type Momentum struct {
 	LearningRate float64
 	MomentumRate float64
-	velocity     GradBuffer[Wk, Bk]
+	velocity     GradBuffer
 }
 
-func NewMomentum[Wk, Bk comparable](model *Model[Wk, Bk]) Momentum[Wk, Bk] {
-	v := GradBuffer[Wk, Bk]{
-		Weight: make(map[Wk]float64),
-		Bias:   make(map[Bk]float64),
+func NewMomentum(model *Model) Momentum {
+	w := model.Parameter.Weight
+	zeroW := make(tensor.D2, len(w))
+	for i := range w {
+		zeroW[i] = make(tensor.D1, len(w[i]))
+		for j := range w[i] {
+			zeroW[i][j] = 0.0
+		} 
 	}
-	// パラメーターと同じキーを初期化
-	for k := range model.Parameter.Weight {
-		v.Weight[k] = 0.0
+
+	b := model.Parameter.Bias
+	zeroB := make(tensor.D1, len(b))
+	for i := range b {
+		zeroB[i] = 0.0
 	}
-	for k := range model.Parameter.Bias {
-		v.Bias[k] = 0.0
-	}
-	return Momentum[Wk, Bk]{
+
+	return Momentum{
 		LearningRate: 0.01,
 		MomentumRate: 0.9,
-		velocity:     v,
+		velocity:     GradBuffer{Weight:zeroW, Bias:zeroB},
 	}
 }
 
-func (m *Momentum[Wk, Bk]) Optimizer(model *Model[Wk, Bk], grad *GradBuffer[Wk, Bk]) error {
+func (m *Momentum) Optimizer(model *Model, grad *GradBuffer) error {
 	lr := m.LearningRate
-	m.velocity.MulScalar(m.MomentumRate)
-	grad.MulScalar(-lr)
-	m.velocity.Add(grad)
-	err := model.Parameter.AddGrad(&m.velocity)
+
+	m.velocity.Weight.MulScalar(m.MomentumRate)
+	m.velocity.Bias.MulScalar(m.MomentumRate)
+
+	grad.Weight.MulScalar(-lr)
+	grad.Bias.MulScalar(-lr)
+
+	err := m.velocity.Add(grad)
+	if err != nil {
+		return err
+	}
+
+	err = model.Parameter.AddGrad(&m.velocity)
 	return err
 }
 
-type Input[Wk comparable] []map[Wk]float64
-type Inputs[Wk comparable] []Input[Wk]
-
-type Model[Wk, Bk comparable] struct {
-	Parameter Parameter[Wk, Bk]
-	BiasKeys []Bk
+type Model struct {
+	Parameter Parameter
 
 	OutputFunc       func(tensor.D1) tensor.D1
 	OutputDerivative func(tensor.D1) tensor.D1
@@ -166,55 +182,54 @@ type Model[Wk, Bk comparable] struct {
 	PredictionLossDerivative func(tensor.D1, tensor.D1) (tensor.D1, error)
 
 	// SPSAの教師なし学習の為の損失関数。
-	LossFunc func(*Model[Wk, Bk]) (float64, error)
+	LossFunc func(*Model) (float64, error)
 }
 
-func (m Model[Wk, Bk]) Clone() Model[Wk, Bk] {
+func (m Model) Clone() Model {
 	m.Parameter = m.Parameter.Clone()
 	return m
 }
 
-func (m *Model[Wk, Bk]) SetSigmoid() {
+func (m *Model) SetSigmoid() {
 	m.OutputFunc = ml1d.Sigmoid
 	m.OutputDerivative = ml1d.SigmoidGrad
 }
 
-func (m *Model[Wk, Bk]) SetSoftmaxForCrossEntropy() {
+func (m *Model) SetSoftmaxForCrossEntropy() {
 	m.OutputFunc = ml1d.Softmax
 	m.OutputDerivative = fn.Identity[tensor.D1]
 }
 
-func (m *Model[Wk, Bk]) SetSumSquaredError() {
+func (m *Model) SetSumSquaredError() {
 	m.PredictionLossFunc = ml1d.SumSquaredError
 	m.PredictionLossDerivative = ml1d.SumSquaredErrorDerivative
 }
 
-func (m *Model[Wk, Bk]) SetCrossEntropyError() {
+func (m *Model) SetCrossEntropyError() {
 	m.PredictionLossFunc = ml1d.CrossEntropyError
 	m.PredictionLossDerivative = ml1d.CrossEntropyErrorDerivative
 }
 
-func (m *Model[Wk, Bk]) LinearSum(x Input[Wk]) tensor.D1 {
+func (m *Model) LinearSum(x tensor.D2) tensor.D1 {
 	w := m.Parameter.Weight
 	b := m.Parameter.Bias
 	u := make(tensor.D1, len(x))
-	for i, sample := range x {
+	for i, xi := range x {
 		sum := 0.0
-		bk := m.BiasKeys[i]
-		for k, v := range sample {
-			sum += w[k] * v
+		for j, xij := range xi {
+			sum += xij * *w[i][j]
 		}
-		u[i] = sum + b[bk]
+		u[i] = sum + *b[i]
 	}
 	return u
 } 
 
-func (m *Model[Wk, Bk]) Predict(x Input[Wk]) tensor.D1 {
+func (m *Model) Predict(x tensor.D2) tensor.D1 {
 	u := m.LinearSum(x)
 	return m.OutputFunc(u)
 }
 
-func (m *Model[Wk, Bk]) MeanLoss(xs Inputs[Wk], ts tensor.D2) (float64, error) {
+func (m *Model) MeanLoss(xs tensor.D3, ts tensor.D2) (float64, error) {
 	n := len(xs)
 	if n != len(ts) {
 		return 0.0, fmt.Errorf("バッチサイズが一致しません。")
@@ -233,8 +248,7 @@ func (m *Model[Wk, Bk]) MeanLoss(xs Inputs[Wk], ts tensor.D2) (float64, error) {
 	return mean, nil
 }
 
-
-func (m *Model[Wk, Bk]) Accuracy(xs Inputs[Wk], ts tensor.D2) (float64, error) {
+func (m *Model) Accuracy(xs tensor.D3, ts tensor.D2) (float64, error) {
 	n := len(xs)
 	if n != len(ts) {
 		return 0.0, fmt.Errorf("バッチサイズが一致しません。")
@@ -250,62 +264,47 @@ func (m *Model[Wk, Bk]) Accuracy(xs Inputs[Wk], ts tensor.D2) (float64, error) {
 	return float64(correct) / float64(n), nil
 }
 
-func (m *Model[Wk, Bk]) BackPropagate(x Input[Wk], t tensor.D1) (GradBuffer[Wk, Bk], error) {
+func (m *Model) BackPropagate(x tensor.D2, t tensor.D1) (GradBuffer, error) {
 	u := m.LinearSum(x)
 	y := m.OutputFunc(u)
 
 	dLdy, err := m.PredictionLossDerivative(y, t)
 	if err != nil {
-		return GradBuffer[Wk, Bk]{}, err
+		return GradBuffer{}, err
 	}
 
 	dydu := m.OutputDerivative(y)
 
 	dLdu, err := tensor.D1Mul(dLdy, dydu)
 	if err != nil {
-		return GradBuffer[Wk, Bk]{}, err
+		return GradBuffer{}, err
 	}
 
 	//∂L/∂w 
-	dw := map[Wk]float64{}
-	for i, g := range dLdu {
-		for k, v := range x[i] {
-			/*
-				wに対する微分は入力値(wxをwについて微分)
-				連鎖律に基づき、gを掛ける。
-				同じ変数に対して、複数の微分結果が得られた場合、合計すればいいので += で加算する。
-			*/
-			dw[k] += g * v
-		}
+	dw, err := tensor.D2MulD1Col(x, dLdu)
+	if err != nil {
+		return GradBuffer{}, err
 	}
 
 	//∂L/∂b
-	db := map[Bk]float64{}
-	for i, bk := range m.BiasKeys {
-		/*
-			バイアスに対する微分は1(... + b において、bについて微分すると、... の部分は定数と見なすので0となる)
-			よって、連鎖律に基づき、1(bの微分) * dLdu[i]となり、そのままdLdu[i]が微分結果になる。
-		*/
-		db[bk] = dLdu[i]
-	}
-
-	return GradBuffer[Wk, Bk]{
+	db := dLdu
+	return GradBuffer{
 		Weight:dw,
 		Bias:db,
 	}, nil
 }
 
-func (m *Model[Wk, Bk]) ComputeGrad(xs Inputs[Wk], ts tensor.D2, p int) (GradBuffer[Wk, Bk], error) {
+func (m *Model) ComputeGrad(xs tensor.D3, ts tensor.D2, p int) (GradBuffer, error) {
 	n := len(xs)
 	if n != len(ts) {
-		return GradBuffer[Wk, Bk]{}, fmt.Errorf("バッチサイズが一致しません。")
+		return GradBuffer{}, fmt.Errorf("バッチサイズが一致しません。")
 	}
 	// 最初のサンプルの勾配を計算
 	firstGrad, err := m.BackPropagate(xs[0], ts[0])
 	if err != nil {
-		return GradBuffer[Wk, Bk]{}, err
+		return GradBuffer{}, err
 	}
-	gradBuffers := make(GradBuffers[Wk, Bk], p)
+	gradBuffers := make(GradBuffers, p)
 	for i := 0; i < p; i++ {
 		gradBuffers[i] = firstGrad.NewZerosLike()
 	}
@@ -331,100 +330,110 @@ func (m *Model[Wk, Bk]) ComputeGrad(xs Inputs[Wk], ts tensor.D2, p int) (GradBuf
 
 	for i := 0; i < p; i++ {
 		if err := <-errCh; err != nil {
-			return GradBuffer[Wk, Bk]{}, err
+			return GradBuffer{}, err
 		}
 	}
 
 	total := gradBuffers.Total()
 	total.Add(&firstGrad)
-	total.DivScalar(float64(n))
+	nf := float64(n)
+	total.Weight.DivScalar(nf)
+	total.Bias.DivScalar(nf)
 	return total, nil
 }
 
-func (m *Model[Wk, Bk]) EstimateGradBySPSA(c float64, r *rand.Rand) (GradBuffer[Wk, Bk], error) {
-	deltaW := make(map[Wk]float64)
-	for k := range m.Parameter.Weight {
-		var e float64
-		if omwrand.Bool(r) {
-			e = 1.0
-		} else {
-			e = -1.0
+func (m *Model) EstimateGradBySPSA(c float64, r *rand.Rand) (GradBuffer, error) {
+	deltaW := make(tensor.D2, len(m.Parameter.Weight))
+	for i, wi := range m.Parameter.Weight {
+		deltaW[i] = make(tensor.D1, len(wi))
+		for j := range wi {
+			if omwrand.Bool(r) {
+				deltaW[i][j] = 1.0
+			} else {
+				deltaW[i][j] = -1.0
+			}
 		}
-		deltaW[k] = e
 	}
 
-	perturbationW := make(map[Wk]float64)
-	for k, v := range deltaW {
-		perturbationW[k] = c * v
-	}
+	perturbationW := deltaW.Clone()
+	perturbationW.MulScalar(c)
 
-	deltaB := make(map[Bk]float64)
-	for k := range m.Parameter.Bias {
-		var e float64
+	deltaB := make(tensor.D1, len(m.Parameter.Bias))
+	for i := range m.Parameter.Bias {
 		if omwrand.Bool(r) {
-			e = 1.0
+			deltaB[i] = 1.0
 		} else {
-			e = -1.0
+			deltaB[i] = -1.0
 		}
-		deltaB[k] = e
+	}
+	perturbationB := deltaB.Clone()
+	perturbationB.MulScalar(c)
+
+	grad := GradBuffer{
+		Weight: make(tensor.D2, len(m.Parameter.Weight)),
+		Bias:   make(tensor.D1, len(m.Parameter.Bias)),
 	}
 
-	perturbationB := make(map[Bk]float64)
-	for k, v := range deltaB {
-		perturbationB[k] = c * v
-	}
-
-	grad := GradBuffer[Wk, Bk]{
-		Weight: make(map[Wk]float64),
-		Bias:   make(map[Bk]float64),
+	for i := range grad.Weight {
+		grad.Weight[i] = make(tensor.D1, len(m.Parameter.Weight[i]))
 	}
 
 	plusModel := m.Clone()
-	for k, v := range perturbationW {
-		plusModel.Parameter.Weight[k] += v
+
+	for i := range plusModel.Parameter.Weight {
+		for j := range plusModel.Parameter.Weight[i] {
+			*plusModel.Parameter.Weight[i][j] += perturbationW[i][j]
+		}
 	}
-	for k, v := range perturbationB {
-		plusModel.Parameter.Bias[k] += v
+
+	for i := range plusModel.Parameter.Bias {
+		*plusModel.Parameter.Bias[i] += perturbationB[i]
 	}
 
 	minusModel := m.Clone()
-	for k, v := range perturbationW {
-		minusModel.Parameter.Weight[k] -= v
+
+	for i := range minusModel.Parameter.Weight {
+		for j := range minusModel.Parameter.Weight[i] {
+			*minusModel.Parameter.Weight[i][j] -= perturbationW[i][j]
+		}
 	}
-	for k, v := range perturbationB {
-		minusModel.Parameter.Bias[k] -= v
+
+	for i := range minusModel.Parameter.Bias {
+		*minusModel.Parameter.Bias[i] -= perturbationB[i]
 	}
 
 	plusLoss, err := m.LossFunc(&plusModel)
 	if err != nil {
-		return GradBuffer[Wk, Bk]{}, err
+		return GradBuffer{}, err
 	}
 
 	minusLoss, err := m.LossFunc(&minusModel)
 	if err != nil {
-		return GradBuffer[Wk, Bk]{}, err
+		return GradBuffer{}, err
 	}
 
-	for k := range deltaW {
-		grad.Weight[k] = crowmath.CentralDifference(plusLoss, minusLoss, perturbationW[k])
+	for i := range grad.Weight {
+		for j := range grad.Weight[i] {
+			grad.Weight[i][j] = crowmath.CentralDifference(plusLoss, minusLoss, perturbationW[i][j])
+		}
 	}
 
-	for k := range deltaB {
-		grad.Bias[k] = crowmath.CentralDifference(plusLoss, minusLoss, perturbationB[k])
+	for i := range grad.Bias {
+		grad.Bias[i] = crowmath.CentralDifference(plusLoss, minusLoss, perturbationB[i])
 	}
 	return grad, nil
 }
 
-type MiniBatchTeacher[Wk, Bk comparable] struct {
-	Inputs        Inputs[Wk]
+type MiniBatchTeacher struct {
+	Inputs        tensor.D3
 	Labels        tensor.D2
 	MiniBatchSize int
 	Epoch         int
-	Optimizer     Optimizer[Wk, Bk]
+	Optimizer     Optimizer
 	Parallel      int
 }
 
-func (mbt *MiniBatchTeacher[Wk, Bk]) Teach(model *Model[Wk, Bk], r *rand.Rand) error {
+func (mbt *MiniBatchTeacher) Teach(model *Model, r *rand.Rand) error {
 	xs := mbt.Inputs
 	ts := mbt.Labels
 	size := mbt.MiniBatchSize
