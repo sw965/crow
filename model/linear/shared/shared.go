@@ -172,6 +172,14 @@ func (m *Momentum) Optimizer(model *Model, grad *GradBuffer) error {
 	return err
 }
 
+type WeightCoordinate struct {
+	Row int
+	Column int
+}
+
+type Input map[WeightCoordinate]float64
+type Inputs []Input
+
 type Model struct {
 	Parameter Parameter
 
@@ -210,34 +218,34 @@ func (m *Model) SetCrossEntropyError() {
 	m.PredictionLossDerivative = ml1d.CrossEntropyErrorDerivative
 }
 
-func (m *Model) LinearSum(x tensor.D2) tensor.D1 {
+func (m *Model) LinearSum(input Input) tensor.D1 {
 	w := m.Parameter.Weight
 	b := m.Parameter.Bias
-	u := make(tensor.D1, len(x))
-	for i, xi := range x {
-		sum := 0.0
-		for j, xij := range xi {
-			sum += xij * *w[i][j]
-		}
-		u[i] = sum + *b[i]
+	u := make(tensor.D1, len(w))
+	for k, v := range input {
+		r := k.Row
+		u[r] = *w[r][k.Column] * v
+	}
+	for i, v := range b {
+		u[i] = *v
 	}
 	return u
 } 
 
-func (m *Model) Predict(x tensor.D2) tensor.D1 {
-	u := m.LinearSum(x)
+func (m *Model) Predict(input Input) tensor.D1 {
+	u := m.LinearSum(input)
 	return m.OutputFunc(u)
 }
 
-func (m *Model) MeanLoss(xs tensor.D3, ts tensor.D2) (float64, error) {
-	n := len(xs)
+func (m *Model) MeanLoss(inputs Inputs, ts tensor.D2) (float64, error) {
+	n := len(inputs)
 	if n != len(ts) {
 		return 0.0, fmt.Errorf("バッチサイズが一致しません。")
 	}
 
 	sum := 0.0
-	for i, x := range xs {
-		y := m.Predict(x)
+	for i, input := range inputs {
+		y := m.Predict(input)
 		loss, err := m.PredictionLossFunc(y, ts[i])
 		if err != nil {
 			return 0.0, err
@@ -248,15 +256,15 @@ func (m *Model) MeanLoss(xs tensor.D3, ts tensor.D2) (float64, error) {
 	return mean, nil
 }
 
-func (m *Model) Accuracy(xs tensor.D3, ts tensor.D2) (float64, error) {
-	n := len(xs)
+func (m *Model) Accuracy(inputs Inputs, ts tensor.D2) (float64, error) {
+	n := len(inputs)
 	if n != len(ts) {
 		return 0.0, fmt.Errorf("バッチサイズが一致しません。")
 	}
 
 	correct := 0
-	for i, x := range xs {
-		y := m.Predict(x)
+	for i, input := range inputs {
+		y := m.Predict(input)
 		if omwslices.MaxIndex(y) == omwslices.MaxIndex(ts[i]) {
 			correct += 1
 		}
@@ -264,8 +272,8 @@ func (m *Model) Accuracy(xs tensor.D3, ts tensor.D2) (float64, error) {
 	return float64(correct) / float64(n), nil
 }
 
-func (m *Model) BackPropagate(x tensor.D2, t tensor.D1) (GradBuffer, error) {
-	u := m.LinearSum(x)
+func (m *Model) BackPropagate(input Input, t tensor.D1) (GradBuffer, error) {
+	u := m.LinearSum(input)
 	y := m.OutputFunc(u)
 
 	dLdy, err := m.PredictionLossDerivative(y, t)
@@ -280,10 +288,18 @@ func (m *Model) BackPropagate(x tensor.D2, t tensor.D1) (GradBuffer, error) {
 		return GradBuffer{}, err
 	}
 
+	w := m.Parameter.Weight
+
 	//∂L/∂w 
-	dw, err := tensor.D2MulD1Col(x, dLdu)
-	if err != nil {
-		return GradBuffer{}, err
+	dw := make(tensor.D2, len(w))
+	for i := range dw {
+		dw[i] = make(tensor.D1, len(w[i]))
+	}
+
+	for k, v := range input {
+		r := k.Row
+		//x*wのwについての微分はx。連鎖律に基づいて、dLdu[r]を掛ける。
+		dw[r][k.Column] = v * dLdu[r]
 	}
 
 	//∂L/∂b
@@ -294,13 +310,13 @@ func (m *Model) BackPropagate(x tensor.D2, t tensor.D1) (GradBuffer, error) {
 	}, nil
 }
 
-func (m *Model) ComputeGrad(xs tensor.D3, ts tensor.D2, p int) (GradBuffer, error) {
-	n := len(xs)
+func (m *Model) ComputeGrad(inputs Inputs, ts tensor.D2, p int) (GradBuffer, error) {
+	n := len(inputs)
 	if n != len(ts) {
 		return GradBuffer{}, fmt.Errorf("バッチサイズが一致しません。")
 	}
-	// 最初のサンプルの勾配を計算
-	firstGrad, err := m.BackPropagate(xs[0], ts[0])
+
+	firstGrad, err := m.BackPropagate(inputs[0], ts[0])
 	if err != nil {
 		return GradBuffer{}, err
 	}
@@ -312,9 +328,9 @@ func (m *Model) ComputeGrad(xs tensor.D3, ts tensor.D2, p int) (GradBuffer, erro
 
 	worker := func(idxs []int, goroutineI int) {
 		for _, idx := range idxs {
-			x := xs[idx+1]
+			input := inputs[idx+1]
 			t := ts[idx+1]
-			grad, err := m.BackPropagate(x, t)
+			grad, err := m.BackPropagate(input, t)
 			if err != nil {
 				errCh <- err
 				return
@@ -366,6 +382,7 @@ func (m *Model) EstimateGradBySPSA(c float64, r *rand.Rand) (GradBuffer, error) 
 			deltaB[i] = -1.0
 		}
 	}
+
 	perturbationB := deltaB.Clone()
 	perturbationB.MulScalar(c)
 
@@ -425,7 +442,7 @@ func (m *Model) EstimateGradBySPSA(c float64, r *rand.Rand) (GradBuffer, error) 
 }
 
 type MiniBatchTeacher struct {
-	Inputs        tensor.D3
+	Inputs        Inputs
 	Labels        tensor.D2
 	MiniBatchSize int
 	Epoch         int
@@ -434,13 +451,13 @@ type MiniBatchTeacher struct {
 }
 
 func (mbt *MiniBatchTeacher) Teach(model *Model, r *rand.Rand) error {
-	xs := mbt.Inputs
+	inputs := mbt.Inputs
 	ts := mbt.Labels
 	size := mbt.MiniBatchSize
 	epoch := mbt.Epoch
 	op := mbt.Optimizer
 	p := mbt.Parallel
-	n := len(xs)
+	n := len(inputs)
 
 	if n < size {
 		return fmt.Errorf("データ数 < バッチサイズである為、モデルの訓練を出来ません。")
@@ -452,10 +469,10 @@ func (mbt *MiniBatchTeacher) Teach(model *Model, r *rand.Rand) error {
 	iter := (n / size) * epoch
 	for i := 0; i < iter; i++ {
 		idxs := omwrand.Ints(size, 0, n, r)
-		miniXs := omwslices.ElementsByIndices(xs, idxs...)
+		miniInputs := omwslices.ElementsByIndices(inputs, idxs...)
 		miniTs := omwslices.ElementsByIndices(ts, idxs...)
 
-		grad, err := model.ComputeGrad(miniXs, miniTs, p)
+		grad, err := model.ComputeGrad(miniInputs, miniTs, p)
 		if err != nil {
 			return err
 		}
