@@ -3,6 +3,7 @@ package linear
 import (
 	"fmt"
 	"math/rand"
+	"runtime"
 	crowmath "github.com/sw965/crow/math"
 	"github.com/sw965/crow/tensor"
 	"github.com/sw965/crow/ml/1d"
@@ -65,6 +66,7 @@ func (p *Parameter) Clone() Parameter {
 	for i, wi := range p.Weight {
 		newWi := make([]*float64, len(wi))
 		for j, origPtr := range wi {
+			//共有関係が崩れないように、origPtrに対応する新しいポインターを既に生成している場合、そのアドレスを割り当てる。
 			if newPtr, ok := seenW[origPtr]; ok {
 				newWi[j] = newPtr
 			} else {
@@ -80,6 +82,7 @@ func (p *Parameter) Clone() Parameter {
 	seenB := make(map[*float64]*float64)
 	newBias := make([]*float64, len(p.Bias))
 	for i, origPtr := range p.Bias {
+		//共有関係が崩れないように
 		if newPtr, ok := seenB[origPtr]; ok {
 			newBias[i] = newPtr
 		} else {
@@ -103,7 +106,7 @@ func (p *Parameter) AddGrad(grad *GradBuffer) error {
 	gb := grad.Bias
 
 	/*
-		パラメーターはポインターなので、加算をした場合、指定したインデックス以外の
+		パラメーターはポインターなので、加算をた場合、指定したインデックス以外の
 		パラメーターにも影響するが、1つの変数に対して、
 		複数の微分得られた場合は、微分結果を合計すればいいので、整合性に問題はない。
 	*/
@@ -118,29 +121,6 @@ func (p *Parameter) AddGrad(grad *GradBuffer) error {
 		*b[i] += gb[i]
 	}
 	return nil
-}
-
-type Parameters []Parameter
-
-func (ps Parameters) Average() Parameter {
-	avg := Parameter{}
-	avg.Weight = ps[0].Weight
-	avg.Bias = ps[0].Bias
-
-	for _, p := range ps[1:] {
-		w := p.Weight
-		for i := range w {
-			for j := range w[i] {
-				*avg.Weight[i][j] += *w[i][j]
-			}
-		}
-		
-		b := p.Bias
-		for i := range b {
-			*avg.Bias[i] += *b[i]
-		}
-	}
-	return avg
 }
 
 type Optimizer func(*Model, *GradBuffer) error
@@ -257,7 +237,7 @@ func (m *Model) LinearSum(input Input) tensor.D1 {
 	u := make(tensor.D1, len(w))
 	for k, v := range input {
 		r := k.Row
-		u[r] = *w[r][k.Column] * v
+		u[r] += *w[r][k.Column] * v
 	}
 	for i, v := range b {
 		u[i] += *v
@@ -481,6 +461,18 @@ type MiniBatchTeacher struct {
 	Epoch         int
 	Optimizer     Optimizer
 	Parallel      int
+}
+
+func NewDefaultMiniBatchTeacher(model *Model, inputs Inputs, ts tensor.D2) MiniBatchTeacher {
+	momentum := NewMomentum(model)
+	return MiniBatchTeacher{
+		Inputs:inputs,
+		Labels:ts,
+		MiniBatchSize:16,
+		Epoch:1,
+		Optimizer:momentum.Optimizer,
+		Parallel:runtime.NumCPU(),
+	}
 }
 
 func (mbt *MiniBatchTeacher) Teach(model *Model, r *rand.Rand) error {
