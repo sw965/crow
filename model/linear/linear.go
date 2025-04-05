@@ -50,9 +50,102 @@ type Parameter struct {
 	Bias   []*float64
 }
 
-func LoadParameterJSON(path string) (Parameter, error) {
-	param, err := omwjson.Load[Parameter](path)
-	return param, err
+func canonicalWeightCoordinate(coord WeightCoordinate, wf func(WeightCoordinate) WeightCoordinate) WeightCoordinate {
+	orbit := []WeightCoordinate{coord}
+	seen := map[WeightCoordinate]bool{coord: true}
+	current := wf(coord)
+	for !seen[current] {
+		orbit = append(orbit, current)
+		seen[current] = true
+		current = wf(current)
+	}
+	canonical := orbit[0]
+	for _, c := range orbit {
+		if c.Row < canonical.Row || (c.Row == canonical.Row && c.Column < canonical.Column) {
+			canonical = c
+		}
+	}
+	return canonical
+}
+
+func canonicalBiasIndex(i int, bf func(int) int) int {
+	orbit := []int{i}
+	seen := map[int]bool{i: true}
+	current := bf(i)
+	for !seen[current] {
+		orbit = append(orbit, current)
+		seen[current] = true
+		current = bf(current)
+	}
+	canonical := orbit[0]
+	for _, idx := range orbit {
+		if idx < canonical {
+			canonical = idx
+		}
+	}
+	return canonical
+}
+
+func NewParameter(sizes []int, wf func(WeightCoordinate) WeightCoordinate, bf func(int) int) Parameter {
+	seenW := make(map[WeightCoordinate]*float64)
+	w := make([][]*float64, len(sizes))
+	for row, size := range sizes {
+		w[row] = make([]*float64, size)
+		for col := 0; col < size; col++ {
+			coord := WeightCoordinate{Row: row, Column: col}
+			shareCoord := canonicalWeightCoordinate(coord, wf)
+			if ptr, ok := seenW[shareCoord]; ok {
+				w[row][col] = ptr
+			} else {
+				newPtr := 1.0
+				seenW[shareCoord] = &newPtr
+				w[row][col] = &newPtr
+			}
+		}
+	}
+
+	seenB := make(map[int]*float64)
+	b := make([]*float64, len(sizes))
+	for row := range sizes {
+		shareIdx := canonicalBiasIndex(row, bf)
+		if ptr, ok := seenB[shareIdx]; ok {
+			b[row] = ptr
+		} else {
+			newPtr := 0.0
+			seenB[shareIdx] = &newPtr
+			b[row] = &newPtr
+		}
+	}
+
+	return Parameter{Weight:w, Bias:b}
+}
+
+func LoadParameterJSON(path string, wf func(WeightCoordinate) WeightCoordinate, bf func(int) int) (Parameter, error) {
+	loadedParam, err := omwjson.Load[Parameter](path)
+	if err != nil {
+		return Parameter{}, err
+	}
+
+	sizes := make([]int, len(loadedParam.Bias))
+	for i, row := range loadedParam.Weight {
+		sizes[i] = len(row)
+	}
+
+	/*
+		JSONで読み込んだパラメーターは、ポインターの関係が崩れているので、
+		(共有パラメーターの関係が崩れている)
+		適切なポインターの関係を保持したパラメーターを生成し、値を代入する。
+	*/
+	param := NewParameter(sizes, wf, bf)
+	for i := range param.Weight {
+		for j := range param.Weight[i] {
+			*param.Weight[i][j] = *loadedParam.Weight[i][j]
+		}
+	}
+	for i := range param.Bias {
+		*param.Bias[i] = *loadedParam.Bias[i]
+	}
+	return param, nil
 }
 
 func (p *Parameter) WriteJSON(path string) error {
