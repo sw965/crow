@@ -50,102 +50,29 @@ type Parameter struct {
 	Bias   []*float64
 }
 
-func canonicalWeightCoordinate(coord WeightCoordinate, wf func(WeightCoordinate) WeightCoordinate) WeightCoordinate {
-	orbit := []WeightCoordinate{coord}
-	seen := map[WeightCoordinate]bool{coord: true}
-	current := wf(coord)
-	for !seen[current] {
-		orbit = append(orbit, current)
-		seen[current] = true
-		current = wf(current)
-	}
-	canonical := orbit[0]
-	for _, c := range orbit {
-		if c.Row < canonical.Row || (c.Row == canonical.Row && c.Column < canonical.Column) {
-			canonical = c
-		}
-	}
-	return canonical
-}
-
-func canonicalBiasIndex(i int, bf func(int) int) int {
-	orbit := []int{i}
-	seen := map[int]bool{i: true}
-	current := bf(i)
-	for !seen[current] {
-		orbit = append(orbit, current)
-		seen[current] = true
-		current = bf(current)
-	}
-	canonical := orbit[0]
-	for _, idx := range orbit {
-		if idx < canonical {
-			canonical = idx
-		}
-	}
-	return canonical
-}
-
-func NewParameter(sizes []int, wf func(WeightCoordinate) WeightCoordinate, bf func(int) int) Parameter {
-	seenW := make(map[WeightCoordinate]*float64)
-	w := make([][]*float64, len(sizes))
-	for row, size := range sizes {
-		w[row] = make([]*float64, size)
-		for col := 0; col < size; col++ {
-			coord := WeightCoordinate{Row: row, Column: col}
-			shareCoord := canonicalWeightCoordinate(coord, wf)
-			if ptr, ok := seenW[shareCoord]; ok {
-				w[row][col] = ptr
-			} else {
-				newPtr := 1.0
-				seenW[shareCoord] = &newPtr
-				w[row][col] = &newPtr
-			}
-		}
-	}
-
-	seenB := make(map[int]*float64)
-	b := make([]*float64, len(sizes))
-	for row := range sizes {
-		shareIdx := canonicalBiasIndex(row, bf)
-		if ptr, ok := seenB[shareIdx]; ok {
-			b[row] = ptr
-		} else {
-			newPtr := 0.0
-			seenB[shareIdx] = &newPtr
-			b[row] = &newPtr
-		}
-	}
-
-	return Parameter{Weight:w, Bias:b}
-}
-
-func LoadParameterJSON(path string, wf func(WeightCoordinate) WeightCoordinate, bf func(int) int) (Parameter, error) {
+func LoadParameterJSON(path string, param *Parameter) error {
 	loadedParam, err := omwjson.Load[Parameter](path)
 	if err != nil {
-		return Parameter{}, err
-	}
-
-	sizes := make([]int, len(loadedParam.Bias))
-	for i, row := range loadedParam.Weight {
-		sizes[i] = len(row)
+		return err
 	}
 
 	/*
-		JSONで読み込んだパラメーターは、ポインターの関係が崩れているので、
-		(共有パラメーターの関係が崩れている)
-		適切なポインターの関係を保持したパラメーターを生成し、値を代入する。
+		読み込んだパラメーターは、ポインター(共有関係)が崩れている為、
+		引数に正しいポインターを保持したパラメーターを渡し、そのパラメーターに値を書き込む形にする事で、
+		正しい共有関係を保つようにする。
 	*/
-	param := NewParameter(sizes, wf, bf)
-	for i := range param.Weight {
-		for j := range param.Weight[i] {
-			*param.Weight[i][j] = *loadedParam.Weight[i][j]
+	w := loadedParam.Weight
+	for i, wi := range w {
+		for j, wij := range wi {
+			*param.Weight[i][j] = *wij
 		}
 	}
-	for i := range param.Bias {
-		*param.Bias[i] = *loadedParam.Bias[i]
+
+	b := loadedParam.Bias
+	for i, bi := range b {
+		*param.Bias[i] = *bi
 	}
-	return param, nil
+	return nil
 }
 
 func (p *Parameter) WriteJSON(path string) error {
@@ -199,7 +126,7 @@ func (p *Parameter) AddGrad(grad *GradBuffer) error {
 	gb := grad.Bias
 
 	/*
-		パラメーターはポインターなので、加算をた場合、指定したインデックス以外の
+		パラメーターはポインターなので、加算した場合、指定したインデックス以外の
 		パラメーターにも影響するが、1つの変数に対して、
 		複数の微分得られた場合は、微分結果を合計すればいいので、整合性に問題はない。
 	*/
@@ -214,6 +141,37 @@ func (p *Parameter) AddGrad(grad *GradBuffer) error {
 		*b[i] += gb[i]
 	}
 	return nil
+}
+
+type Parameters []Parameter
+
+func (ps Parameters) ToAverage() Parameter {
+	n := len(ps)
+	total := ps[0].Clone()
+	for _, p := range ps[1:] {
+		for i, wi := range p.Weight {
+			for j, wij := range wi {
+				*total.Weight[i][j] += *wij
+			}
+		}
+
+		for i, bi := range p.Bias {
+			*total.Bias[i] += *bi
+		}
+	}
+
+	//平均化する。
+	nf := float64(n)
+	for i, wi := range total.Weight {
+		for j, wij := range wi {
+			*total.Weight[i][j] = (*wij / nf)
+		}
+	}
+
+	for i, bi := range total.Bias {
+		*total.Bias[i] = (*bi / nf)
+	}
+	return total
 }
 
 type Optimizer func(*Model, *GradBuffer) error
