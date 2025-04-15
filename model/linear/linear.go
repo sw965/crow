@@ -2,6 +2,7 @@ package linear
 
 import (
 	"fmt"
+	"math"
 	"math/rand"
 	"runtime"
 	crowmath "github.com/sw965/crow/math"
@@ -503,6 +504,26 @@ func (m *Model) EstimateGradBySPSA(c float64, r *rand.Rand) (GradBuffer, error) 
 		grad.Bias[i] = crowmath.CentralDifference(plusLoss, minusLoss, perturbationB[i])
 	}
 	return grad, nil
+}
+
+func (m *Model) SoftmaxActionSelection(input Input, temperature float64, exclude func(int) bool, r *rand.Rand) int {
+	y := m.Predict(input)
+	for i := range y {
+		if exclude(i) {
+			y[i] = 0.0
+		}
+	}
+
+	if temperature == 0.0 {
+		idxs := omwslices.MaxIndices(y)
+		return omwrand.Choice(idxs, r)
+	}
+
+	ws := make([]float64, len(y))
+	for i, yi := range y {
+		ws[i] = math.Pow(yi, 1.0/temperature)
+	}
+	return omwrand.IntByWeight(ws, r)
 }
 
 type MiniBatchTeacher struct {
