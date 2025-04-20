@@ -50,9 +50,9 @@ func (ps Placements) Validate() error {
 }
 
 type PlacementsJudger[S any] func(*S) (Placements, error)
-type ResultScores []float64
+type ResultScores []float32
 
-func (ss ResultScores) DivScalar(a float64) {
+func (ss ResultScores) DivScalar(a float32) {
 	for i := range ss {
 		ss[i] /= a
 	}
@@ -93,9 +93,9 @@ func (l *Logic[S, Ass, As, A]) SetStandardResultScoresEvaluator() {
         }
 
         for i, rank := range placements {
-            score := 1.0 - ((float64(rank) - 1.0) / (float64(n) - 1.0))
+            score := 1.0 - ((float32(rank) - 1.0) / (float32(n) - 1.0))
             // 同順位の人数で割る
-            scores[i] = score / float64(counts[rank])
+            scores[i] = score / float32(counts[rank])
         }
         return scores, nil
     }
@@ -158,7 +158,7 @@ func (l *Logic[S, Ass, As, A]) ComparePlayerStrength(state S, players Players[S,
             avgs[k] += v
         }
     }
-	avgs.DivScalar(float64(gameNum))
+	avgs.DivScalar(float32(gameNum))
     return avgs, nil
 }
 

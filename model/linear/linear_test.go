@@ -9,19 +9,19 @@ import (
 
 func TestSoftmaxActionSelection(t *testing.T) {
 	wn := 5
-	w := make([][]*float64, wn)
+	w := make([][]*float32, wn)
 	win := 1
 	for i := range w {
-		w[i] = make([]*float64, win)
+		w[i] = make([]*float32, win)
 		for j := range w[i] {
-			w[i][j] = new(float64)
+			w[i][j] = new(float32)
 			*w[i][j] = 1.0
 		}
 	}
 
-	b := make([]*float64, wn)
+	b := make([]*float32, wn)
 	for i := range b {
-		b[i] = new(float64)
+		b[i] = new(float32)
 		*b[i] = 0.0
 	}
 

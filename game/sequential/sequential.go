@@ -72,9 +72,9 @@ func (ps PlacementByAgent[G]) Validate() error {
 }
 
 type PlacementsJudger[S any, G comparable] func(*S) (PlacementByAgent[G], error)
-type ResultScoreByAgent[G comparable] map[G]float64
+type ResultScoreByAgent[G comparable] map[G]float32
 
-func (r ResultScoreByAgent[G]) DivScalar(a float64) {
+func (r ResultScoreByAgent[G]) DivScalar(a float32) {
 	for k := range r {
 		r[k] /= a
 	}
@@ -122,9 +122,9 @@ func (l *Logic[S, As, A, G]) SetStandardResultScoresEvaluator() {
         }
 
 		for agent, rank := range placements {
-			score := 1.0 - ((float64(rank) - 1.0) / (float64(n) - 1.0))
+			score := 1.0 - ((float32(rank) - 1.0) / (float32(n) - 1.0))
 			// 同順の人数で割る
-			scores[agent] = score / float64(counts[rank])
+			scores[agent] = score / float32(counts[rank])
 		}
 		return scores, nil
 	}
@@ -210,7 +210,7 @@ func (l *Logic[S, As, A, G]) ComparePlayerStrength(state S, players PlayerByAgen
 			avgs[k] += v
 		}
 	}
-	avgs.DivScalar(float64(n))
+	avgs.DivScalar(float32(n))
 	return avgs, nil
 }
 
@@ -247,7 +247,7 @@ func (l *Logic[S, As, A, G]) ComparePlayerStrengthParallel(state S, players Play
 		}
 	}
 
-	avgs.DivScalar(float64(n))
+	avgs.DivScalar(float32(n))
 	return avgs, nil
 }
 

@@ -10,7 +10,7 @@ import (
 
 // https://www.terry-u16.net/entry/decoupled-uct
 
-type LeafNodeEvals []float64
+type LeafNodeEvals []float32
 type LeafNodeEvaluator[S any] func(*S) (LeafNodeEvals, error)
 
 type Node[S any, Ass ~[]As, As ~[]A, A comparable] struct {
@@ -42,13 +42,13 @@ func (ss selectionInfoSlice[S, Ass, As, A]) backward(evals LeafNodeEvals) {
 		node := s.node
 		jointAction := s.jointAction
 		for playerI, action := range jointAction {
-			node.UCBManagers[playerI][action].TotalValue += float64(evals[playerI])
+			node.UCBManagers[playerI][action].TotalValue += float32(evals[playerI])
 			node.UCBManagers[playerI][action].Trial += 1
 		}
 	}
 }
 
-type Policy[A comparable] map[A]float64
+type Policy[A comparable] map[A]float32
 type Policies[A comparable] []Policy[A]
 type PoliciesProvider[S any, Ass ~[]As, As ~[]A, A comparable] func(*S, Ass) Policies[A]
 
@@ -56,7 +56,7 @@ func UniformPoliciesProvider[S any, Ass ~[]As, As ~[]A, A comparable](state *S, 
 	policies := make(Policies[A], len(legalActionTable))
 	for i, actions := range legalActionTable {
 		n := len(actions)
-		p := 1.0 / float64(n)
+		p := 1.0 / float32(n)
 		policy := Policy[A]{}
 		for _, a := range actions {
 			policy[a] = p
@@ -202,7 +202,7 @@ func (e *Engine[S, Ass, As, A]) Search(rootNode *Node[S, Ass, As, A], simulation
 	return nil
 }
 
-func (e *Engine[S, Ass, As, A]) NewPlayer(simulation int, t float64, r *rand.Rand) game.Player[S, Ass, As, A] {
+func (e *Engine[S, Ass, As, A]) NewPlayer(simulation int, t float32, r *rand.Rand) game.Player[S, Ass, As, A] {
 	return func(state *S, _ Ass) (As, error) {
 		rootNode, err := e.NewNode(state)
 		if err != nil {

@@ -9,39 +9,39 @@ import (
 	omwrand "github.com/sw965/omw/math/rand"
 )
 
-type Func func(float64, float64, int, int) float64
+type Func func(float32, float32, int, int) float32
 
-func NewStandardFunc(c float64) Func {
-	return func(v, p float64, total, n int) float64 {
-		return v + c*p*math.Sqrt(math.Log(float64(total+1))/float64(n+1))
+func NewStandardFunc(c float32) Func {
+	return func(v, p float32, total, n int) float32 {
+		return v + c*p*math.Sqrt(math.Log(float32(total+1))/float32(n+1))
 	}
 }
 
-func NewAlphaGoFunc(c float64) Func {
-	return func(v, p float64, total, n int) float64 {
-		return v + c*p*math.Sqrt(float64(total))/float64(n+1)
+func NewAlphaGoFunc(c float32) Func {
+	return func(v, p float32, total, n int) float32 {
+		return v + c*p*math.Sqrt(float32(total))/float32(n+1)
 	}
 }
 
 type Calculator struct {
 	Func       Func
-	TotalValue float64
-	P          float64
+	TotalValue float32
+	P          float32
 	Trial      int
 }
 
-func (c *Calculator) AverageValue() float64 {
-	return float64(c.TotalValue) / float64(c.Trial+1)
+func (c *Calculator) AverageValue() float32 {
+	return float32(c.TotalValue) / float32(c.Trial+1)
 }
 
-func (c *Calculator) Calculation(totalTrial int) float64 {
+func (c *Calculator) Calculation(totalTrial int) float32 {
 	v := c.AverageValue()
 	return c.Func(v, c.P, totalTrial, c.Trial)
 }
 
 type Manager[KS ~[]K, K comparable]map[K]*Calculator
 
-func (m Manager[KS, K]) TotalValue() float64 {
+func (m Manager[KS, K]) TotalValue() float32 {
 	t := 0.0
 	for _, v := range m {
 		t += v.TotalValue
@@ -57,18 +57,18 @@ func (m Manager[KS, K]) TotalTrial() int {
 	return t
 }
 
-func (m Manager[KS, K]) AverageValue() float64 {
+func (m Manager[KS, K]) AverageValue() float32 {
 	totalTrial := m.TotalTrial()
 	if totalTrial == 0 {
 		return 0.0
 	}
 	totalValue := m.TotalValue()
-	return float64(totalValue) / float64(totalTrial)
+	return float32(totalValue) / float32(totalTrial)
 }
 
-func (m Manager[KS, K]) Max() float64 {
+func (m Manager[KS, K]) Max() float32 {
 	total := m.TotalTrial()
-	ucbs := make([]float64, 0, len(m))
+	ucbs := make([]float32, 0, len(m))
 	for _, v := range m {
 		ucbs = append(ucbs, v.Calculation(total))
 	}
@@ -106,16 +106,16 @@ func (m Manager[KS, K]) MaxTrial() int {
 	return omwmath.Max(trials...)
 }
 
-func (m Manager[KS, K]) TrialPercentByKey() map[K]float64 {
+func (m Manager[KS, K]) TrialPercentByKey() map[K]float32 {
 	total := m.TotalTrial()
-	ps := map[K]float64{}
+	ps := map[K]float32{}
 	for k, v := range m {
-		ps[k] = float64(v.Trial) / float64(total)
+		ps[k] = float32(v.Trial) / float32(total)
 	}
 	return ps
 }
 
-func (m Manager[KS, K]) SelectKeyByTrialPercentAboveFractionOfMax(t float64, r *rand.Rand) (K, error) {
+func (m Manager[KS, K]) SelectKeyByTrialPercentAboveFractionOfMax(t float32, r *rand.Rand) (K, error) {
 	if t > 1.0 || t < 0.0 {
 		var k K
 		return k, fmt.Errorf("閾値は0.0 <= t <= 1.0 でなければならない")
@@ -124,7 +124,7 @@ func (m Manager[KS, K]) SelectKeyByTrialPercentAboveFractionOfMax(t float64, r *
 	max := omwmath.Max(maps.Values(ps)...)
 	n := len(ps)
 	options := make(KS, 0, n)
-	ws := make([]float64, 0, n)
+	ws := make([]float32, 0, n)
 
 	for a, p := range ps {
 		if p >= max * t {

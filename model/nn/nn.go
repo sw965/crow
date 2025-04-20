@@ -31,7 +31,7 @@ type FullyConnected struct {
 	Parameter Parameter
 	Forwards layer1d.Forwards
 
-	YLossCalculator     func(tensor.D1, tensor.D1) (float64, error)
+	YLossCalculator     func(tensor.D1, tensor.D1) (float32, error)
 	YLossDifferentiator func(tensor.D1, tensor.D1) (tensor.D1, error)
 }
 
@@ -62,7 +62,7 @@ func (nn *FullyConnected) AppendReLULayer() {
 	nn.Forwards = append(nn.Forwards, layer1d.ReLUForward)
 }
 
-func (nn *FullyConnected) AppendLeakyReLULayer(alpha float64) {
+func (nn *FullyConnected) AppendLeakyReLULayer(alpha float32) {
 	nn.Forwards = append(nn.Forwards, layer1d.NewLeakyReLUForward(alpha))
 }
 
@@ -79,7 +79,7 @@ func (nn *FullyConnected) Predict(x tensor.D1) (tensor.D1, error) {
 	return y, err
 }
 
-func (nn *FullyConnected) MeanLoss(xs, ts tensor.D2) (float64, error) {
+func (nn *FullyConnected) MeanLoss(xs, ts tensor.D2) (float32, error) {
 	n := len(xs)
 	if n != len(ts) {
 		return 0.0, fmt.Errorf("バッチサイズが一致しません。")
@@ -97,11 +97,11 @@ func (nn *FullyConnected) MeanLoss(xs, ts tensor.D2) (float64, error) {
 		}
 		sum += yLoss
 	}
-	mean := sum / float64(n)
+	mean := sum / float32(n)
 	return mean, nil
 }
 
-func (nn *FullyConnected) Accuracy(xs, ts tensor.D2) (float64, error) {
+func (nn *FullyConnected) Accuracy(xs, ts tensor.D2) (float32, error) {
 	n := len(xs)
 	if n != len(ts) {
 		return 0.0, fmt.Errorf("バッチサイズが一致しません。")
@@ -117,7 +117,7 @@ func (nn *FullyConnected) Accuracy(xs, ts tensor.D2) (float64, error) {
 			correct += 1
 		}
 	}
-	return float64(correct) / float64(n), nil
+	return float32(correct) / float32(n), nil
 }
 
 func (nn *FullyConnected) BackPropagate(x, t tensor.D1) (layer1d.GradBuffer, error) {
@@ -179,7 +179,7 @@ func (nn *FullyConnected) ComputeGrad(xs, ts tensor.D2, p int) (layer1d.GradBuff
 	total := gradBuffers.Total()
 	total.Add(&firstGradBuffer)
 	
-	nf := float64(n)
+	nf := float32(n)
 	total.Biases.DivScalar(nf)
 	total.Weights.DivScalar(nf)
 	return total, nil
@@ -220,7 +220,7 @@ func (nn *FullyConnected) Train(xs, ts tensor.D2, c *MiniBatchConfig, r *rand.Ra
 }
 
 type MiniBatchConfig struct {
-	LearningRate float64
+	LearningRate float32
 	BatchSize int
 	Epoch int
 	Parallel int

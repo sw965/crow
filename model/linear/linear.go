@@ -47,8 +47,8 @@ func (gs GradBuffers) Total() GradBuffer {
 }
 
 type Parameter struct {
-	Weight [][]*float64
-	Bias   []*float64
+	Weight [][]*float32
+	Bias   []*float32
 }
 
 func LoadParameterJSON(path string, param *Parameter) error {
@@ -82,16 +82,16 @@ func (p *Parameter) WriteJSON(path string) error {
 }
 
 func (p *Parameter) Clone() Parameter {
-	seenW := make(map[*float64]*float64)
-	newWeight := make([][]*float64, len(p.Weight))
+	seenW := make(map[*float32]*float32)
+	newWeight := make([][]*float32, len(p.Weight))
 	for i, wi := range p.Weight {
-		newWi := make([]*float64, len(wi))
+		newWi := make([]*float32, len(wi))
 		for j, origPtr := range wi {
 			//共有関係が崩れないように、origPtrに対応する新しいポインターを既に生成している場合、そのアドレスを割り当てる。
 			if newPtr, ok := seenW[origPtr]; ok {
 				newWi[j] = newPtr
 			} else {
-				newV := new(float64)
+				newV := new(float32)
 				*newV = *origPtr
 				seenW[origPtr] = newV
 				newWi[j] = newV
@@ -100,14 +100,14 @@ func (p *Parameter) Clone() Parameter {
 		newWeight[i] = newWi
 	}
 
-	seenB := make(map[*float64]*float64)
-	newBias := make([]*float64, len(p.Bias))
+	seenB := make(map[*float32]*float32)
+	newBias := make([]*float32, len(p.Bias))
 	for i, origPtr := range p.Bias {
 		//共有関係が崩れないように
 		if newPtr, ok := seenB[origPtr]; ok {
 			newBias[i] = newPtr
 		} else {
-			newV := new(float64)
+			newV := new(float32)
 			*newV = *origPtr
 			seenB[origPtr] = newV
 			newBias[i] = newV
@@ -147,7 +147,7 @@ func (p *Parameter) AddGrad(grad *GradBuffer) error {
 type Optimizer func(*Model, *GradBuffer) error
 
 type SGD struct {
-	LearningRate float64
+	LearningRate float32
 }
 
 func (sgd *SGD) Optimizer(model *Model, grad *GradBuffer) error {
@@ -160,8 +160,8 @@ func (sgd *SGD) Optimizer(model *Model, grad *GradBuffer) error {
 
 // https://github.com/oreilly-japan/deep-learning-from-scratch/blob/master/common/optimizer.py
 type Momentum struct {
-	LearningRate float64
-	MomentumRate float64
+	LearningRate float32
+	MomentumRate float32
 	velocity     GradBuffer
 }
 
@@ -211,7 +211,7 @@ type WeightCoordinate struct {
 	Column int
 }
 
-type Input map[WeightCoordinate]float64
+type Input map[WeightCoordinate]float32
 type Inputs []Input
 
 type Model struct {
@@ -220,11 +220,11 @@ type Model struct {
 	OutputFunc       func(tensor.D1) tensor.D1
 	OutputDerivative func(tensor.D1) tensor.D1
 
-	PredictionLossFunc       func(tensor.D1, tensor.D1) (float64, error)
+	PredictionLossFunc       func(tensor.D1, tensor.D1) (float32, error)
 	PredictionLossDerivative func(tensor.D1, tensor.D1) (tensor.D1, error)
 
 	// SPSAの教師なし学習の為の損失関数。
-	LossFunc func(*Model) (float64, error)
+	LossFunc func(*Model) (float32, error)
 }
 
 func (m Model) Clone() Model {
@@ -271,7 +271,7 @@ func (m *Model) Predict(input Input) tensor.D1 {
 	return m.OutputFunc(u)
 }
 
-func (m *Model) MeanLoss(inputs Inputs, ts tensor.D2) (float64, error) {
+func (m *Model) MeanLoss(inputs Inputs, ts tensor.D2) (float32, error) {
 	n := len(inputs)
 	if n != len(ts) {
 		return 0.0, fmt.Errorf("バッチサイズが一致しません。")
@@ -286,11 +286,11 @@ func (m *Model) MeanLoss(inputs Inputs, ts tensor.D2) (float64, error) {
 		}
 		sum += loss
 	}
-	mean := sum / float64(n)
+	mean := sum / float32(n)
 	return mean, nil
 }
 
-func (m *Model) Accuracy(inputs Inputs, ts tensor.D2) (float64, error) {
+func (m *Model) Accuracy(inputs Inputs, ts tensor.D2) (float32, error) {
 	n := len(inputs)
 	if n != len(ts) {
 		return 0.0, fmt.Errorf("バッチサイズが一致しません。")
@@ -303,7 +303,7 @@ func (m *Model) Accuracy(inputs Inputs, ts tensor.D2) (float64, error) {
 			correct += 1
 		}
 	}
-	return float64(correct) / float64(n), nil
+	return float32(correct) / float32(n), nil
 }
 
 func (m *Model) BackPropagate(input Input, t tensor.D1) (GradBuffer, error) {
@@ -386,13 +386,13 @@ func (m *Model) ComputeGrad(inputs Inputs, ts tensor.D2, p int) (GradBuffer, err
 
 	total := gradBuffers.Total()
 	total.Add(&firstGrad)
-	nf := float64(n)
+	nf := float32(n)
 	total.Weight.DivScalar(nf)
 	total.Bias.DivScalar(nf)
 	return total, nil
 }
 
-func (m *Model) EstimateGradBySPSA(c float64, r *rand.Rand) (GradBuffer, error) {
+func (m *Model) EstimateGradBySPSA(c float32, r *rand.Rand) (GradBuffer, error) {
 	deltaW := make(tensor.D2, len(m.Parameter.Weight))
 	for i, wi := range m.Parameter.Weight {
 		deltaW[i] = make(tensor.D1, len(wi))
@@ -475,7 +475,7 @@ func (m *Model) EstimateGradBySPSA(c float64, r *rand.Rand) (GradBuffer, error) 
 	return grad, nil
 }
 
-func (m *Model) SoftmaxActionSelection(input Input, temperature float64, exclude func(int) bool, r *rand.Rand, epsilon float64) int {
+func (m *Model) SoftmaxActionSelection(input Input, temperature float32, exclude func(int) bool, r *rand.Rand, epsilon float32) int {
 	y := m.Predict(input)
 	for i := range y {
 		if exclude(i) {
@@ -490,7 +490,7 @@ func (m *Model) SoftmaxActionSelection(input Input, temperature float64, exclude
 		return omwrand.Choice(idxs, r)
 	}
 
-	ws := make([]float64, len(y))
+	ws := make([]float32, len(y))
 	for i, yi := range y {
 		ws[i] = math.Pow(yi, 1.0/temperature)
 	}

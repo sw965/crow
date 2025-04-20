@@ -32,7 +32,7 @@ func NewD3OnesLike(d3 D3) D3 {
 	return fn.Map[D3](d3, NewD2OnesLike)
 }
 
-func NewD3RandUniform(d, r, c int, min, max float64, rng *rand.Rand) D3 {
+func NewD3RandUniform(d, r, c int, min, max float32, rng *rand.Rand) D3 {
 	ret := make(D3, d)
 	for i := range ret {
 		ret[i] = NewD2RandUniform(r, c, min, max, rng)
@@ -48,7 +48,7 @@ func NewD3He(d, r, c int, rng *rand.Rand) D3 {
 	return he
 }
 
-func (d3 D3) AddScalar(s float64) {
+func (d3 D3) AddScalar(s float32) {
 	for i := range d3 {
 		d3[i].AddScalar(s)
 	}
@@ -104,7 +104,7 @@ func (d3 D3) Add(d2 D3) error {
 	return nil
 }
 
-func (d3 D3) SubScalar(s float64) {
+func (d3 D3) SubScalar(s float32) {
 	for i := range d3 {
 		d3[i].SubScalar(s)
 	}
@@ -163,7 +163,7 @@ func (d3 D3) Sub(d2 D3) error {
 	return nil
 }
 
-func (d3 D3) MulScalar(s float64) {
+func (d3 D3) MulScalar(s float32) {
 	for i := range d3 {
 		d3[i].MulScalar(s)
 	}
@@ -222,7 +222,7 @@ func (d3 D3) Mul(d2 D3) error {
 	return nil
 }
 
-func (d3 D3) DivScalar(s float64) {
+func (d3 D3) DivScalar(s float32) {
 	for i := range d3 {
 		d3[i].DivScalar(s)
 	}
@@ -319,7 +319,7 @@ func (d3 D3) Reciprocal() D3 {
 	return y
 }
 
-func D3AddScalar(d3 D3, s float64) D3 {
+func D3AddScalar(d3 D3, s float32) D3 {
 	y := d3.Clone()
 	y.AddScalar(s)
 	return y
@@ -355,7 +355,7 @@ func D3Add(a, b D3) (D3, error) {
 	return y, err
 }
 
-func D3SubScalar(d3 D3, s float64) D3 {
+func D3SubScalar(d3 D3, s float32) D3 {
 	y := d3.Clone()
 	y.SubScalar(s)
 	return y
@@ -391,7 +391,7 @@ func D3Sub(a, b D3) (D3, error) {
 	return y, err
 }
 
-func D3MulScalar(d3 D3, s float64) D3 {
+func D3MulScalar(d3 D3, s float32) D3 {
 	y := d3.Clone()
 	y.MulScalar(s)
 	return y
@@ -427,7 +427,7 @@ func D3Mul(a, b D3) (D3, error) {
 	return y, err
 }
 
-func D3DivScalar(d3 D3, s float64) D3 {
+func D3DivScalar(d3 D3, s float32) D3 {
 	y := d3.Clone()
 	y.DivScalar(s)
 	return y

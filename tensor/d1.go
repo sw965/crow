@@ -8,7 +8,7 @@ import (
 	omwrand "github.com/sw965/omw/math/rand"
 )
 
-type D1 []float64
+type D1 []float32
 
 func NewD1Zeros(n int) D1 {
 	return make(D1, n)
@@ -31,24 +31,24 @@ func NewD1OnesLike(d1 D1) D1 {
 	return NewD1Ones(n)
 }
 
-func NewD1RandUniform(n int, min, max float64, r *rand.Rand) D1 {
+func NewD1RandUniform(n int, min, max float32, r *rand.Rand) D1 {
 	ret := make(D1, n)
 	for i := range ret {
-		ret[i] = omwrand.Float64(min, max, r)
+		ret[i] = omwrand.Float32(min, max, r)
 	}
 	return ret
 }
 
 func NewD1He(n int, r *rand.Rand) D1 {
-	std := math.Sqrt(2.0 / float64(n))
+	std := math.Sqrt(2.0 / float32(n))
 	he := make(D1, n)
 	for i := range he {
-		he[i] = r.NormFloat64() * std
+		he[i] = r.NormFloat32() * std
 	}
 	return he
 }
 
-func (d1 D1) AddScalar(s float64) {
+func (d1 D1) AddScalar(s float32) {
 	for i := range d1 {
 		d1[i] += s
 	}
@@ -65,7 +65,7 @@ func (d1 D1) Add(other D1) error {
 	return nil
 }
 
-func (d1 D1) SubScalar(s float64) {
+func (d1 D1) SubScalar(s float32) {
 	for i := range d1 {
 		d1[i] -= s
 	}
@@ -82,7 +82,7 @@ func (d1 D1) Sub(other D1) error {
 	return nil
 }
 
-func (d1 D1) MulScalar(s float64) {
+func (d1 D1) MulScalar(s float32) {
 	for i := range d1 {
 		d1[i] *= s
 	}
@@ -99,7 +99,7 @@ func (d1 D1) Mul(other D1) error {
 	return nil
 }
 
-func (d1 D1) DivScalar(s float64) {
+func (d1 D1) DivScalar(s float32) {
 	for i := range d1 {
 		d1[i] /= s
 	}
@@ -134,7 +134,7 @@ func (d1 D1) Reciprocal() D1 {
 	return y
 }
 
-func D1AddScalar(d1 D1, s float64) D1 {
+func D1AddScalar(d1 D1, s float32) D1 {
 	y := slices.Clone(d1)
 	y.AddScalar(s)
 	return y
@@ -146,7 +146,7 @@ func D1Add(a, b D1) (D1, error) {
 	return y, err
 }
 
-func D1SubScalar(d1 D1, s float64) D1 {
+func D1SubScalar(d1 D1, s float32) D1 {
 	y := slices.Clone(d1)
 	y.SubScalar(s)
 	return y
@@ -158,7 +158,7 @@ func D1Sub(a, b D1) (D1, error) {
 	return y, err
 }
 
-func D1MulScalar(d1 D1, s float64) D1 {
+func D1MulScalar(d1 D1, s float32) D1 {
 	y := slices.Clone(d1)
 	y.MulScalar(s)
 	return y
@@ -170,7 +170,7 @@ func D1Mul(a, b D1) (D1, error) {
 	return y, err
 }
 
-func D1DivScalar(d1 D1, s float64) D1 {
+func D1DivScalar(d1 D1, s float32) D1 {
 	y := slices.Clone(d1)
 	y.DivScalar(s)
 	return y

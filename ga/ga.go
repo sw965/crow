@@ -8,16 +8,16 @@ import (
 	omwslices "github.com/sw965/omw/slices"
 )
 
-func LinearRankingProb(n, rank int, s float64) float64 {
+func LinearRankingProb(n, rank int, s float32) float32 {
 	m := 2.0 - s
-	return 1.0/float64(n) * (m + (s-m)*(float64(n-rank)/float64(n-1)))
+	return 1.0/float32(n) * (m + (s-m)*(float32(n-rank)/float32(n-1)))
 }
 
 const epsilon = 0.0001
 
 type Population[I any] []I
 
-type FitnessY float64
+type FitnessY float32
 type FitnessYs []FitnessY
 type Fitness[I any] func(Population[I], int) FitnessY
 
@@ -44,21 +44,21 @@ func (f Fitness[I]) SortPopulation(pop Population[I]) Population[I] {
 type IndexSelector func(FitnessYs, *rand.Rand) (int, error)
 
 func RouletteIndexSelector(fitYs FitnessYs, r *rand.Rand) (int, error) {
-	ws := make([]float64, len(fitYs))
+	ws := make([]float32, len(fitYs))
 	for i, fitY := range fitYs {
-		ws[i] = float64(fitY)
+		ws[i] = float32(fitY)
 	}
 	idx := omwrand.IntByWeight(ws, r, epsilon)
 	return idx, nil
 }
 
-func NewLinearRankingIndexSelector(s float64) IndexSelector {
+func NewLinearRankingIndexSelector(s float32) IndexSelector {
 	return func(fitYs FitnessYs, r *rand.Rand) (int, error) {
 		argsorted := omwslices.Argsort(fitYs)
 		argsorted = omwslices.Reverse(argsorted)
 
 		n := len(fitYs)
-		probs := make([]float64, len(fitYs))
+		probs := make([]float32, len(fitYs))
 		for i := range probs {
 			probs[i] = LinearRankingProb(n, i, s)
 		}
@@ -91,7 +91,7 @@ func UniformCrossOperator[I []T, T any](parent1, parent2 I, r *rand.Rand) (I, I,
 
 type MutationOperator[I any] func(I, *rand.Rand) I
 
-func NewUniformMutationOperator[I []float64](min, max float64) MutationOperator[I] {
+func NewUniformMutationOperator[I []float32](min, max float32) MutationOperator[I] {
 	return func(individual I, r *rand.Rand) I {
 		mutated := make(I, len(individual))
 		for i, gene := range individual {
@@ -109,8 +109,8 @@ type Engine[I any] struct {
 	CrossOperator    CrossOperator[I]
 	MutationOperator MutationOperator[I]
 	CloneOperator    CloneOperator[I]
-	CrossPercent     float64
-	MutationPercent  float64
+	CrossPercent     float32
+	MutationPercent  float32
 	EliteNum         int
 }
 

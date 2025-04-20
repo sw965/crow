@@ -1,5 +1,5 @@
 package math
 
-func CentralDifference(plusY, minusY, h float64) float64 {
+func CentralDifference(plusY, minusY, h float32) float32 {
 	return (plusY - minusY) / (2.0 * h)
 }

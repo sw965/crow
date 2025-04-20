@@ -36,7 +36,7 @@ func Softmax(x tensor.D1) tensor.D1 {
     return y
 }
 
-func LinearSum(x, w tensor.D1, b float64) (float64, error) {
+func LinearSum(x, w tensor.D1, b float32) (float32, error) {
 	hadamard, err := tensor.D1Mul(x, w)
 	y := omwmath.Sum(hadamard...) + b
 	return y, err
@@ -62,19 +62,19 @@ func ReLUDerivative(x tensor.D1) tensor.D1 {
 	return fn.Map[tensor.D1](x, scalar.ReLUDerivative)
 }
 
-func LeakyReLU(alpha float64) func(tensor.D1)tensor.D1 {
+func LeakyReLU(alpha float32) func(tensor.D1)tensor.D1 {
 	return func(x tensor.D1) tensor.D1 {
 		return fn.Map[tensor.D1](x, scalar.LeakyReLU(alpha))
 	}
 }
 
-func LeakyReLUDerivative(alpha float64) func(tensor.D1)tensor.D1 {
+func LeakyReLUDerivative(alpha float32) func(tensor.D1)tensor.D1 {
 	return func(x tensor.D1) tensor.D1 {
 		return fn.Map[tensor.D1](x, scalar.LeakyReLUDerivative(alpha))
 	}
 }
 
-func CrossEntropyError(y, t tensor.D1) (float64, error) {
+func CrossEntropyError(y, t tensor.D1) (float32, error) {
     if len(y) != len(t) {
         return 0.0, fmt.Errorf("len(y) != len(t) であるため、CrossEntropyErrorを計算できません。")
     }
@@ -100,7 +100,7 @@ func CrossEntropyErrorDerivative(y, t tensor.D1) (tensor.D1, error) {
     return grad, nil
 }
 
-func SumSquaredError(y, t tensor.D1) (float64, error) {
+func SumSquaredError(y, t tensor.D1) (float32, error) {
 	if len(y) != len(t) {
 		return 0.0, fmt.Errorf("len(y) != len(t) であるため、SumSquaredErrorを計算できません。")
 	}
@@ -122,22 +122,4 @@ func SumSquaredErrorDerivative(y, t tensor.D1) (tensor.D1, error) {
 		grad[i] = y[i] - t[i]
 	}
 	return grad, nil
-}
-
-func NumericalDifferentiation(x tensor.D1, f func(tensor.D1) float64) tensor.D1 {
-	h := 0.001
-	grad := make(tensor.D1, len(x))
-	for i := range x {
-		tmp := x[i]
-
-		x[i] = tmp + h
-		y1 := f(x)
-
-		x[i] = tmp - h
-		y2 := f(x)
-
-		grad[i] = (y1 - y2) / (2 * h)
-		x[i] = tmp
-	}
-	return grad
 }

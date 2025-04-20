@@ -131,7 +131,7 @@ func ReLUForward(x tensor.D1, backwards Backwards) (tensor.D1, Backwards, error)
 	return y, backwards, nil
 }
 
-func NewLeakyReLUForward(alpha float64) Forward {
+func NewLeakyReLUForward(alpha float32) Forward {
 	f := ml1d.LeakyReLU(alpha)
 	fp := ml1d.LeakyReLUDerivative(alpha)
 	return func(x tensor.D1, backwards Backwards) (tensor.D1, Backwards, error) {

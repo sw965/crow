@@ -37,7 +37,7 @@ func LinearSumDerivative(x, w tensor.D2) (tensor.D2, tensor.D2, error) {
 	return gradX, gradW, nil
 }
 
-func NumericalDifferentiation(x tensor.D2, f func(tensor.D2) float64) tensor.D2 {
+func NumericalDifferentiation(x tensor.D2, f func(tensor.D2) float32) tensor.D2 {
 	h := 0.001
 	grad := tensor.NewD2ZerosLike(x)
 	for i := range x {

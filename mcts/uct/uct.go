@@ -8,15 +8,15 @@ import (
 	omwrand "github.com/sw965/omw/math/rand"
 )
 
-type RootNodeEvalByAgent[G comparable] map[G]float64
+type RootNodeEvalByAgent[G comparable] map[G]float32
 
-func (es RootNodeEvalByAgent[G]) DivScalar(s float64) {
+func (es RootNodeEvalByAgent[G]) DivScalar(s float32) {
 	for k := range es {
 		es[k] /= s
 	}
 }
 
-type LeafNodeEvalByAgent[G comparable] map[G]float64
+type LeafNodeEvalByAgent[G comparable] map[G]float32
 type LeafNodeEvaluator[S any, G comparable] func(*S) (LeafNodeEvalByAgent[G], error)
 
 type Node[S any, As ~[]A, A, G comparable] struct {
@@ -53,17 +53,17 @@ func (ss selectionInfoSlice[S, As, A, G]) backward(evals LeafNodeEvalByAgent[G])
 		node := s.node
 		action := s.action
 		eval := evals[node.Agent]
-		node.UCBManager[action].TotalValue += float64(eval)
+		node.UCBManager[action].TotalValue += float32(eval)
 		node.UCBManager[action].Trial += 1
 	}
 }
 
-type Policy[A comparable] map[A]float64
+type Policy[A comparable] map[A]float32
 type PolicyProvider[S any, As ~[]A, A comparable] func(*S, As) Policy[A]
 
 func UniformPolicyProvider[S any, As ~[]A, A comparable](state *S, legalActions As) Policy[A] {
 	n := len(legalActions)
-	p := 1.0 / float64(n)
+	p := 1.0 / float32(n)
 	policy := Policy[A]{}
 	for _, a := range legalActions {
 		policy[a] = p
@@ -191,11 +191,11 @@ func (e *Engine[S, As, A, G]) Search(rootNode *Node[S, As, A, G], simulation int
 		capacity = depth + 1
 	}
 
-	rootEvals.DivScalar(float64(simulation))
+	rootEvals.DivScalar(float32(simulation))
 	return rootEvals, nil
 }
 
-func (e *Engine[S, As, A, G]) NewPlayer(simulation int, t float64, r *rand.Rand) game.Player[S, As, A] {
+func (e *Engine[S, As, A, G]) NewPlayer(simulation int, t float32, r *rand.Rand) game.Player[S, As, A] {
 	return func(state *S, _ As) (A, error) {
 		rootNode, err := e.NewNode(state)
 		if err != nil {
