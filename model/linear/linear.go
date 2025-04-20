@@ -144,37 +144,6 @@ func (p *Parameter) AddGrad(grad *GradBuffer) error {
 	return nil
 }
 
-type Parameters []Parameter
-
-func (ps Parameters) ToAverage() Parameter {
-	n := len(ps)
-	total := ps[0].Clone()
-	for _, p := range ps[1:] {
-		for i, wi := range p.Weight {
-			for j, wij := range wi {
-				*total.Weight[i][j] += *wij
-			}
-		}
-
-		for i, bi := range p.Bias {
-			*total.Bias[i] += *bi
-		}
-	}
-
-	//平均化する。
-	nf := float64(n)
-	for i, wi := range total.Weight {
-		for j, wij := range wi {
-			*total.Weight[i][j] = (*wij / nf)
-		}
-	}
-
-	for i, bi := range total.Bias {
-		*total.Bias[i] = (*bi / nf)
-	}
-	return total
-}
-
 type Optimizer func(*Model, *GradBuffer) error
 
 type SGD struct {
@@ -506,11 +475,13 @@ func (m *Model) EstimateGradBySPSA(c float64, r *rand.Rand) (GradBuffer, error) 
 	return grad, nil
 }
 
-func (m *Model) SoftmaxActionSelection(input Input, temperature float64, exclude func(int) bool, r *rand.Rand) int {
+func (m *Model) SoftmaxActionSelection(input Input, temperature float64, exclude func(int) bool, r *rand.Rand, epsilon float64) int {
 	y := m.Predict(input)
 	for i := range y {
 		if exclude(i) {
 			y[i] = 0.0
+		} else {
+			y[i] += epsilon
 		}
 	}
 
