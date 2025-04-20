@@ -85,7 +85,7 @@ func (nn *FullyConnected) MeanLoss(xs, ts tensor.D2) (float32, error) {
 		return 0.0, fmt.Errorf("バッチサイズが一致しません。")
 	}
 
-	sum := 0.0
+	var sum float32 = 0.0
 	for i := range xs {
 		y, err := nn.Predict(xs[i])
 		if err != nil {

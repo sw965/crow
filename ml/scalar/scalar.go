@@ -5,7 +5,8 @@ import (
 )
 
 func Sigmoid(x float32) float32 {
-	return 1 / (1 + math.Exp(-x))
+	y := 1.0 / (1 + math.Exp(float64(-x)))
+	return float32(y)
 }
 
 func SigmoidGrad(y float32) float32 {

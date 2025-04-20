@@ -277,7 +277,7 @@ func (m *Model) MeanLoss(inputs Inputs, ts tensor.D2) (float32, error) {
 		return 0.0, fmt.Errorf("バッチサイズが一致しません。")
 	}
 
-	sum := 0.0
+	var sum float32 = 0.0
 	for i, input := range inputs {
 		y := m.Predict(input)
 		loss, err := m.PredictionLossFunc(y, ts[i])
@@ -492,7 +492,7 @@ func (m *Model) SoftmaxActionSelection(input Input, temperature float32, exclude
 
 	ws := make([]float32, len(y))
 	for i, yi := range y {
-		ws[i] = math.Pow(yi, 1.0/temperature)
+		ws[i] = float32(math.Pow(float64(yi), float64(1.0/temperature)))
 	}
 	return omwrand.IntByWeight(ws, r)
 }

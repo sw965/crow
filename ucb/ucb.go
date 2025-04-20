@@ -13,13 +13,13 @@ type Func func(float32, float32, int, int) float32
 
 func NewStandardFunc(c float32) Func {
 	return func(v, p float32, total, n int) float32 {
-		return v + c*p*math.Sqrt(math.Log(float32(total+1))/float32(n+1))
+		return v + c*p*float32(math.Sqrt(math.Log(float64(total+1))/float64(n+1)))
 	}
 }
 
 func NewAlphaGoFunc(c float32) Func {
 	return func(v, p float32, total, n int) float32 {
-		return v + c*p*math.Sqrt(float32(total))/float32(n+1)
+		return v + c*p*float32(math.Sqrt(float64(total))/float64(n+1))
 	}
 }
 
@@ -42,7 +42,7 @@ func (c *Calculator) Calculation(totalTrial int) float32 {
 type Manager[KS ~[]K, K comparable]map[K]*Calculator
 
 func (m Manager[KS, K]) TotalValue() float32 {
-	t := 0.0
+	var t float32 = 0.0
 	for _, v := range m {
 		t += v.TotalValue
 	}
@@ -133,7 +133,7 @@ func (m Manager[KS, K]) SelectKeyByTrialPercentAboveFractionOfMax(t float32, r *
 		}
 	}
 
-	idx := omwrand.IntByWeight(ws, r, 0.0)
+	idx := omwrand.IntByWeight(ws, r)
 	return options[idx], nil
 }
 

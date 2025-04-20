@@ -94,7 +94,7 @@ func TestDUCT(t *testing.T) {
 	}
 
 	mcts.SetUniformPoliciesProvider()
-	mcts.UCBFunc = ucb.NewAlphaGoFunc(math.Sqrt(2))
+	mcts.UCBFunc = ucb.NewAlphaGoFunc(float32(math.Sqrt(2)))
 	randActionPlayers := gameLogic.MakePlayers(2)
 	randActionPlayers[0] = gameLogic.NewRandActionPlayer(r)
 	randActionPlayers[1] = gameLogic.NewRandActionPlayer(r)

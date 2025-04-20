@@ -24,9 +24,9 @@ func SigmoidDerivative(x tensor.D1) tensor.D1 {
 func Softmax(x tensor.D1) tensor.D1 {
     maxX := omwmath.Max(x...) // オーバーフロー対策
     expX := make(tensor.D1, len(x))
-    sumExpX := 0.0
+    var sumExpX float32 = 0.0
     for i, xi := range x {
-        expX[i] = math.Exp(xi - maxX)
+        expX[i] = float32(math.Exp(float64(xi - maxX)))
         sumExpX += expX[i]
     }
     y := make(tensor.D1, len(x))
@@ -78,12 +78,12 @@ func CrossEntropyError(y, t tensor.D1) (float32, error) {
     if len(y) != len(t) {
         return 0.0, fmt.Errorf("len(y) != len(t) であるため、CrossEntropyErrorを計算できません。")
     }
-    loss := 0.0
-	e := 0.0001
+    var loss float32 = 0.0
+	var e float32 = 0.0001
 	for i := range y {
-		yi := math.Max(y[i], e)
+		yi := float64(omwmath.Max(y[i], e))
 		ti := t[i]
-		loss += -ti * math.Log(yi)
+		loss += -ti * float32(math.Log(yi))
 	}
     return loss, nil
 }
@@ -104,7 +104,7 @@ func SumSquaredError(y, t tensor.D1) (float32, error) {
 	if len(y) != len(t) {
 		return 0.0, fmt.Errorf("len(y) != len(t) であるため、SumSquaredErrorを計算できません。")
 	}
-	sqSum := 0.0
+	var sqSum float32 = 0.0
 	for i := range y {
 		diff := y[i] - t[i]
 		sqSum += (diff * diff)

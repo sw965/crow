@@ -40,7 +40,7 @@ func TestSoftmaxActionSelection(t *testing.T) {
 	r := omwrand.NewMt19937()
 	counter := map[int]int{}
 	for i := 0; i < 10000; i++ {
-		actionIdx := model.SoftmaxActionSelection(input, 1.0, func(idx int) bool { return true }, r)
+		actionIdx := model.SoftmaxActionSelection(input, 1.0, func(idx int) bool { return false }, r, 0.001)
 		counter[actionIdx] += 1
 	}
 

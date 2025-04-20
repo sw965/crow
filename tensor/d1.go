@@ -40,10 +40,10 @@ func NewD1RandUniform(n int, min, max float32, r *rand.Rand) D1 {
 }
 
 func NewD1He(n int, r *rand.Rand) D1 {
-	std := math.Sqrt(2.0 / float32(n))
+	std := float32(math.Sqrt(2.0 / float64(n)))
 	he := make(D1, n)
 	for i := range he {
-		he[i] = r.NormFloat32() * std
+		he[i] = float32(r.NormFloat64()) * std
 	}
 	return he
 }
