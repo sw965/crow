@@ -1,25 +1,27 @@
-package ucb
+package pucb
 
 import (
-	"fmt"
-	"math"
-	"math/rand"
-	"golang.org/x/exp/maps"
-	omwmath "github.com/sw965/omw/math"
-	omwrand "github.com/sw965/omw/math/rand"
+	"github.com/chewxy/math32"
+	omath "github.com/sw965/omw/math"
 )
 
 type Func func(float32, float32, int, int) float32
 
 func NewStandardFunc(c float32) Func {
 	return func(v, p float32, total, n int) float32 {
-		return v + c*p*float32(math.Sqrt(math.Log(float64(total+1))/float64(n+1)))
+		tf := float32(total)
+	 	nf := 1.0 + float32(n)
+		exploration := c*p*math32.Sqrt(2*math32.Log(tf)/nf)
+	  	return v + exploration
 	}
 }
 
 func NewAlphaGoFunc(c float32) Func {
 	return func(v, p float32, total, n int) float32 {
-		return v + c*p*float32(math.Sqrt(float64(total))/float64(n+1))
+		tf := float32(total)
+		nf := 1.0 + float32(n)
+		exploration := c*p*math32.Sqrt(tf) / nf
+		return v + exploration
 	}
 }
 
@@ -68,11 +70,11 @@ func (m Manager[KS, K]) AverageValue() float32 {
 
 func (m Manager[KS, K]) Max() float32 {
 	total := m.TotalTrial()
-	ucbs := make([]float32, 0, len(m))
+	pucbs := make([]float32, 0, len(m))
 	for _, v := range m {
-		ucbs = append(ucbs, v.Calculation(total))
+		pucbs = append(pucbs, v.Calculation(total))
 	}
-	return omwmath.Max(ucbs...)
+	return omath.Max(pucbs...)
 }
 
 func (m Manager[KS, K]) MaxKeys() KS {
@@ -103,7 +105,7 @@ func (m Manager[KS, K]) MaxTrial() int {
 	for _, v := range m {
 		trials = append(trials, v.Trial)
 	}
-	return omwmath.Max(trials...)
+	return omath.Max(trials...)
 }
 
 func (m Manager[KS, K]) TrialPercentByKey() map[K]float32 {
@@ -113,28 +115,6 @@ func (m Manager[KS, K]) TrialPercentByKey() map[K]float32 {
 		ps[k] = float32(v.Trial) / float32(total)
 	}
 	return ps
-}
-
-func (m Manager[KS, K]) SelectKeyByTrialPercentAboveFractionOfMax(t float32, r *rand.Rand) (K, error) {
-	if t > 1.0 || t < 0.0 {
-		var k K
-		return k, fmt.Errorf("閾値は0.0 <= t <= 1.0 でなければならない")
-	}
-	ps := m.TrialPercentByKey()
-	max := omwmath.Max(maps.Values(ps)...)
-	n := len(ps)
-	options := make(KS, 0, n)
-	ws := make([]float32, 0, n)
-
-	for a, p := range ps {
-		if p >= max * t {
-			options = append(options, a)
-			ws = append(ws, p)
-		}
-	}
-
-	idx := omwrand.IntByWeight(ws, r)
-	return options[idx], nil
 }
 
 type Managers[KS ~[]K, K comparable] []Manager[KS, K]

@@ -1,11 +1,11 @@
-package uct
+package puct
 
 import (
 	"fmt"
 	"math/rand"
-	"github.com/sw965/crow/ucb"
+	"github.com/sw965/crow/pucb"
 	game "github.com/sw965/crow/game/sequential"
-	omwrand "github.com/sw965/omw/math/rand"
+	orand "github.com/sw965/omw/math/rand"
 )
 
 type RootNodeEvalByAgent[G comparable] map[G]float32
@@ -22,7 +22,7 @@ type LeafNodeEvaluator[S any, G comparable] func(*S) (LeafNodeEvalByAgent[G], er
 type Node[S any, As ~[]A, A, G comparable] struct {
 	State      S
 	Agent      G
-	UCBManager ucb.Manager[As, A]
+	UCBManager pucb.Manager[As, A]
 	NextNodes  Nodes[S, As, A, G]
 }
 
@@ -73,7 +73,7 @@ func UniformPolicyProvider[S any, As ~[]A, A comparable](state *S, legalActions 
 
 type Engine[S any, As ~[]A, A, G comparable] struct {
 	GameLogic         game.Logic[S, As, A, G]
-	UCBFunc           ucb.Func
+	UCBFunc           pucb.Func
 	PolicyProvider    PolicyProvider[S, As, A]
 	LeafNodeEvaluator LeafNodeEvaluator[S, G]
 	NextNodesCap      int
@@ -104,9 +104,9 @@ func (e *Engine[S, As, A, G]) NewNode(state *S) (*Node[S, As, A, G], error) {
 		return &Node[S, As, A, G]{}, fmt.Errorf("len(Policy) == 0 である為、新しくNodeを生成出来ません。")
 	}
 
-	u := ucb.Manager[As, A]{}
+	u := pucb.Manager[As, A]{}
 	for a, p := range policy {
-		u[a] = &ucb.Calculator{Func: e.UCBFunc, P: p}
+		u[a] = &pucb.Calculator{Func: e.UCBFunc, P: p}
 	}
 
 	agent := e.GameLogic.CurrentTurnAgentGetter(state)
@@ -114,14 +114,14 @@ func (e *Engine[S, As, A, G]) NewNode(state *S) (*Node[S, As, A, G], error) {
 	return &Node[S, As, A, G]{State: *state, Agent: agent, UCBManager: u, NextNodes: nextNodes}, nil
 }
 
-func (e *Engine[S, As, A, G]) SelectExpansionBackward(node *Node[S, As, A, G], capacity int, r *rand.Rand) (LeafNodeEvalByAgent[G], int, error) {
+func (e *Engine[S, As, A, G]) SelectExpansionBackward(node *Node[S, As, A, G], capacity int, rng *rand.Rand) (LeafNodeEvalByAgent[G], int, error) {
 	state := node.State
 	selections := make(selectionInfoSlice[S, As, A, G], 0, capacity)
 	var err error
 	var isEnd bool
 
 	for {
-		action := omwrand.Choice(node.UCBManager.MaxKeys(), r)
+		action := orand.Choice(node.UCBManager.MaxKeys(), r)
 		selections = append(selections, selectionInfo[S, As, A, G]{node: node, action: action})
 
 		state, err = e.GameLogic.Transitioner(state, &action)
@@ -173,7 +173,7 @@ func (e *Engine[S, As, A, G]) SelectExpansionBackward(node *Node[S, As, A, G], c
 	return evals, len(selections), err
 }
 
-func (e *Engine[S, As, A, G]) Search(rootNode *Node[S, As, A, G], simulation int, r *rand.Rand) (RootNodeEvalByAgent[G], error) {
+func (e *Engine[S, As, A, G]) Search(rootNode *Node[S, As, A, G], simulation int, rng *rand.Rand) (RootNodeEvalByAgent[G], error) {
 	if e.NextNodesCap <= 0 {
 		return RootNodeEvalByAgent[G]{}, fmt.Errorf("Engine.NextNodesCap > 0 でなければなりません。")
 	}
@@ -195,7 +195,7 @@ func (e *Engine[S, As, A, G]) Search(rootNode *Node[S, As, A, G], simulation int
 	return rootEvals, nil
 }
 
-func (e *Engine[S, As, A, G]) NewPlayer(simulation int, t float32, r *rand.Rand) game.Player[S, As, A] {
+func (e *Engine[S, As, A, G]) NewPlayer(simulation int, rng *rand.Rand) game.Player[S, As, A] {
 	return func(state *S, _ As) (A, error) {
 		rootNode, err := e.NewNode(state)
 		if err != nil {
@@ -203,13 +203,13 @@ func (e *Engine[S, As, A, G]) NewPlayer(simulation int, t float32, r *rand.Rand)
 			return a, err
 		}
 
-		_, err = e.Search(rootNode, simulation, r)
+		_, err = e.Search(rootNode, simulation, rng)
 		if err != nil {
 			var a A
 			return a, err
 		}
 
-		action, err := rootNode.UCBManager.SelectKeyByTrialPercentAboveFractionOfMax(t, r)
-		return action, err
+		actions := rootNode.UCBManager.MaxTrialKeys()
+		return orand.Choice(actions, rng), nil
 	}
 }

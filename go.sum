@@ -1,6 +1,10 @@
+github.com/chewxy/math32 v1.11.1 h1:b7PGHlp8KjylDoU8RrcEsRuGZhJuz8haxnKfuMMRqy8=
+github.com/chewxy/math32 v1.11.1/go.mod h1:dOB2rcuFrCn6UHrze36WSLVPKtzPMRAQvBvUwkSsLqs=
 github.com/seehuhn/mt19937 v1.0.0 h1:r02DuVkQXfohssWZO8L/TeAlYOah7aNNubEHB/7Vtfs=
 github.com/seehuhn/mt19937 v1.0.0/go.mod h1:RikyXajNu+1Gqxm4hOacc3ckyWRd0usF6IkE3gnEcAM=
-github.com/sw965/omw v0.0.0-20250420045544-0d7779e00477 h1:2wOhksn2Iy2RMTjrg6D/60C+qzPEEyCnm7BfBYaaZ30=
-github.com/sw965/omw v0.0.0-20250420045544-0d7779e00477/go.mod h1:HGNGKO3ydtwQLWNv4dlq/BloxiBZ5KH+sjTdx8ZACz8=
+github.com/sw965/omw v0.0.0-20250501132227-76199108b489 h1:hvbZ2L9UwdYyk5Bz5jepyVWqDtbb+Yi4b+UoqrTFus0=
+github.com/sw965/omw v0.0.0-20250501132227-76199108b489/go.mod h1:/7GBAX/erawKf64WrK0Urbb/ih3IhwnTd75+E0vRiLc=
 golang.org/x/exp v0.0.0-20230118134722-a68e582fa157 h1:fiNkyhJPUvxbRPbCqY/D9qdjmPzfHcpK3P4bM4gioSY=
 golang.org/x/exp v0.0.0-20230118134722-a68e582fa157/go.mod h1:CxIveKay+FTh1D0yPZemJVgC/95VzuuOLq5Qi4xnoYc=
+gonum.org/v1/gonum v0.16.0 h1:5+ul4Swaf3ESvrOnidPp4GZbzf0mxVQpDCYUQE7OJfk=
+gonum.org/v1/gonum v0.16.0/go.mod h1:fef3am4MQ93R2HHpKnLk4/Tbh/s0+wqD5nfa6Pnwy4E=

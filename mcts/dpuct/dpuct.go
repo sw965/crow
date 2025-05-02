@@ -1,11 +1,11 @@
-package duct
+package dpuct
 
 import (
 	"fmt"
 	game "github.com/sw965/crow/game/simultaneous"
-	"github.com/sw965/crow/ucb"
+	"github.com/sw965/crow/pucb"
 	"math/rand"
-	omwrand "github.com/sw965/omw/math/rand"
+	orand "github.com/sw965/omw/math/rand"
 )
 
 // https://www.terry-u16.net/entry/decoupled-uct
@@ -15,7 +15,7 @@ type LeafNodeEvaluator[S any] func(*S) (LeafNodeEvals, error)
 
 type Node[S any, Ass ~[]As, As ~[]A, A comparable] struct {
 	State       S
-	UCBManagers ucb.Managers[As, A]
+	UCBManagers pucb.Managers[As, A]
 	NextNodes   Nodes[S, Ass, As, A]
 }
 
@@ -68,7 +68,7 @@ func UniformPoliciesProvider[S any, Ass ~[]As, As ~[]A, A comparable](state *S, 
 
 type Engine[S any, Ass ~[]As, As ~[]A, A comparable] struct {
 	GameLogic         game.Logic[S, Ass, As, A]
-	UCBFunc           ucb.Func
+	UCBFunc           pucb.Func
 	PoliciesProvider  PoliciesProvider[S, Ass, As, A]
 	LeafNodeEvaluator LeafNodeEvaluator[S]
 	NextNodesCap      int
@@ -100,14 +100,14 @@ func (e *Engine[S, Ass, As, A]) NewNode(state *S) (*Node[S, Ass, As, A], error) 
 		return &Node[S, Ass, As, A]{}, fmt.Errorf("len(Policies) == 0 である為、新しくNodeを生成出来ません。")
 	}
 
-	ms := make(ucb.Managers[As, A], len(policies))
+	ms := make(pucb.Managers[As, A], len(policies))
 	for playerI, policy := range policies {
-		m := ucb.Manager[As, A]{}
+		m := pucb.Manager[As, A]{}
 		if len(policy) == 0 {
 			return &Node[S, Ass, As, A]{}, fmt.Errorf("%d番目のプレイヤーのPolicyが空である為、新しくNodeを生成出来ません。", playerI)
 		}
 		for a, p := range policy {
-			m[a] = &ucb.Calculator{Func: e.UCBFunc, P: p}
+			m[a] = &pucb.Calculator{Func: e.UCBFunc, P: p}
 		}
 		ms[playerI] = m
 	}
@@ -130,7 +130,7 @@ func (e *Engine[S, Ass, As, A]) SelectExpansionBackward(node *Node[S, Ass, As, A
 		jointAction := make(As, len(node.UCBManagers))
 		for playerI, m := range node.UCBManagers {
 			ks := m.MaxKeys()
-			jointAction[playerI] = omwrand.Choice(ks, r)
+			jointAction[playerI] = orand.Choice(ks, r)
 		}
 
 		selections = append(selections, selectionInfo[S, Ass, As, A]{node: node, jointAction: jointAction})

@@ -1,10 +1,10 @@
-package duct_test
+package dpuct_test
 
 import (
 	"fmt"
 	game "github.com/sw965/crow/game/simultaneous"
-	"github.com/sw965/crow/mcts/duct"
-	"github.com/sw965/crow/ucb"
+	"github.com/sw965/crow/mcts/dpuct"
+	"github.com/sw965/crow/pucb"
 	omwrand "github.com/sw965/omw/math/rand"
 	"math"
 	"testing"
@@ -30,7 +30,7 @@ type RockPaperScissors struct {
 }
 
 func TestDUCT(t *testing.T) {
-	r := omwrand.NewMt19937()
+	r := orand.NewMt19937()
 
 	legalActionTableProvider := func(rps *RockPaperScissors) HandTable {
 		return HandTable{HANDS, Hands{ROCK, PAPER, SCISSORS}}
@@ -88,13 +88,13 @@ func TestDUCT(t *testing.T) {
 	}
 	gameLogic.SetStandardResultScoresEvaluator()
 
-	mcts := duct.Engine[RockPaperScissors, HandTable, Hands, Hand]{
+	mcts := dpuct.Engine[RockPaperScissors, HandTable, Hands, Hand]{
 		NextNodesCap:3,
 		GameLogic:gameLogic,
 	}
 
 	mcts.SetUniformPoliciesProvider()
-	mcts.UCBFunc = ucb.NewAlphaGoFunc(float32(math.Sqrt(2)))
+	mcts.UCBFunc = pucb.NewAlphaGoFunc(float32(math.Sqrt(2)))
 	randActionPlayers := gameLogic.MakePlayers(2)
 	randActionPlayers[0] = gameLogic.NewRandActionPlayer(r)
 	randActionPlayers[1] = gameLogic.NewRandActionPlayer(r)
