@@ -3,6 +3,8 @@ package tensor3d
 import (
 	"gonum.org/v1/gonum/blas/blas32"
 	"slices"
+	"math/rand"
+	crand "github.com/sw965/crow/math/rand"
 )
 
 type General struct {

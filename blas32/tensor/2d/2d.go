@@ -23,7 +23,7 @@ func NewZerosLike(gen blas32.General) blas32.General {
 
 func NewHe(rows, cols int, rng *rand.Rand) blas32.General {
     gen := NewZeros(rows, cols)
-	fanIn := float64(cols)
+	fanIn := float64(rows)
     std := math.Sqrt(2.0 / fanIn)
     for i := range gen.Data {
         gen.Data[i] = float32(rng.NormFloat64() * std)

@@ -3,6 +3,9 @@ package tensor4d
 import (
 	"gonum.org/v1/gonum/blas/blas32"
 	"slices"
+	"math"
+	"math/rand"
+	crand "github.com/sw965/crow/math/rand"
 )
 
 type General struct {
@@ -56,8 +59,8 @@ func NewRademacher(batches, chs, rows, cols int, rng *rand.Rand) General {
 	return gen
 }
 
-func NewRademacherLike(gen General) General {
-	return NewRademacher(gen.Batches, gen.Channels, gen.Rows, gen.Cols)
+func NewRademacherLike(gen General, rng *rand.Rand) General {
+	return NewRademacher(gen.Batches, gen.Channels, gen.Rows, gen.Cols, rng)
 }
 
 func (g General) N() int {

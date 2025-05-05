@@ -40,7 +40,7 @@ func saveGob(jsonPath, gobPath string) {
 		}
 	}
 
-	err = ogob.Save(&gobVectorXs, gobPath + "flat_img.jgon")
+	err = ogob.Save(&gobVectorXs, gobPath + "flat_img.gob")
 	if err != nil {
 		panic(err)
 	}
