@@ -13,6 +13,7 @@ import (
 	"math"
 	"math/rand"
 	"slices"
+	"github.com/sw965/omw/parallel"
 )
 
 type GradBuffer struct {
@@ -20,17 +21,57 @@ type GradBuffer struct {
 	Bias   blas32.Vector
 }
 
+func (g *GradBuffer) NewZerosLike() GradBuffer {
+	return GradBuffer{
+		Weight:tensor2d.NewZerosLike(g.Weight),
+		Bias:vector.NewZerosLike(g.Bias),
+	}
+}
+
+func (g GradBuffer) Clone() GradBuffer {
+	return GradBuffer{
+		Weight:tensor2d.Clone(g.Weight),
+		Bias:vector.Clone(g.Bias),
+	}
+}
+
 func (g *GradBuffer) Axpy(alpha float32, x *GradBuffer) {
-	tensor2d.Axpy(alpha, x.Weight, g.Weight)
-	blas32.Axpy(alpha, x.Bias, g.Bias)
+	if x.Weight.Rows != 0 {
+		tensor2d.Axpy(alpha, x.Weight, g.Weight)
+	}
+
+	if x.Bias.N != 0 {
+		blas32.Axpy(alpha, x.Bias, g.Bias)
+	}
 }
 
 func (g *GradBuffer) Scal(alpha float32) {
-	tensor2d.Scal(alpha, g.Weight)
-	blas32.Scal(alpha, g.Bias)
+	if g.Weight.Rows != 0 {
+		tensor2d.Scal(alpha, g.Weight)
+	}
+
+	if g.Bias.N != 0 {
+		blas32.Scal(alpha, g.Bias)
+	}
 }
 
 type GradBuffers []GradBuffer
+
+func (gs GradBuffers) NewZerosLike() GradBuffers {
+	zeros := make(GradBuffers, len(gs))
+	for i, g := range gs {
+		zeros[i] = g.NewZerosLike()
+	}
+	return zeros
+}
+
+func (gs GradBuffers) Clone() GradBuffers {
+	clone := make(GradBuffers, len(gs))
+	for i, g := range gs {
+		clone[i] = g.Clone()
+	}
+	return clone
+}
 
 func (gs GradBuffers) Axpy(alpha float32, xs GradBuffers) {
 	for i, g := range gs {
@@ -131,8 +172,27 @@ func (fs Forwards) Propagate(x blas32.Vector, params Parameters) (blas32.Vector,
 	return y, backwards, nil
 }
 
+type Forward3D func(tensor3d.General, ) (tensor3d.General, Backwards3D, error)
+
+
 type Backward func(blas32.Vector) (blas32.Vector, GradBuffer, error)
 type Backwards []Backward
+
+func (bs Backwards) Propagate(chain blas32.Vector) (blas32.Vector, GradBuffers, error) {
+	grads := make(GradBuffers, len(bs))
+	var grad GradBuffer
+	var err error
+	for i, b := range bs {
+		chain, grad, err = b(chain)
+		if err != nil {
+			return blas32.Vector{}, nil, err
+		}
+		grads[i] = grad
+	}
+	dx := chain
+	slices.Reverse(grads)
+	return dx, grads, nil
+}
 
 func AffineForward(x blas32.Vector, param *Parameter) (blas32.Vector, Backward, error) {
 	yn := param.Weight.Cols
@@ -151,7 +211,6 @@ func AffineForward(x blas32.Vector, param *Parameter) (blas32.Vector, Backward, 
 			Data: make([]float32, wRows),
 		}
 		blas32.Gemv(blas.NoTrans, 1.0, param.Weight, chain, 1.0, dx)
-		fmt.Println("dx =", dx)
 
 		dw := blas32.General{
 			Rows:   wRows,
@@ -160,7 +219,6 @@ func AffineForward(x blas32.Vector, param *Parameter) (blas32.Vector, Backward, 
 			Data:   make([]float32, wRows*wCols),
 		}
 		blas32.Ger(1.0, x, chain, dw)
-		fmt.Println("dw =", dw)
 
 		db := blas32.Vector{
 			N:    chain.N,
@@ -168,13 +226,11 @@ func AffineForward(x blas32.Vector, param *Parameter) (blas32.Vector, Backward, 
 			Data: make([]float32, chain.N),
 		}
 		blas32.Copy(chain, db)
-		fmt.Println("db =", db)
 
 		grad := GradBuffer{
 			Weight: dw,
 			Bias:   db,
 		}
-
 		return dx, grad, nil
 	}
 	return y, backward, nil
@@ -353,8 +409,68 @@ func (m *Model) Accuracy(xs, ts []blas32.Vector) (float32, error) {
 	return float32(correct) / float32(n), nil
 }
 
-func (m *Model) ComputeGradByTeacher(xs, ts blas32.Vector) (GradBuffers, error) {
-	
+func (m *Model) BackPropagateByTeacher(x, t blas32.Vector) (blas32.Vector, GradBuffers, error) {
+	y, backwards, err := m.Forwards.Propagate(x, m.Parameters)
+	if err != nil {
+		return blas32.Vector{}, nil, err
+	}
+	firstChain, err := m.PredictLoss.Derivative(y, t)
+	if err != nil {
+		return blas32.Vector{}, nil, err
+	}
+	return backwards.Propagate(firstChain)
+}
+
+func (m *Model) ComputeGradByTeacher(xs, ts []blas32.Vector, rng *rand.Rand, p int) (GradBuffers, error) {	
+	n := len(xs)
+	if n != len(ts) {
+		return nil, fmt.Errorf("バッチサイズが一致しません。")
+	}
+
+	_, firstGrads, err := m.BackPropagateByTeacher(xs[0], ts[0])
+	if err != nil {
+		return nil, err
+	}
+
+	gradBuffersByParallel := make([]GradBuffers, p)
+	for i := range gradBuffersByParallel {
+		gradBuffersByParallel[i] = firstGrads.NewZerosLike()
+	}
+
+	errCh := make(chan error, p)
+	worker := func(workerIdx int, idxs []int) {
+		for _, idx := range idxs {
+			x := xs[idx+1]
+			t := ts[idx+1]
+			_, grads, err := m.BackPropagateByTeacher(x, t)
+			if err != nil {
+				errCh <- err
+				return
+			}
+			gradBuffersByParallel[workerIdx].Axpy(1.0, grads)
+		}
+		errCh <- err
+	}
+
+	for workerIdx, idxs := range parallel.DistributeIndicesEvenly(n -1, p) {
+		go worker(workerIdx, idxs)
+	}
+
+	for i := 0; i < p; i++ {
+		if err := <-errCh; err != nil {
+			return nil, err
+		}
+	}
+
+	total := firstGrads.Clone()
+	for _, g := range gradBuffersByParallel {
+		total.Axpy(1.0, g)
+	}
+	total.Scal(1.0/float32(n))
+	//メモリ解法
+	firstGrads = make(GradBuffers, 0)
+	gradBuffersByParallel = make([]GradBuffers, 0)
+	return total, nil
 }
 
 func (m *Model) EstimateGradsBySPSA(c float32, rngs []*rand.Rand) (GradBuffers, error) {
@@ -415,4 +531,72 @@ func (m *Model) EstimateGradsBySPSA(c float32, rngs []*rand.Rand) (GradBuffers, 
 		firstGrads.Axpy(1.0/float32(p), grads)
 	}
 	return firstGrads, nil
+}
+
+type Adam struct {
+	LearningRate float32
+	Beta1        float32
+	Beta2        float32
+	Epsilon      float32
+
+	iter int
+	m    GradBuffers
+	v    GradBuffers
+}
+
+// NewAdam creates a new Adam optimizer whose内部状態
+// (1st/2nd momentバッファ)は引数の Parameters と同じ形状で 0 初期化されます。
+func NewAdam(params Parameters) *Adam {
+	return &Adam{
+		LearningRate: 0.001,
+		Beta1:        0.9,
+		Beta2:        0.999,
+		Epsilon:      1e-7,
+		iter:         0,
+		m:            params.NewGradsZerosLike(),
+		v:            params.NewGradsZerosLike(),
+	}
+}
+
+// Optimizer updates model.Parameters in‑place using Adam rule.
+//  * model  – 更新対象モデル
+//  * grads  – SPSA 等で推定した勾配（model と同じ長さ）
+func (a *Adam) Optimizer(model *Model, grads GradBuffers) error {
+	if len(model.Parameters) != len(grads) {
+		return fmt.Errorf("Adam: parameters/grads size mismatch")
+	}
+
+	// 念のため lazy‑init（NewAdam を通らず生成された場合に備え）
+	if a.m == nil || len(a.m) == 0 {
+		a.m = model.Parameters.NewGradsZerosLike()
+		a.v = model.Parameters.NewGradsZerosLike()
+	}
+
+	a.iter++
+	beta1, beta2 := a.Beta1, a.Beta2
+	lrt := a.LearningRate *
+		float32(math32.Sqrt(1-math32.Pow(beta2, float32(a.iter)))) /
+		(1 - math32.Pow(beta1, float32(a.iter)))
+
+	for i := range grads {
+		// --- Weight 部分 ---
+		for j, g := range grads[i].Weight.Data {
+			a.m[i].Weight.Data[j] += (1 - beta1) * (g - a.m[i].Weight.Data[j])
+			a.v[i].Weight.Data[j] += (1 - beta2) * (g*g - a.v[i].Weight.Data[j])
+
+			update := lrt * a.m[i].Weight.Data[j] /
+				(float32(math32.Sqrt(a.v[i].Weight.Data[j])) + a.Epsilon)
+			model.Parameters[i].Weight.Data[j] -= update
+		}
+		// --- Bias 部分 ---
+		for j, g := range grads[i].Bias.Data {
+			a.m[i].Bias.Data[j] += (1 - beta1) * (g - a.m[i].Bias.Data[j])
+			a.v[i].Bias.Data[j] += (1 - beta2) * (g*g - a.v[i].Bias.Data[j])
+
+			update := lrt * a.m[i].Bias.Data[j] /
+				(float32(math32.Sqrt(a.v[i].Bias.Data[j])) + a.Epsilon)
+			model.Parameters[i].Bias.Data[j] -= update
+		}
+	}
+	return nil
 }

@@ -1,4 +1,4 @@
-package tensor2ds
+package tensors2d
 
 import (
 	"fmt"

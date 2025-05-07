@@ -1,4 +1,4 @@
-package tensor3ds
+package tensors3d
 
 import (
 	"math/rand"

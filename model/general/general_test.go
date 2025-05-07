@@ -1,9 +1,9 @@
-package mlp_test
+package general_test
 
 import (
 	"fmt"
 	//cmath "github.com/sw965/crow/math"
-	"github.com/sw965/crow/model/mlp"
+	"github.com/sw965/crow/model/general"
 	"testing"
 	//oslices "github.com/sw965/omw/slices"
 	"github.com/sw965/crow/dataset/mnist"
@@ -16,7 +16,7 @@ import (
 
 func TestModel(t *testing.T) {
 	rng := orand.NewMt19937()
-	model := mlp.Model{}
+	model := general.Model{}
 	model.AppendAffine(784, 784, rng)
 	model.AppendLeakyReLU(0.1)
 
@@ -98,11 +98,11 @@ func TestModel(t *testing.T) {
 			miniTs[j] = trainYs[idx]
 		}
 
-		grads, err := model.ComputeGradByTeacher(miniXs, miniTs, rng, p)
+		grad, err := model.ComputeGrad(miniXs, miniTs, p)
 		if err != nil {
 			panic(err)
 		}
-		model.Parameters.AxpyGrads(-lr, grads)
+		model.Parameter.AxpyGrad(-lr, &grad)
 		//opt.Optimizer(&model, grads)
 
 		if i%512 == 0 {
