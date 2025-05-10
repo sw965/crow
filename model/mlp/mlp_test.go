@@ -10,8 +10,6 @@ import (
 	orand "github.com/sw965/omw/math/rand"
 	"gonum.org/v1/gonum/blas/blas32"
 	//"math/rand"
-	"runtime"
-	"runtime/debug"
 )
 
 func TestModel(t *testing.T) {
@@ -48,48 +46,14 @@ func TestModel(t *testing.T) {
 		panic(err)
 	}
 
-	p := 4
-	miniBatchSize := 16*p
+	p := 6
+	miniBatchSize := 128*p
 
-	// rngs := make([]*rand.Rand, 4)
-	// for i := range rngs {
-	// 	rngs[i] = orand.NewMt19937()
-	// }
-
-	// model.LossFunc = func(model *mlp.Model, workerIdx int) (float32, error) {
-	// 	rng := rngs[workerIdx]
-	// 	sum := float32(0.0)
-	// 	for i := 0; i < miniBatchSize; i++ {
-	// 		idx := rng.Intn(60000)
-	// 		x := trainXs[idx]
-	// 		y, err := model.Predict(x)
-	// 		if err != nil {
-	// 			return 0.0, err
-	// 		}
-	// 		t := trainYs[idx]
-	// 		loss, err := cmath.CrossEntropyError(y, t)
-	// 		if err != nil {
-	// 			return 0.0, err
-	// 		}
-	// 		sum += loss
-	// 	}
-	// 	ceeLoss := sum / float32(miniBatchSize)
-	// 	return ceeLoss, nil
-	// }
-
-	trainNum := 128000
-	//opt := mlp.NewAdam(model.Parameters)
-	lr := float32(0.01)
-	//c := float32(0.2)
+	trainNum := 12800
+	//lr := float32(0.01)
+	opt := mlp.NewMomentum(model.Parameters)
 
 	for i := 0; i < trainNum; i++ {
-		// grads, err := model.EstimateGradsBySPSA(c, rngs)
-		// if err != nil {
-		// 	panic(err)
-		// }
-
-		//model.Parameters.AxpyGrads(-lr, grads)
-
 		miniXs := make([]blas32.Vector, miniBatchSize)
 		miniTs := make([]blas32.Vector, miniBatchSize)
 		for j := 0; j < miniBatchSize; j++ {
@@ -102,8 +66,8 @@ func TestModel(t *testing.T) {
 		if err != nil {
 			panic(err)
 		}
-		model.Parameters.AxpyGrads(-lr, grads)
-		//opt.Optimizer(&model, grads)
+		//model.Parameters.AxpyGrads(-lr, grads)
+		opt.Optimizer(&model, grads)
 
 		if i%512 == 0 {
 			acc, err := model.Accuracy(testXs[:1000], testYs[:1000])
@@ -111,8 +75,6 @@ func TestModel(t *testing.T) {
 				panic(err)
 			}
 			fmt.Println(i, acc)
-			runtime.GC()
-			debug.FreeOSMemory()
 		}
 	}
 }

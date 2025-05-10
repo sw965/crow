@@ -71,6 +71,48 @@ func Im2Col(img tensor.D3, filterRows, filterCols int) blas32.General {
 	}
 }
 
+func Col2Im(col blas32.General, imgShape Image, filterRows, filterCols int) Image {
+	chs := imgShape.Channels
+	outRows := OutputRows(imgShape, filterRows)
+	outCols := OutputCols(imgShape, filterCols)
+
+	// （念のための簡易チェック）
+	if col.Rows != outRows*outCols {
+		panic("Col2Im: unexpected number of rows")
+	}
+	if col.Cols != chs*filterRows*filterCols {
+		panic("Col2Im: unexpected number of cols")
+	}
+
+	recon := make([]float32, len(imgShape.Data)) // 0 初期化
+	colIdx := 0
+
+	for or := 0; or < outRows; or++ {
+		for oc := 0; oc < outCols; oc++ {
+			for ch := 0; ch < chs; ch++ {
+				for fr := 0; fr < filterRows; fr++ {
+					for fc := 0; fc < filterCols; fc++ {
+						row := fr + or
+						colPos := fc + oc
+						imgIdx := imgShape.At(ch, row, colPos)
+						recon[imgIdx] += col.Data[colIdx] // 重ね足し
+						colIdx++
+					}
+				}
+			}
+		}
+	}
+
+	return Image{
+		Channels:      imgShape.Channels,
+		Rows:          imgShape.Rows,
+		Cols:          imgShape.Cols,
+		ChannelStride: imgShape.ChannelStride,
+		RowStride:     imgShape.RowStride,
+		Data:          recon,
+	}
+}
+
 func FilterToGeneral(f tensor.D4) blas32.General {
 	return blas32.General{
 		Rows:f.Batches,

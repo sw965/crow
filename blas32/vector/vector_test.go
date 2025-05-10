@@ -54,48 +54,20 @@ func TestClone(t *testing.T) {
 	fmt.Println(result)
 }
 
-func TestAffine(t *testing.T) {
-	xn := 5
+func TestStandardization(t *testing.T) {
 	x := blas32.Vector{
-		N:xn,
-		Inc:1,
-		Data:[]float32{1.0, 2.0, 3.0, 4.0, 5.0},
-	}
-
-	yn := 3
-	w := blas32.General{
-		Rows:xn,
-		Cols:yn,
-		Stride:yn,
-		Data:[]float32{
-			-1.0, 2.0, -3.0,
-			-3.0, -2.0, -0.1,
-			4.0,  -0.5, 5.0,
-			0.0,  0.0, -2.0,
-			5.0, -5.0, 0.0,
-		},
-	}
-
-	b := blas32.Vector{
-		N:yn,
-		Inc:1,
-		Data:[]float32{-1.0, 0.0, 1.0},
-	}
-
-	result := vector.Affine(x, w, b)
-	expected := blas32.Vector{
 		N:3,
 		Inc:1,
-		Data:[]float32{29.0, -28.5, 4.8},
+		Data:[]float32{1.0, 2.0, 3.0},
+	}
+	_, mean, std, err := vector.StandardizeWithStats(x)
+	if err != nil {
+		panic(err)
 	}
 
-	if result.N != expected.N {
-		t.Errorf("テスト失敗")
+	grad, err := vector.StandardizationDerivative(x, mean, std)
+		if err != nil {
+		panic(err)
 	}
-
-	if result.Inc != expected.Inc {
-		t.Errorf("テスト失敗")
-	}
-
-	fmt.Println(result.Data, expected.Data)
+	fmt.Println(grad)
 }

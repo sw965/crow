@@ -68,6 +68,14 @@ func ToVector(gen blas32.General) blas32.Vector {
 	}
 }
 
+func Flatten(gen blas32.General) blas32.Vector {
+	return blas32.Vector{
+		N:N(gen),
+		Inc:1,
+		Data:slices.Clone(gen.Data),
+	}
+}
+
 func Scal(alpha float32, gen blas32.General) {
 	vec := ToVector(gen)
 	blas32.Scal(alpha, vec)
@@ -77,4 +85,22 @@ func Axpy(alpha float32, x, y blas32.General) {
 	xv := ToVector(x)
 	yv := ToVector(y)
 	blas32.Axpy(alpha, xv, yv)
+}
+
+func T(gen blas32.General) blas32.General {
+	t := blas32.General{
+		Rows:gen.Cols,
+		Cols:gen.Rows,
+		Stride:gen.Rows,
+		Data:make([]float32, N(gen)),
+	}
+
+	for i := range t.Rows {
+		for j := range t.Cols {
+			newIdx := At(t, i, j)
+			oldIdx := At(gen, j, i)
+			t.Data[newIdx] = gen.Data[oldIdx]
+		}
+	}
+	return t
 }

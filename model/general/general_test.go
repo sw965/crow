@@ -1,32 +1,31 @@
 package general_test
 
 import (
-	"fmt"
-	//cmath "github.com/sw965/crow/math"
-	"github.com/sw965/crow/model/general"
 	"testing"
-	//oslices "github.com/sw965/omw/slices"
+	"fmt"
+	"github.com/sw965/crow/model/general"
 	"github.com/sw965/crow/dataset/mnist"
 	orand "github.com/sw965/omw/math/rand"
 	"gonum.org/v1/gonum/blas/blas32"
-	//"math/rand"
-	"runtime"
-	"runtime/debug"
 )
 
 func TestModel(t *testing.T) {
 	rng := orand.NewMt19937()
 	model := general.Model{}
-	model.AppendAffine(784, 784, rng)
+	model.AppendDot(784, 1280, rng)
 	model.AppendLeakyReLU(0.1)
+	model.AppendInstanceNormalization(1280)
 
-	model.AppendAffine(784, 32, rng)
+	model.AppendDot(1280, 100, rng)
 	model.AppendLeakyReLU(0.1)
+	model.AppendInstanceNormalization(100)
 
-	model.AppendAffine(32, 10, rng)
+	model.AppendDot(100, 10, rng)
 	model.AppendLeakyReLU(0.1)
+	model.AppendInstanceNormalization(10)
 
-	model.AppendOutputSoftmaxAndSetCrossEntropyLoss()
+	model.AppendSoftmaxForCrossEntropyLoss()
+	model.SetCrossEntropyLossForSoftmax()
 
 	trainXs, err := mnist.LoadTrainFlatImages()
 	if err != nil {
@@ -48,48 +47,15 @@ func TestModel(t *testing.T) {
 		panic(err)
 	}
 
-	p := 4
-	miniBatchSize := 16*p
+	p := 12
+	miniBatchSize := 512/p
 
-	// rngs := make([]*rand.Rand, 4)
-	// for i := range rngs {
-	// 	rngs[i] = orand.NewMt19937()
-	// }
-
-	// model.LossFunc = func(model *mlp.Model, workerIdx int) (float32, error) {
-	// 	rng := rngs[workerIdx]
-	// 	sum := float32(0.0)
-	// 	for i := 0; i < miniBatchSize; i++ {
-	// 		idx := rng.Intn(60000)
-	// 		x := trainXs[idx]
-	// 		y, err := model.Predict(x)
-	// 		if err != nil {
-	// 			return 0.0, err
-	// 		}
-	// 		t := trainYs[idx]
-	// 		loss, err := cmath.CrossEntropyError(y, t)
-	// 		if err != nil {
-	// 			return 0.0, err
-	// 		}
-	// 		sum += loss
-	// 	}
-	// 	ceeLoss := sum / float32(miniBatchSize)
-	// 	return ceeLoss, nil
-	// }
-
-	trainNum := 128000
-	//opt := mlp.NewAdam(model.Parameters)
+	trainNum := 12800
 	lr := float32(0.01)
-	//c := float32(0.2)
+	opt := general.NewMomentum(&model.Parameter)
+	opt.LearningRate = lr
 
 	for i := 0; i < trainNum; i++ {
-		// grads, err := model.EstimateGradsBySPSA(c, rngs)
-		// if err != nil {
-		// 	panic(err)
-		// }
-
-		//model.Parameters.AxpyGrads(-lr, grads)
-
 		miniXs := make([]blas32.Vector, miniBatchSize)
 		miniTs := make([]blas32.Vector, miniBatchSize)
 		for j := 0; j < miniBatchSize; j++ {
@@ -102,8 +68,8 @@ func TestModel(t *testing.T) {
 		if err != nil {
 			panic(err)
 		}
-		model.Parameter.AxpyGrad(-lr, &grad)
-		//opt.Optimizer(&model, grads)
+		opt.Optimize(&model, &grad, 0)
+		//model.Parameter.AxpyGrad(-lr, &grad)
 
 		if i%512 == 0 {
 			acc, err := model.Accuracy(testXs[:1000], testYs[:1000])
@@ -111,8 +77,6 @@ func TestModel(t *testing.T) {
 				panic(err)
 			}
 			fmt.Println(i, acc)
-			runtime.GC()
-			debug.FreeOSMemory()
 		}
 	}
 }

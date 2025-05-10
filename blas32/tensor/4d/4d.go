@@ -97,3 +97,57 @@ func (g General) Axpy(alpha float32, x General) {
 	yv := g.ToVector()
 	blas32.Axpy(alpha, xv, yv)
 }
+
+func (g General) Transpose(axes ...int) General {
+	const ndim = 4
+
+	// --- 1. デフォルトは軸を完全に逆順 ---
+	if len(axes) == 0 {
+		axes = []int{3, 2, 1, 0}
+	}
+	if len(axes) != ndim {
+		panic("tensor4d: axes must have length 4")
+	}
+
+	// --- 2. 軸番号の正規化と妥当性チェック ---
+	seen := [ndim]bool{}
+	for i, ax := range axes {
+		if ax < 0 {
+			ax += ndim
+		}
+		if ax < 0 || ax >= ndim || seen[ax] {
+			panic("tensor4d: invalid axes permutation")
+		}
+		axes[i] = ax
+		seen[ax] = true
+	}
+
+	// --- 3. 出力テンソルの形状を決定 ---
+	srcShape := []int{g.Batches, g.Channels, g.Rows, g.Cols}
+	dstShape := [ndim]int{}
+	for i := 0; i < ndim; i++ {
+		dstShape[i] = srcShape[axes[i]]
+	}
+	dst := NewZeros(dstShape[0], dstShape[1], dstShape[2], dstShape[3])
+
+	// --- 4. データをコピーしながら再配置 ---
+	for b := 0; b < dstShape[0]; b++ {
+		for c := 0; c < dstShape[1]; c++ {
+			for r := 0; r < dstShape[2]; r++ {
+				for col := 0; col < dstShape[3]; col++ {
+					// dstインデックス(b,c,r,col) → srcインデックスへマッピング
+					srcIdx := [ndim]int{}
+					srcIdx[axes[0]] = b
+					srcIdx[axes[1]] = c
+					srcIdx[axes[2]] = r
+					srcIdx[axes[3]] = col
+
+					dst.Data[dst.At(b, c, r, col)] =
+						g.Data[g.At(srcIdx[0], srcIdx[1], srcIdx[2], srcIdx[3])]
+				}
+			}
+		}
+	}
+
+	return dst
+}

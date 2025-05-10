@@ -1,19 +1,13 @@
-package mlp
+package spsa
 
 import (
 	"fmt"
-	"github.com/chewxy/math32"
 	"github.com/sw965/crow/blas32/tensor/2d"
 	"github.com/sw965/crow/blas32/vector"
 	cmath "github.com/sw965/crow/math"
-	omath "github.com/sw965/omw/math"
 	oslices "github.com/sw965/omw/slices"
-	"gonum.org/v1/gonum/blas"
 	"gonum.org/v1/gonum/blas/blas32"
-	"math"
 	"math/rand"
-	"slices"
-	"github.com/sw965/omw/parallel"
 )
 
 type GradBuffer struct {
@@ -74,14 +68,14 @@ func (gs GradBuffers) Clone() GradBuffers {
 }
 
 func (gs GradBuffers) Axpy(alpha float32, xs GradBuffers) {
-	for i, g := range gs {
-		g.Axpy(alpha, &xs[i])
+	for i := range gs {
+		gs[i].Axpy(alpha, &xs[i])
 	}
 }
 
 func (gs GradBuffers) Scal(alpha float32) {
-	for _, g := range gs {
-		g.Scal(alpha)
+	for i := range gs {
+		gs[i].Scal(alpha)
 	}
 }
 
@@ -153,19 +147,41 @@ func (ps Parameters) AxpyGrads(alpha float32, grads GradBuffers) {
 	}
 }
 
+type Forward func(blas32.Vector, *Parameter) (blas32.Vector, error)
+type Forwards []Forward
+
+func (fs Forwards) Propagate(x blas32.Vector, params Parameters) (blas32.Vector, error) {
+	if len(fs) != len(params) {
+		return blas32.Vector{}, fmt.Errorf("フォワードとパラメーターの長さが一致しない")
+	}
+
+	var err error
+	for i, f := range fs {
+		x, err = f(x, &params[i])
+		if err != nil {
+			return blas32.Vector{}, err
+		}
+	}
+	return x, nil
+}
+
 type Model struct {
 	Parameters  Parameters
 	Forwards    Forwards
 	LossFunc    func(*Model, int) (float32, error)
 }
 
-func (m *Model) AppendAffine(xn, yn int, rng *rand.Rand) {
+func (m *Model) AppendDot(xn, yn int, rng *rand.Rand) {
 	param := Parameter{
 		Weight: tensor2d.NewHe(xn, yn, rng),
-		Bias:   vector.NewZeros(yn),
+		Bias:   blas32.Vector{N: 0, Inc: 0, Data: []float32{}},
 	}
 	m.Parameters = append(m.Parameters, param)
-	m.Forwards = append(m.Forwards, AffineForward)
+
+	forward := func(x blas32.Vector, param *Parameter) (blas32.Vector, error) {
+		return vector.DotNoTrans2D(x, param.Weight), nil
+	}
+	m.Forwards = append(m.Forwards, forward)
 }
 
 func (m *Model) AppendLeakyReLU(alpha float32) {
@@ -174,17 +190,24 @@ func (m *Model) AppendLeakyReLU(alpha float32) {
 		Bias:   blas32.Vector{N: 0, Inc: 0, Data: []float32{}},
 	}
 	m.Parameters = append(m.Parameters, param)
-	m.Forwards = append(m.Forwards, NewLeakyReLU1DForward(alpha))
+
+	forward := func(x blas32.Vector, _ *Parameter) (blas32.Vector, error) {
+		return vector.LeakyReLU(x, alpha), nil
+	}
+	m.Forwards = append(m.Forwards, forward)
 }
 
-func (m *Model) AppendOutputSoftmaxAndSetCrossEntropyLoss() {
+func (m *Model) AppendSoftmax() {
 	param := Parameter{
 		Weight: blas32.General{Rows: 0, Cols: 0, Stride: 0, Data: []float32{}},
 		Bias:   blas32.Vector{N: 0, Inc: 0, Data: []float32{}},
 	}
 	m.Parameters = append(m.Parameters, param)
-	m.Forwards = append(m.Forwards, SoftmaxForOutputForward)
-	m.PredictLoss = NewCrossEntropyLossForSoftmax()
+
+	forward := func(x blas32.Vector, _ *Parameter) (blas32.Vector, error) {
+		return vector.Softmax(x), nil
+	}
+	m.Forwards = append(m.Forwards, forward)
 }
 
 func (m Model) Clone() Model {
@@ -196,7 +219,7 @@ func (m Model) Clone() Model {
 }
 
 func (m *Model) Predict(x blas32.Vector) (blas32.Vector, error) {
-	y, _, err := m.Forwards.Propagate(x, m.Parameters)
+	y, err := m.Forwards.Propagate(x, m.Parameters)
 	return y, err
 }
 
@@ -277,4 +300,60 @@ func (m *Model) EstimateGrads(c float32, rngs []*rand.Rand) (GradBuffers, error)
 		firstGrads.Axpy(1.0/float32(p), grads)
 	}
 	return firstGrads, nil
+}
+
+func (m *Model) NumericalGrads() GradBuffers {
+	const h float32 = 1e-4
+
+	// 勾配バッファをゼロ初期化
+	grads := m.Parameters.NewGradsZerosLike()
+
+	// その都度ロスを計算するヘルパ
+	calcLoss := func() float32 {
+		loss, err := m.LossFunc(m, 0) // workerIdx は単一スレッドなので 0
+		if err != nil {
+			panic(err) // 運用に応じて適切に処理
+		}
+		return loss
+	}
+
+	for i := range m.Parameters {
+		p := &m.Parameters[i]
+
+		/* ---------- Weight ---------- */
+		for j := range p.Weight.Data {
+			tmp := p.Weight.Data[j]
+
+			// f(x + h)
+			p.Weight.Data[j] = tmp + h
+			fxh1 := calcLoss()
+
+			// f(x - h)
+			p.Weight.Data[j] = tmp - h
+			fxh2 := calcLoss()
+
+			// 中心差分
+			grads[i].Weight.Data[j] = (fxh1 - fxh2) / (2 * h)
+
+			// 元に戻す
+			p.Weight.Data[j] = tmp
+		}
+
+		/* ---------- Bias ---------- */
+		for j := range p.Bias.Data {
+			tmp := p.Bias.Data[j]
+
+			p.Bias.Data[j] = tmp + h
+			fxh1 := calcLoss()
+
+			p.Bias.Data[j] = tmp - h
+			fxh2 := calcLoss()
+
+			grads[i].Bias.Data[j] = (fxh1 - fxh2) / (2 * h)
+
+			p.Bias.Data[j] = tmp
+		}
+	}
+
+	return grads
 }

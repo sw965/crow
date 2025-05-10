@@ -1,11 +1,13 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	ojson "github.com/sw965/omw/encoding/json"
 	ogob "github.com/sw965/omw/encoding/gob"
 	"gonum.org/v1/gonum/blas/blas32"
-	"github.com/sw965/crow/tensor"
+	"github.com/sw965/crow/blas32/tensor/3d"
+
 )
 
 var (
@@ -45,9 +47,9 @@ func saveGob(jsonPath, gobPath string) {
 		panic(err)
 	}
 
-	gobD3Xs := make([]tensor.D3, len(jsonXs))
+	gobD3Xs := make([]tensor3d.General, len(jsonXs))
 	for i := range gobD3Xs {
-		gobD3Xs[i] = tensor.NewD3Zeros(CHANNELS, ROWS, COLS)
+		gobD3Xs[i] = tensor3d.NewZeros(CHANNELS, ROWS, COLS)
 		gobD3Xs[i].Data = jsonXs[i]
 	}
 
