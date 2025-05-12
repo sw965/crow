@@ -26,6 +26,18 @@ func NewZerosLike(vec blas32.Vector) blas32.Vector {
 	return NewZeros(vec.N)
 }
 
+func NewOnes(n int) blas32.Vector {
+	vec := NewZeros(n)
+	for i := range vec.Data {
+		vec.Data[i] = 1.0
+	}
+	return vec
+}
+
+func NewOnesLike(vec blas32.Vector) blas32.Vector {
+	return NewOnes(vec.N)
+}
+
 func NewRademacher(n int, rng *rand.Rand) blas32.Vector {
 	vec := NewZeros(n)
 	for i := range vec.Data {
@@ -76,7 +88,7 @@ func Reshape3D(vec blas32.Vector, chs, rows, cols int) (tensor3d.General, error)
 	}, nil
 }
 
-func Reshaped4D(vec blas32.Vector, batches, chs, rows, cols int) (tensor4d.General, error) {
+func Reshape4D(vec blas32.Vector, batches, chs, rows, cols int) (tensor4d.General, error) {
 	n := batches * chs * rows * cols
 	if n != vec.N  {
 		return tensor4d.General{}, fmt.Errorf("サイズが合わない")
@@ -283,11 +295,12 @@ func LeakyReLUDerivative(x blas32.Vector, alpha float32) blas32.Vector {
 	}
 }
 
+const eps float32 = 1e-4
+
 func CrossEntropy(y, t blas32.Vector) (float32, error) {
 	ce := float32(0.0)
-	e := float32(0.0001)
 	for i := range y.Data {
-		ye := omath.Max(y.Data[i], e)
+		ye := omath.Max(y.Data[i], eps)
 		te := t.Data[i]
 		ce += -te * math32.Log(ye)
 	}
@@ -298,6 +311,7 @@ func SoftmaxCrossEntropyLossDerivative(y, t blas32.Vector) (blas32.Vector, error
 	if y.N != t.N {
 		return blas32.Vector{}, fmt.Errorf("要素数が一致しない")
 	}
+
 	grad := blas32.Vector{
 		N:    y.N,
 		Inc:  y.Inc,

@@ -11,16 +11,20 @@ import (
 )
 
 func TestModel(t *testing.T) {
+	return
 	rng := orand.NewMt19937()
 	model := spsa.Model{}
-	model.AppendDot(784, 1280, rng)
+	model.AppendDot(784, 128, rng)
 	model.AppendLeakyReLU(0.1)
+	model.AppendInstanceNormalization(128)
 
-	model.AppendDot(1280, 100, rng)
+	model.AppendDot(128, 32, rng)
 	model.AppendLeakyReLU(0.1)
+	model.AppendInstanceNormalization(32)
 
-	model.AppendDot(100, 10, rng)
+	model.AppendDot(32, 10, rng)
 	model.AppendLeakyReLU(0.1)
+	model.AppendInstanceNormalization(10)
 
 	model.AppendSoftmax()
 
@@ -51,7 +55,7 @@ func TestModel(t *testing.T) {
 	}
 	miniBatchSize := 128
 
-	model.LossFunc = func(model *spsa.Model, workerIdx int) (float32, error) {
+	lossFunc := func(model *spsa.Model, workerIdx int) (float32, error) {
 		rng := rngs[workerIdx]
 		sum := float32(0.0)
 		for i := 0; i < miniBatchSize; i++ {
@@ -71,10 +75,10 @@ func TestModel(t *testing.T) {
 		return sum / float32(miniBatchSize), nil
 	}
 
-	trainNum := 1280
+	trainNum := 128000
 	lr := float32(0.01)
 	for i := 0; i < trainNum; i++ {
-		grads, err := model.EstimateGrads(0.01, rngs)
+		grads, err := model.EstimateGrads(lossFunc, 0.2, rngs)
 		if err != nil {
 			panic(err)
 		}

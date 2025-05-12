@@ -15,6 +15,14 @@ func NewZerosLike(vs []blas32.Vector) []blas32.Vector {
 	return zeros
 }
 
+func NewOnesLike(vs []blas32.Vector) []blas32.Vector {
+	ones := make([]blas32.Vector, len(vs))
+	for i, v := range vs {
+		ones[i] = vector.NewOnesLike(v)
+	}
+	return ones
+}
+
 func NewRademacherLike(vs []blas32.Vector, rng *rand.Rand) []blas32.Vector {
 	rad := make([]blas32.Vector, len(vs))
 	for i, v := range vs {

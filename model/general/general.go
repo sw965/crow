@@ -7,11 +7,12 @@ import (
 	"github.com/sw965/crow/blas32/vector"
 	"github.com/sw965/crow/blas32/vectors"
 	oslices "github.com/sw965/omw/slices"
-	"gonum.org/v1/gonum/blas"
 	"gonum.org/v1/gonum/blas/blas32"
 	"math/rand"
 	"slices"
 	"github.com/sw965/omw/parallel"
+	omath "github.com/sw965/omw/math"
+	"github.com/chewxy/math32"
 )
 
 type GradBuffer struct {
@@ -23,6 +24,7 @@ type GradBuffer struct {
 func (g *GradBuffer) NewZerosLike() GradBuffer {
 	return GradBuffer{
 		Weights:tensors2d.NewZerosLike(g.Weights),
+		Gammas:vectors.NewZerosLike(g.Gammas),
 		Biases:vectors.NewZerosLike(g.Biases),
 	}
 }
@@ -30,18 +32,55 @@ func (g *GradBuffer) NewZerosLike() GradBuffer {
 func (g *GradBuffer) Clone() GradBuffer {
 	return GradBuffer{
 		Weights:tensors2d.Clone(g.Weights),
+		Gammas:vectors.Clone(g.Gammas),
 		Biases:vectors.Clone(g.Biases),
 	}
 }
 
 func (g *GradBuffer) Axpy(alpha float32, x *GradBuffer) {
 	tensors2d.Axpy(alpha, x.Weights, g.Weights)
+	vectors.Axpy(alpha, x.Gammas, g.Gammas)
 	vectors.Axpy(alpha, x.Biases, g.Biases)
 }
 
 func (g *GradBuffer) Scal(alpha float32) {
 	tensors2d.Scal(alpha, g.Weights)
+	vectors.Scal(alpha, g.Gammas)
 	vectors.Scal(alpha, g.Biases)
+}
+
+func (g *GradBuffer) CompareMaxDiff(other *GradBuffer) ([]float32, []float32, []float32) {
+	wMaxDiffs := make([]float32, len(g.Weights))
+	gMaxDiffs := make([]float32, len(g.Gammas))
+	bMaxDiffs := make([]float32, len(g.Biases))
+
+	for i, gw := range g.Weights {
+		ow := other.Weights[i]
+		ow = tensor2d.Clone(ow)
+		tensor2d.Axpy(-1.0, gw, ow)
+		for i, e := range ow.Data {
+			ow.Data[i] = math32.Abs(e)
+		}
+		maxDiff := omath.Max(ow.Data...)
+		wMaxDiffs[i] = maxDiff
+	}
+
+	compareVecs := func(vs1, vs2 []blas32.Vector, result []float32) {
+		for i, v1 := range vs1 {
+			v2 := vs2[i]
+			v2 = vector.Clone(v2)
+			blas32.Axpy(-1.0, v1, v2)
+			for i, e := range v2.Data {
+				v2.Data[i] = math32.Abs(e)
+			}
+			maxDiff := omath.Max(v2.Data...)
+			result[i] = maxDiff
+		}
+	}
+
+	compareVecs(g.Gammas, other.Gammas, gMaxDiffs)
+	compareVecs(g.Biases, other.Biases, bMaxDiffs)
+	return wMaxDiffs, gMaxDiffs, bMaxDiffs
 }
 
 type GradBuffers []GradBuffer
@@ -63,6 +102,7 @@ type Parameter struct {
 func (p *Parameter) NewGradZerosLike() GradBuffer {
 	return GradBuffer{
 		Weights: tensors2d.NewZerosLike(p.Weights),
+		Gammas:  vectors.NewZerosLike(p.Gammas),
 		Biases:  vectors.NewZerosLike(p.Biases),
 	}
 }
@@ -70,12 +110,14 @@ func (p *Parameter) NewGradZerosLike() GradBuffer {
 func (p *Parameter) Clone() Parameter {
 	return Parameter{
 		Weights: tensors2d.Clone(p.Weights),
+		Gammas:  vectors.Clone(p.Gammas),
 		Biases:  vectors.Clone(p.Biases),
 	}
 }
 
 func (p *Parameter) AxpyGrad(alpha float32, grad *GradBuffer) {
 	tensors2d.Axpy(alpha, grad.Weights, p.Weights)
+	vectors.Axpy(alpha, grad.Gammas, p.Gammas)
 	vectors.Axpy(alpha, grad.Biases, p.Biases)
 }
 
@@ -105,6 +147,7 @@ func (bs Backwards) Propagate(chain blas32.Vector) (blas32.Vector, GradBuffer, e
 	n := len(bs)
 	grad := GradBuffer{
 		Weights:make([]blas32.General, 0, n),
+		Gammas: make([]blas32.Vector, 0, n),
 		Biases: make([]blas32.Vector, 0, n),
 	}
 	var err error
@@ -117,6 +160,7 @@ func (bs Backwards) Propagate(chain blas32.Vector) (blas32.Vector, GradBuffer, e
 	}
 
 	slices.Reverse(grad.Weights)
+	slices.Reverse(grad.Gammas)
 	slices.Reverse(grad.Biases)
 	dx := chain
 	return dx, grad, nil
@@ -149,7 +193,7 @@ func NewLeakyReLUForward(alpha float32) Forward {
 	}
 }
 
-func NewInstanceNormalizationForward(gamma, beta blas32.Vector) Forward {
+func NewInstanceNormalizationForward(gamma, beta blas32.Vector) (Forward, error) {
 	return func(x blas32.Vector) (blas32.Vector, Backward, error) {
 		u, mean, std, err := vector.StandardizeWithStats(x)
 		if err != nil {
@@ -184,17 +228,11 @@ func NewInstanceNormalizationForward(gamma, beta blas32.Vector) Forward {
         		return blas32.Vector{}, err
     		}
 
-    		dx := blas32.Vector{
-        		N:    x.N,
-        		Inc:  1,
-        		Data: make([]float32, x.N),
-    		}
-
-    		blas32.Gemv(blas.NoTrans, 1.0, jacobianGradX, gradY, 0.0, dx)
+			dx := vector.DotNoTrans2D(gradY, jacobianGradX)
 			return dx, nil
 		}
 		return y, backward, nil
-	}
+	}, nil
 }
 
 func SoftmaxForwardForCrossEntropyLoss(x blas32.Vector) (blas32.Vector, Backward, error) {
@@ -235,23 +273,19 @@ func (m *Model) AppendLeakyReLU(alpha float32) {
 	m.Forwards1D = append(m.Forwards1D, NewLeakyReLUForward(alpha))
 }
 
-func (m *Model) AppendInstanceNormalization(xn int) {
-	gamma := blas32.Vector{
-		N:xn,
-		Inc:1,
-		Data:make([]float32, xn),
-	}
-
-	for i := range gamma.Data {
-		gamma.Data[i] = 1.0
-	}
-
+func (m *Model) AppendInstanceNormalization(n int) error {
+	gamma := vector.NewOnes(n)
 	m.Parameter.Gammas = append(m.Parameter.Gammas, gamma)
 
-	beta := vector.NewZeros(xn)
+	beta := vector.NewZeros(n)
 	m.Parameter.Biases = append(m.Parameter.Biases, beta)
 
-	m.Forwards1D = append(m.Forwards1D, NewInstanceNormalizationForward(gamma, beta))
+	forward, err := NewInstanceNormalizationForward(gamma, beta)
+	if err != nil {
+		return err
+	}
+	m.Forwards1D = append(m.Forwards1D, forward)
+	return nil
 }
 
 func (m *Model) AppendSoftmaxForCrossEntropyLoss() {

@@ -34,6 +34,18 @@ func NewZerosLike(gen General) General {
 	return NewZeros(gen.Channels, gen.Rows, gen.Cols)
 }
 
+func NewOnes(chs, rows, cols int) General {
+	gen := NewZeros(chs, rows, cols)
+	for i := range gen.Data {
+		gen.Data[i] = 1.0
+	}
+	return gen
+}
+
+func NewOnesLike(gen General) General {
+	return NewOnes(gen.Channels, gen.Rows, gen.Cols)
+}
+
 func NewRademacher(chs, rows, cols int, rng *rand.Rand) General {
 	gen := NewZeros(chs, rows, cols)
 	for i := range gen.Data {
@@ -135,36 +147,35 @@ func (g General) Transpose(axes ...int) General {
 	return dst
 }
 
-func (img *General) ToCol(filterRows, filterCols int) blas32.General {
-	chs := img.Channels
-	outRows := OutputRows(img, filterRows)
-	outCols := OutputCols(img, filterCols)
-	imgData := img.Data
-	newData := make([]float32, outRows*outCols*chs*filterRows*filterCols)
-	newIdx := 0
+// func (img *General) ToCol(filterRows, filterCols int) blas32.General {
+// 	chs := img.Channels
+// 	outRows := OutputRows(img, filterRows)
+// 	outCols := OutputCols(img, filterCols)
+// 	imgData := img.Data
+// 	newData := make([]float32, outRows*outCols*chs*filterRows*filterCols)
+// 	newIdx := 0
 
-	for or := 0; or < outRows; or++ {
-		for oc := 0; oc < outCols; oc++ {
-			for ch := 0; ch < chs; ch++ {
-				for fr := 0; fr < filterRows; fr++ {
-					for fc := 0; fc < filterCols; fc++ {
-						row := fr + or
-						col := fc + oc
-						imgIdx := img.FlatIndex(ch, row, col)
-						newData[newIdx] = imgData[imgIdx]
-						newIdx++
-					}
-				}
-			}
-		}
-	}
+// 	for or := 0; or < outRows; or++ {
+// 		for oc := 0; oc < outCols; oc++ {
+// 			for ch := 0; ch < chs; ch++ {
+// 				for fr := 0; fr < filterRows; fr++ {
+// 					for fc := 0; fc < filterCols; fc++ {
+// 						row := fr + or
+// 						col := fc + oc
+// 						imgIdx := img.FlatIndex(ch, row, col)
+// 						newData[newIdx] = imgData[imgIdx]
+// 						newIdx++
+// 					}
+// 				}
+// 			}
+// 		}
+// 	}
 
-	newCols := filterRows*filterCols*chs
-	return blas32.General{
-		Rows:outRows*outCols,
-		Cols:newCols,
-		Stride:newCols,
-		Data:newData,
-	}
-}
-}
+// 	newCols := filterRows*filterCols*chs
+// 	return blas32.General{
+// 		Rows:outRows*outCols,
+// 		Cols:newCols,
+// 		Stride:newCols,
+// 		Data:newData,
+// 	}
+// }

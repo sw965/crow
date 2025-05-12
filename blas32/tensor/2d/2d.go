@@ -21,6 +21,18 @@ func NewZerosLike(gen blas32.General) blas32.General {
 	return NewZeros(gen.Rows, gen.Cols)
 }
 
+func NewOnes(rows, cols int) blas32.General {
+	gen := NewZeros(rows, cols)
+	for i := range gen.Data {
+		gen.Data[i] = 1.0
+	}
+	return gen
+}
+
+func NewOnesLike(gen blas32.General) blas32.General {
+	return NewOnes(gen.Rows, gen.Cols)
+}
+
 func NewHe(rows, cols int, rng *rand.Rand) blas32.General {
     gen := NewZeros(rows, cols)
 	fanIn := float64(rows)

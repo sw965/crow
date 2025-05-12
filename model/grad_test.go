@@ -5,12 +5,11 @@ import (
 	"fmt"
 	"github.com/sw965/crow/model/general"
 	"github.com/sw965/crow/model/spsa"
+	"github.com/sw965/crow/model/convert"
+	"math/rand"
 	orand "github.com/sw965/omw/math/rand"
 	"github.com/sw965/crow/dataset/mnist"
 	"github.com/sw965/crow/blas32/vector"
-	"math/rand"
-	"github.com/chewxy/math32"
-	"github.com/sw965/crow/blas32/tensor/2d"
 )
 
 func TestFullyConnectedModelGrad(t *testing.T) {
@@ -24,12 +23,15 @@ func TestFullyConnectedModelGrad(t *testing.T) {
 	genModel := general.Model{}
 	genModel.AppendDot(xn, midN1, rng)
 	genModel.AppendLeakyReLU(0.1)
+	genModel.AppendInstanceNormalization(midN1)
 
 	genModel.AppendDot(midN1, midN2, rng)
 	genModel.AppendLeakyReLU(0.1)
+	genModel.AppendInstanceNormalization(midN2)
 
 	genModel.AppendDot(midN2, yn, rng)
 	genModel.AppendLeakyReLU(0.1)
+	genModel.AppendInstanceNormalization(yn)
 
 	genModel.AppendSoftmaxForCrossEntropyLoss()
 	genModel.SetCrossEntropyLossForSoftmax()
@@ -38,19 +40,20 @@ func TestFullyConnectedModelGrad(t *testing.T) {
 	spsaModel := spsa.Model{}
 	spsaModel.AppendDot(xn, midN1, rng)
 	spsaModel.AppendLeakyReLU(0.1)
+	spsaModel.AppendInstanceNormalization(midN1)
 
 	spsaModel.AppendDot(midN1, midN2, rng)
 	spsaModel.AppendLeakyReLU(0.1)
+	spsaModel.AppendInstanceNormalization(midN2)
 
 	spsaModel.AppendDot(midN2, yn, rng)
 	spsaModel.AppendLeakyReLU(0.1)
+	spsaModel.AppendInstanceNormalization(yn)
 
 	spsaModel.AppendSoftmax()
 
 	//genModelとspsaModelを同じパラメーターにする
-	spsaModel.Parameters[0].Weight = tensor2d.Clone(genModel.Parameter.Weights[0])
-	spsaModel.Parameters[2].Weight = tensor2d.Clone(genModel.Parameter.Weights[1])
-	spsaModel.Parameters[4].Weight = tensor2d.Clone(genModel.Parameter.Weights[2])
+	spsaModel.Parameters = convert.GeneralParameterToSPSAParameters(&genModel.Parameter, spsaModel.LayerTypes)
 
 	//mnistの生成
 	trainXs, err := mnist.LoadTrainFlatImages()
@@ -58,17 +61,17 @@ func TestFullyConnectedModelGrad(t *testing.T) {
 		panic(err)
 	}
 
-	trainXs = trainXs[:1000]
+	trainXs = trainXs[:10]
 
 	trainYs, err := mnist.LoadTrainLabels()
 	if err != nil {
 		panic(err)
 	}
 
-	trainYs = trainYs[:1000]
+	trainYs = trainYs[:10]
 	dataN := len(trainXs)
 
-	spsaModel.LossFunc = func(model *spsa.Model, workerIdx int) (float32, error) {
+	lossFunc := func(model *spsa.Model, workerIdx int) (float32, error) {
 		sum := float32(0.0)
 		for i, x := range trainXs {
 			y, err := model.Predict(x)
@@ -85,36 +88,49 @@ func TestFullyConnectedModelGrad(t *testing.T) {
 		return sum / float32(dataN), nil
 	}
 
+	//解析的微分と数値微分を計算して、誤差を計算する
 	trueGrad, err := genModel.ComputeGrad(trainXs, trainYs, 12)
 	if err != nil {
 		panic(err)
 	}
 
-	rngs := make([]*rand.Rand, 6)
+	numGrads, err := spsaModel.NumericalGrads(lossFunc)
+	if err != nil {
+		panic(err)
+	}
+
+	genNumGrad := convert.SPSAGradsToGeneralGrad(numGrads)
+	wMaxDiffs, gMaxDiffs, bMaxDiffs := trueGrad.CompareMaxDiff(&genNumGrad)
+	fmt.Println(wMaxDiffs)
+	fmt.Println(gMaxDiffs)
+	fmt.Println(bMaxDiffs)
+
+	// 解析的微分とSPSAで複数回推定した勾配の平均との誤差を計算する
+	p := 6
+	rngs := make([]*rand.Rand, p)
 	for i := range rngs {
 		rngs[i] = orand.NewMt19937()
 	}
+	trialNum := 1280000
+	total := genModel.Parameter.NewGradZerosLike()
 
-	avgSpsaGrads := spsaModel.Parameters.NewGradsZerosLike()
-	trialNum := 128000
 	for i := 0; i < trialNum; i++ {
-		spsaGrads, err := spsaModel.EstimateGrads(0.01, rngs)
+		spsaGrads, err := spsaModel.EstimateGrads(lossFunc, 0.01, rngs)
 		if err != nil {
 			panic(err)
 		}
-		avgSpsaGrads.Axpy(1.0 / float32(trialNum), spsaGrads)
+		genGrad := convert.SPSAGradsToGeneralGrad(spsaGrads)
+		total.Axpy(1.0, &genGrad)
 
-		if i%128 == 0 {
-			trueW1 := trueGrad.Weights[0]
-			spsaW1 := avgSpsaGrads[0].Weight
-			maxDiff := float32(0.0)
-			for j, tg := range trueW1.Data {
-				diff := math32.Abs(tg - spsaW1.Data[j])
-				if diff > maxDiff {
-					maxDiff = diff
-				}
-			}
-			fmt.Println("maxDiff =", maxDiff, "i =", i)
+		if i%12800 == 0 {
+			avg := total.Clone()
+			avg.Scal(1.0 / float32(i+1))
+			wMaxDiffs, gMaxDiffs, bMaxDiffs := trueGrad.CompareMaxDiff(&avg)
+			fmt.Println("i =", i)
+			fmt.Println(wMaxDiffs)
+			fmt.Println(gMaxDiffs)
+			fmt.Println(bMaxDiffs)
+			fmt.Println()
 		}
 	}
 }

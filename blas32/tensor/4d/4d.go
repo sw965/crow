@@ -41,6 +41,18 @@ func NewZerosLike(gen General) General {
 	return NewZeros(gen.Batches, gen.Channels, gen.Rows, gen.Cols)
 }
 
+func NewOnes(batches, chs, rows, cols int) General {
+	gen := NewZeros(batches, chs, rows, cols)
+	for i := range gen.Data {
+		gen.Data[i] = 1.0
+	}
+	return gen
+}
+
+func NewOnesLike(gen General) General {
+	return NewOnes(gen.Batches, gen.Channels, gen.Rows, gen.Cols)
+}
+
 func NewHe(batches, chs, rows, cols int, rng *rand.Rand) General {
     gen := NewZeros(batches, chs, rows, cols)
     fanIn := float64(chs * rows * cols)

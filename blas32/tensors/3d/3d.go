@@ -15,6 +15,14 @@ func NewZerosLike(gens Generals) Generals {
 	return zeros
 }
 
+func NewOnesLike(gens Generals) Generals {
+	ones := make(Generals, len(gens))
+	for i, gen := range gens {
+		ones[i] = tensor3d.NewOnesLike(gen)
+	}
+	return ones
+}
+
 func NewRademacherLike(gens Generals, rng *rand.Rand) Generals {
 	rad := make(Generals, len(gens))
 	for i, gen := range gens {

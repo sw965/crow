@@ -15,6 +15,14 @@ func NewZerosLike(gens []blas32.General) []blas32.General {
 	return zeros
 }
 
+func NewOnesLike(gens []blas32.General) []blas32.General {
+	ones := make([]blas32.General, len(gens))
+	for i, gen := range gens {
+		ones[i] = tensor2d.NewOnesLike(gen)
+	}
+	return ones
+}
+
 func NewRademacherLike(gens []blas32.General, rng *rand.Rand) []blas32.General {
 	rad := make([]blas32.General, len(gens))
 	for i, gen := range gens {
