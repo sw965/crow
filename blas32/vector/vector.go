@@ -12,6 +12,7 @@ import (
 	"github.com/sw965/crow/blas32/tensor/4d"
 	"github.com/chewxy/math32"
 	omath "github.com/sw965/omw/math"
+	oslices "github.com/sw965/omw/slices"
 )
 
 func NewZeros(n int) blas32.Vector {
@@ -59,6 +60,18 @@ func Clone(vec blas32.Vector) blas32.Vector {
 }
 
 func Reshape2D(vec blas32.Vector, rows, cols int) (blas32.General, error) {
+	if rows == -1 && cols == -1 {
+		return blas32.General{}, fmt.Errorf("自動サイズ指定は1つまで")
+	}
+
+	if rows == -1 {
+		rows = vec.N / cols
+	}
+
+	if cols == -1 {
+		cols = vec.N / rows
+	}
+
 	if vec.N != (rows*cols) {
 		return blas32.General{}, fmt.Errorf("サイズが合わない")
 	}
@@ -67,11 +80,27 @@ func Reshape2D(vec blas32.Vector, rows, cols int) (blas32.General, error) {
 		Rows:rows,
 		Cols:cols,
 		Stride:cols,
-		Data:vec.Data,
+		Data:slices.Clone(vec.Data),
 	}, nil
 }
 
 func Reshape3D(vec blas32.Vector, chs, rows, cols int) (tensor3d.General, error) {
+	if oslices.Count([]int{chs, rows, cols}, -1) > 1 {
+		return tensor3d.General{}, fmt.Errorf("自動サイズの指定は1つまで")
+	}
+
+	if chs == -1 {
+		chs = vec.N / (rows * cols)
+	}
+
+	if rows == -1 {
+		rows = vec.N / (chs * cols)
+	}
+
+	if cols == -1 {
+		cols = vec.N / (chs * rows)
+	}
+
 	n := chs*rows*cols
 	if n != vec.N {
 		return tensor3d.General{}, fmt.Errorf("サイズが合わない")
@@ -84,11 +113,31 @@ func Reshape3D(vec blas32.Vector, chs, rows, cols int) (tensor3d.General, error)
 		Cols:cols,
 		ChannelStride:chStride,
 		RowStride:cols,
-		Data:vec.Data,
+		Data:slices.Clone(vec.Data),
 	}, nil
 }
 
 func Reshape4D(vec blas32.Vector, batches, chs, rows, cols int) (tensor4d.General, error) {
+	if oslices.Count([]int{batches, chs, rows, cols}, -1) > 1 {
+		return tensor4d.General{}, fmt.Errorf("自動サイズの指定は1つまで")
+	}
+
+	if batches == -1 {
+		batches = vec.N / (chs * rows * cols)
+	}
+
+	if chs == -1 {
+		chs = vec.N / (batches * rows * cols)
+	}
+
+	if rows == -1 {
+		rows = vec.N / (batches * chs * cols)
+	}
+
+	if cols == -1 {
+		cols = vec.N / (batches * chs * rows)
+	}
+
 	n := batches * chs * rows * cols
 	if n != vec.N  {
 		return tensor4d.General{}, fmt.Errorf("サイズが合わない")
@@ -104,7 +153,7 @@ func Reshape4D(vec blas32.Vector, batches, chs, rows, cols int) (tensor4d.Genera
 		BatchStride:batchStride,
 		ChannelStride:chStride,
 		RowStride:cols,
-		Data:vec.Data,
+		Data:slices.Clone(vec.Data),
 	}, nil
 }
 
@@ -230,14 +279,14 @@ func Outer(a, b blas32.Vector) blas32.General {
 func DotNoTrans2D(a blas32.Vector, b blas32.General) blas32.Vector {
 	yn := b.Cols
 	y := blas32.Vector{N: yn, Inc: 1, Data: make([]float32, yn)}
-	blas32.Gemv(blas.Trans, 1.0, b, a, 1.0, y)
+	blas32.Gemv(blas.Trans, 1.0, b, a, 0.0, y)
 	return y
 }
 
 func DotTrans2D(a blas32.Vector, b blas32.General) blas32.Vector {
 	yn := b.Rows
 	y := blas32.Vector{N: yn, Inc: 1, Data: make([]float32, yn)}
-	blas32.Gemv(blas.NoTrans, 1.0, b, a, 1.0, y)
+	blas32.Gemv(blas.NoTrans, 1.0, b, a, 0.0, y)
 	return y
 }
 

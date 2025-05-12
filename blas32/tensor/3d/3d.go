@@ -99,83 +99,153 @@ func (g General) Axpy(alpha float32, x General) {
 	blas32.Axpy(alpha, xv, yv)
 }
 
-func (g General) Transpose(axes ...int) General {
-	// ----- 1. 汎用設定 -----
-	const ndim = 3
-	if len(axes) == 0 {                 // 省略時は逆順
-		axes = []int{2, 1, 0}
-	}
-	if len(axes) != ndim {
-		panic("tensor3d: axes must have length 3")
-	}
+func (g *General) Transpose021() General {
+    dst := NewZeros(g.Channels, g.Cols, g.Rows)
+    dstChStride := dst.ChannelStride
+    dstRowStride := dst.RowStride
+    for ch := 0; ch < g.Channels; ch++ {
+        srcBase := ch * g.ChannelStride
+        dstBase := ch * dstChStride
+        for col := 0; col < g.Cols; col++ {
+            srcOff := srcBase + col
+            dstOff := dstBase + col*dstRowStride
+            for row := 0; row < g.Rows; row++ {
+                dst.Data[dstOff+row] = g.Data[srcOff+row*g.RowStride]
+            }
+        }
+    }
+    return dst
+}
 
-	// ----- 2. 軸番号の正規化と妥当性チェック -----
-	seen := [ndim]bool{}
-	for i, ax := range axes {
-		if ax < 0 {
-			ax += ndim
-		}
-		if ax < 0 || ax >= ndim || seen[ax] {
-			panic("tensor3d: invalid axes permutation")
-		}
-		axes[i] = ax
-		seen[ax] = true
-	}
+func (g *General) Transpose102() General {
+    dst := NewZeros(g.Rows, g.Channels, g.Cols)
+    dstChStride := dst.ChannelStride
+    dstRowStride := dst.RowStride
+    for row := 0; row < g.Rows; row++ {
+        srcRowBase := row * g.RowStride
+        dstBase := row * dstChStride
+        for ch := 0; ch < g.Channels; ch++ {
+            srcBase := srcRowBase + ch*g.ChannelStride
+            dstOff := dstBase + ch*dstRowStride
+            copy(dst.Data[dstOff:dstOff+g.Cols], g.Data[srcBase:srcBase+g.Cols])
+        }
+    }
+    return dst
+}
 
-	// 元の次元サイズ
-	srcShape := []int{g.Channels, g.Rows, g.Cols}
+func (g *General) Transpose120() General {
+    dst := NewZeros(g.Rows, g.Cols, g.Channels)
+    dstChStride := dst.ChannelStride
+    dstRowStride := dst.RowStride
+    for row := 0; row < g.Rows; row++ {
+        srcRowBase := row * g.RowStride
+        dstBase := row * dstChStride
+        for col := 0; col < g.Cols; col++ {
+            dstOff := dstBase + col*dstRowStride
+            srcOff := srcRowBase + col
+            for ch := 0; ch < g.Channels; ch++ {
+                dst.Data[dstOff+ch] = g.Data[srcOff+ch*g.ChannelStride]
+            }
+        }
+    }
+    return dst
+}
 
-	// 出力テンソルの形状を決定
-	dstCh, dstRows, dstCols := srcShape[axes[0]], srcShape[axes[1]], srcShape[axes[2]]
-	dst := NewZeros(dstCh, dstRows, dstCols)
+func (g *General) Transpose201() General {
+    dst := NewZeros(g.Cols, g.Channels, g.Rows)
+    dstChStride := dst.ChannelStride
+    dstRowStride := dst.RowStride
+    for col := 0; col < g.Cols; col++ {
+        dstBase := col * dstChStride
+        for ch := 0; ch < g.Channels; ch++ {
+            srcBase := ch*g.ChannelStride + col
+            dstOff := dstBase + ch*dstRowStride
+            for row := 0; row < g.Rows; row++ {
+                dst.Data[dstOff+row] = g.Data[srcBase+row*g.RowStride]
+            }
+        }
+    }
+    return dst
+}
 
-	// ----- 3. データをコピーしながら再配置 -----
-	for ch := 0; ch < dstCh; ch++ {
-		for r := 0; r < dstRows; r++ {
-			for c := 0; c < dstCols; c++ {
-				// dst インデックス (ch,r,c) を src インデックスにマップ
-				srcIdx := [ndim]int{}
-				srcIdx[axes[0]] = ch
-				srcIdx[axes[1]] = r
-				srcIdx[axes[2]] = c
+func (g *General) Transpose210() General {
+    dst := NewZeros(g.Cols, g.Rows, g.Channels)
+    dstChStride := dst.ChannelStride
+    dstRowStride := dst.RowStride
+    for col := 0; col < g.Cols; col++ {
+        dstBase := col * dstChStride
+        for row := 0; row < g.Rows; row++ {
+            dstOff := dstBase + row*dstRowStride
+            srcBase := row*g.RowStride + col
+            for ch := 0; ch < g.Channels; ch++ {
+                dst.Data[dstOff+ch] = g.Data[srcBase+ch*g.ChannelStride]
+            }
+        }
+    }
+    return dst
+}
 
-				dst.Data[dst.At(ch, r, c)] = g.Data[g.At(srcIdx[0], srcIdx[1], srcIdx[2])]
+//cnn用のメソッド。レシーバーの名前はimgとする。
+
+func (img *General) ZeroPadding2D(top, bot, left, right int) General {
+    padded := NewZeros(img.Channels, img.Rows+top+bot, img.Cols+left+right)
+    for ch := 0; ch < img.Channels; ch++ {
+        for row := 0; row < img.Rows; row++ {
+            for col := 0; col < img.Cols; col++ {
+                oldIdx := img.At(ch, row, col)
+                newIdx := padded.At(ch, row+top, col+left)
+                padded.Data[newIdx] = img.Data[oldIdx]
+            }
+        }
+    }
+    return padded
+}
+
+func (img *General) SameZeroPadding2D(filterRows, filterCols int) General {
+	top := (filterRows - 1) / 2
+    bot := filterRows - 1 - top
+    left := (filterCols - 1) / 2
+    right := filterCols - 1 - left
+    return img.ZeroPadding2D(top, bot, left, right)
+}
+
+func (img *General) ConvOutputRows(filterRows int) int {
+	return img.Rows - filterRows + 1
+}
+
+func (img *General) ConvOutputCols(filterCols int) int {
+	return img.Cols - filterCols + 1
+}
+
+func (img *General) ToCol(filterRows, filterCols int) blas32.General {
+	chs := img.Channels
+	outRows := img.ConvOutputRows(filterRows)
+	outCols := img.ConvOutputCols(filterCols)
+	imgData := img.Data
+	newData := make([]float32, outRows*outCols*chs*filterRows*filterCols)
+	newIdx := 0
+
+	for or := 0; or < outRows; or++ {
+		for oc := 0; oc < outCols; oc++ {
+			for ch := 0; ch < chs; ch++ {
+				for fr := 0; fr < filterRows; fr++ {
+					for fc := 0; fc < filterCols; fc++ {
+						row := fr + or
+						col := fc + oc
+						imgIdx := img.At(ch, row, col)
+						newData[newIdx] = imgData[imgIdx]
+						newIdx++
+					}
+				}
 			}
 		}
 	}
 
-	return dst
+	newCols := filterRows*filterCols*chs
+	return blas32.General{
+		Rows:outRows*outCols,
+		Cols:newCols,
+		Stride:newCols,
+		Data:newData,
+	}
 }
-
-// func (img *General) ToCol(filterRows, filterCols int) blas32.General {
-// 	chs := img.Channels
-// 	outRows := OutputRows(img, filterRows)
-// 	outCols := OutputCols(img, filterCols)
-// 	imgData := img.Data
-// 	newData := make([]float32, outRows*outCols*chs*filterRows*filterCols)
-// 	newIdx := 0
-
-// 	for or := 0; or < outRows; or++ {
-// 		for oc := 0; oc < outCols; oc++ {
-// 			for ch := 0; ch < chs; ch++ {
-// 				for fr := 0; fr < filterRows; fr++ {
-// 					for fc := 0; fc < filterCols; fc++ {
-// 						row := fr + or
-// 						col := fc + oc
-// 						imgIdx := img.FlatIndex(ch, row, col)
-// 						newData[newIdx] = imgData[imgIdx]
-// 						newIdx++
-// 					}
-// 				}
-// 			}
-// 		}
-// 	}
-
-// 	newCols := filterRows*filterCols*chs
-// 	return blas32.General{
-// 		Rows:outRows*outCols,
-// 		Cols:newCols,
-// 		Stride:newCols,
-// 		Data:newData,
-// 	}
-// }

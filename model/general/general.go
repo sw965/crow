@@ -16,6 +16,7 @@ import (
 )
 
 type GradBuffer struct {
+	Filters []tensor4d.General
 	Weights []blas32.General
 	Gammas  []blas32.Vector
 	Biases  []blas32.Vector
@@ -23,6 +24,7 @@ type GradBuffer struct {
 
 func (g *GradBuffer) NewZerosLike() GradBuffer {
 	return GradBuffer{
+		Filters:tensors4d.NewZerosLike(g.Filters),
 		Weights:tensors2d.NewZerosLike(g.Weights),
 		Gammas:vectors.NewZerosLike(g.Gammas),
 		Biases:vectors.NewZerosLike(g.Biases),
@@ -31,6 +33,7 @@ func (g *GradBuffer) NewZerosLike() GradBuffer {
 
 func (g *GradBuffer) Clone() GradBuffer {
 	return GradBuffer{
+		Filters:tensors4d.Clone(g.Filters),
 		Weights:tensors2d.Clone(g.Weights),
 		Gammas:vectors.Clone(g.Gammas),
 		Biases:vectors.Clone(g.Biases),
@@ -38,21 +41,35 @@ func (g *GradBuffer) Clone() GradBuffer {
 }
 
 func (g *GradBuffer) Axpy(alpha float32, x *GradBuffer) {
+	tensors4d.Axpy(alpha, x.Filters, g.Filters)
 	tensors2d.Axpy(alpha, x.Weights, g.Weights)
 	vectors.Axpy(alpha, x.Gammas, g.Gammas)
 	vectors.Axpy(alpha, x.Biases, g.Biases)
 }
 
 func (g *GradBuffer) Scal(alpha float32) {
+	tensors4d.Scal(alpha, g.Filters)
 	tensors2d.Scal(alpha, g.Weights)
 	vectors.Scal(alpha, g.Gammas)
 	vectors.Scal(alpha, g.Biases)
 }
 
-func (g *GradBuffer) CompareMaxDiff(other *GradBuffer) ([]float32, []float32, []float32) {
+func (g *GradBuffer) CompareMaxDiff(other *GradBuffer) ([]float32, []float32, []float32, []float32) {
+	fMaxDiffs := make([]float32, len(g.Filters))
 	wMaxDiffs := make([]float32, len(g.Weights))
 	gMaxDiffs := make([]float32, len(g.Gammas))
 	bMaxDiffs := make([]float32, len(g.Biases))
+
+	for i, gf := range g.Filters {
+		of := other.Filters[i]
+		of = tensor4d.Clone(of)
+		tensor4d.Axpy(-1.0, gf, of)
+		for i, e := range of.Data {
+			of.Data[i] = math32.Abs(e)
+		}
+		maxDiff := omath.Max(of.Data...)
+		fMaxDiffs[i] = maxDiff
+	}
 
 	for i, gw := range g.Weights {
 		ow := other.Weights[i]
@@ -80,7 +97,7 @@ func (g *GradBuffer) CompareMaxDiff(other *GradBuffer) ([]float32, []float32, []
 
 	compareVecs(g.Gammas, other.Gammas, gMaxDiffs)
 	compareVecs(g.Biases, other.Biases, bMaxDiffs)
-	return wMaxDiffs, gMaxDiffs, bMaxDiffs
+	return fMaxDiffs, wMaxDiffs, gMaxDiffs, bMaxDiffs
 }
 
 type GradBuffers []GradBuffer
@@ -94,6 +111,7 @@ func (gs GradBuffers) Total() GradBuffer {
 }
 
 type Parameter struct {
+	Filters  []tensor4d.General
 	Weights []blas32.General
 	Gammas  []blas32.Vector
 	Biases  []blas32.Vector
@@ -101,6 +119,7 @@ type Parameter struct {
 
 func (p *Parameter) NewGradZerosLike() GradBuffer {
 	return GradBuffer{
+		Filters: tensors4d.NewZerosLike(p.Filters),
 		Weights: tensors2d.NewZerosLike(p.Weights),
 		Gammas:  vectors.NewZerosLike(p.Gammas),
 		Biases:  vectors.NewZerosLike(p.Biases),
@@ -109,6 +128,7 @@ func (p *Parameter) NewGradZerosLike() GradBuffer {
 
 func (p *Parameter) Clone() Parameter {
 	return Parameter{
+		Filters : tensors4d.Clone(p.Filters),
 		Weights: tensors2d.Clone(p.Weights),
 		Gammas:  vectors.Clone(p.Gammas),
 		Biases:  vectors.Clone(p.Biases),
@@ -116,9 +136,90 @@ func (p *Parameter) Clone() Parameter {
 }
 
 func (p *Parameter) AxpyGrad(alpha float32, grad *GradBuffer) {
+	tensors4d.Axpy(alpha, grad.Filters, p.Filters)
 	tensors2d.Axpy(alpha, grad.Weights, p.Weights)
 	vectors.Axpy(alpha, grad.Gammas, p.Gammas)
 	vectors.Axpy(alpha, grad.Biases, p.Biases)
+}
+
+type Forward3D func(tensor3d.General) (blas32.General, Backward3D, error)
+type Forwards3D []Forward3D
+
+func (fs Forwards3D) Propagate(x tensor3d.General) (tensor3d.General, Backwards3D, error) {
+	var err error
+	var backward Backward3D
+	backwards := make(Backwards3D, len(fs))
+	for i, f := range fs {
+		x, backward, err := f(x)
+		if err != nil {
+			return tensor3d.General{}, nil, err
+		}
+		backwards[i] = backward
+	}
+	y := x
+	slices.Reverse(backwards)
+	return y, backwards, nil
+}
+
+type Backward3D func(tensor3d.General, *GradBuffer) (tensor3d.General, error)
+type Backwards3D []Backward3D
+
+func (bs Backwards3D) Propagate() (tensor3d.General, *GradBuffer, error) {
+	n := len(bs)
+	grad := GradBuffer{
+		Filter:make([]tensor4d.General, 0, n),
+		Weights:make([]blas32.General, 0, n),
+		Gammas: make([]blas32.Vector, 0, n),
+		Biases: make([]blas32.Vector, 0, n),
+	}
+	var err error
+
+	for _, b := range bs {
+		chain, err = b(chain, &grad)
+		if err != nil {
+			return blas32.Vector{}, GradBuffer{}, err
+		}
+	}
+
+	slices.Reverse(grad.Filter)
+	slices.Reverse(grad.Weights)
+	slices.Reverse(grad.Gammas)
+	slices.Reverse(grad.Biases)
+	dx := chain
+	return dx, grad, nil
+}
+
+func NewConvForward(filter tensor4d.Filter) Forward3D {
+	return func(x tensor3d.General) (tensor3d.General, Backward3D, error) {
+		outRows := x.ConvOutputRows()
+		outCols := x.ConvOutputCols()
+		
+		colImg := x.ToCol(filter.Rows, filter.Cols)
+		flatFilter := filter.ToVector()
+		colFilter := vector.Reshaped2D(flatFilter, filter.Batches, filter.BatchStride)
+		colFilter = tensor2d.Transpose(colFilter)
+		
+		out := tensor2d.Dot(blas.NoTrans, blas.NoTrans, col, colFilter)
+		flatOut := tensor2d.ToVector(dot)
+		imgOut := vector.Reshape3D(flatDot, outRows, outCols, -1)
+		y := imgOut.Transpose312()
+
+		var backward Backward3D
+		backward = func(chain tensor3d.General) (tensor3d.General, error) {
+			chainT := chain.Transpose(2, 3, 1)
+			flatChainT := chainT.ToVector()
+			chainT2d := vector.Reshape2D(-1, filter.Batches)
+
+			dFilter2D := tensor2d.Transpose(tensor2d.Dot(blas.Trans, blas.NoTrans, colImg, chainT2d))
+			dFilter1D := tensor2d.ToVector(dFilter2D)
+			dFilter := vector.Reshape4D(filter.Batches, filter.Channels, filter.Rows, filter.Cols)
+
+			dCol := tensor2d.Dot(blas32.NoTrans, blas32.Trans, chainT2d)
+			dx := tensor2d.Col2Im(dCol, x, filter.Rows, filter.Cols)
+			return dx, nil
+		}
+		return y, backward, nil
+	}
 }
 
 type Forward func(blas32.Vector) (blas32.Vector, Backward, error)

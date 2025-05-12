@@ -24,6 +24,18 @@ func TestTranspose(t *testing.T) {
 		},
 	}
 
-	result := x.Transpose(1, 0, 2)
-	fmt.Println(result)
+	transposed021 := x.Transpose021()
+	fmt.Println(transposed021)
+
+	transposed102 := x.Transpose102()
+	fmt.Println(transposed102)
+
+	transposed120 := x.Transpose120()
+	fmt.Println(transposed120)
+
+	transposed201 := x.Transpose201()
+	fmt.Println(transposed201)
+
+	transposed210 := x.Transpose210()
+	fmt.Println(transposed210)
 }

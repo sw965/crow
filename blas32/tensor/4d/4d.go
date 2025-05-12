@@ -110,56 +110,366 @@ func (g General) Axpy(alpha float32, x General) {
 	blas32.Axpy(alpha, xv, yv)
 }
 
-func (g General) Transpose(axes ...int) General {
-	const ndim = 4
+func (g *General) Transpose0132() General {
+    dst := NewZeros(g.Batches, g.Channels, g.Cols, g.Rows)
+    idx := 0
+    for b := 0; b < g.Batches; b++ {
+        for c := 0; c < g.Channels; c++ {
+            for col := 0; col < g.Cols; col++ {
+                for r := 0; r < g.Rows; r++ {
+                    dst.Data[idx] = g.Data[g.At(b, c, r, col)]
+                    idx++
+                }
+            }
+        }
+    }
+    return dst
+}
 
-	// --- 1. デフォルトは軸を完全に逆順 ---
-	if len(axes) == 0 {
-		axes = []int{3, 2, 1, 0}
-	}
-	if len(axes) != ndim {
-		panic("tensor4d: axes must have length 4")
-	}
+func (g *General) Transpose0213() General {
+    dst := NewZeros(g.Batches, g.Rows, g.Channels, g.Cols)
+    idx := 0
+    for b := 0; b < g.Batches; b++ {
+        for r := 0; r < g.Rows; r++ {
+            for c := 0; c < g.Channels; c++ {
+                srcBase := g.At(b, c, r, 0)
+                copy(dst.Data[idx:idx+g.Cols], g.Data[srcBase:srcBase+g.Cols])
+                idx += g.Cols
+            }
+        }
+    }
+    return dst
+}
 
-	// --- 2. 軸番号の正規化と妥当性チェック ---
-	seen := [ndim]bool{}
-	for i, ax := range axes {
-		if ax < 0 {
-			ax += ndim
-		}
-		if ax < 0 || ax >= ndim || seen[ax] {
-			panic("tensor4d: invalid axes permutation")
-		}
-		axes[i] = ax
-		seen[ax] = true
-	}
+func (g *General) Transpose0231() General {
+    dst := NewZeros(g.Batches, g.Rows, g.Cols, g.Channels)
+    idx := 0
+    for b := 0; b < g.Batches; b++ {
+        for r := 0; r < g.Rows; r++ {
+            for col := 0; col < g.Cols; col++ {
+                for c := 0; c < g.Channels; c++ {
+                    dst.Data[idx] = g.Data[g.At(b, c, r, col)]
+                    idx++
+                }
+            }
+        }
+    }
+    return dst
+}
 
-	// --- 3. 出力テンソルの形状を決定 ---
-	srcShape := []int{g.Batches, g.Channels, g.Rows, g.Cols}
-	dstShape := [ndim]int{}
-	for i := 0; i < ndim; i++ {
-		dstShape[i] = srcShape[axes[i]]
-	}
-	dst := NewZeros(dstShape[0], dstShape[1], dstShape[2], dstShape[3])
+func (g *General) Transpose0312() General {
+    dst := NewZeros(g.Batches, g.Cols, g.Channels, g.Rows)
+    idx := 0
+    for b := 0; b < g.Batches; b++ {
+        for col := 0; col < g.Cols; col++ {
+            for c := 0; c < g.Channels; c++ {
+                srcBase := g.At(b, c, 0, col)
+                for r := 0; r < g.Rows; r++ {
+                    dst.Data[idx] = g.Data[srcBase+r*g.RowStride]
+                    idx++
+                }
+            }
+        }
+    }
+    return dst
+}
 
-	// --- 4. データをコピーしながら再配置 ---
-	for b := 0; b < dstShape[0]; b++ {
-		for c := 0; c < dstShape[1]; c++ {
-			for r := 0; r < dstShape[2]; r++ {
-				for col := 0; col < dstShape[3]; col++ {
-					// dstインデックス(b,c,r,col) → srcインデックスへマッピング
-					srcIdx := [ndim]int{}
-					srcIdx[axes[0]] = b
-					srcIdx[axes[1]] = c
-					srcIdx[axes[2]] = r
-					srcIdx[axes[3]] = col
+func (g *General) Transpose0321() General {
+    dst := NewZeros(g.Batches, g.Cols, g.Rows, g.Channels)
+    idx := 0
+    for b := 0; b < g.Batches; b++ {
+        for col := 0; col < g.Cols; col++ {
+            for r := 0; r < g.Rows; r++ {
+                for c := 0; c < g.Channels; c++ {
+                    dst.Data[idx] = g.Data[g.At(b, c, r, col)]
+                    idx++
+                }
+            }
+        }
+    }
+    return dst
+}
 
-					dst.Data[dst.At(b, c, r, col)] =
-						g.Data[g.At(srcIdx[0], srcIdx[1], srcIdx[2], srcIdx[3])]
-				}
-			}
-		}
-	}
+func (g *General) Transpose1023() General {
+    dst := NewZeros(g.Channels, g.Batches, g.Rows, g.Cols)
+    idx := 0
+    for c := 0; c < g.Channels; c++ {
+        for b := 0; b < g.Batches; b++ {
+            srcBase := g.At(b, c, 0, 0)
+            copy(dst.Data[idx:idx+g.Rows*g.Cols], g.Data[srcBase:srcBase+g.Rows*g.Cols])
+            idx += g.Rows * g.Cols
+        }
+    }
+    return dst
+}
 
-	return dst
+func (g *General) Transpose1032() General {
+    dst := NewZeros(g.Channels, g.Batches, g.Cols, g.Rows)
+    idx := 0
+    for c := 0; c < g.Channels; c++ {
+        for b := 0; b < g.Batches; b++ {
+            for col := 0; col < g.Cols; col++ {
+                for r := 0; r < g.Rows; r++ {
+                    dst.Data[idx] = g.Data[g.At(b, c, r, col)]
+                    idx++
+                }
+            }
+        }
+    }
+    return dst
+}
+
+func (g *General) Transpose1203() General {
+    dst := NewZeros(g.Channels, g.Rows, g.Batches, g.Cols)
+    idx := 0
+    for c := 0; c < g.Channels; c++ {
+        for r := 0; r < g.Rows; r++ {
+            for b := 0; b < g.Batches; b++ {
+                srcBase := g.At(b, c, r, 0)
+                copy(dst.Data[idx:idx+g.Cols], g.Data[srcBase:srcBase+g.Cols])
+                idx += g.Cols
+            }
+        }
+    }
+    return dst
+}
+
+func (g *General) Transpose1230() General {
+    dst := NewZeros(g.Channels, g.Rows, g.Cols, g.Batches)
+    idx := 0
+    for c := 0; c < g.Channels; c++ {
+        for r := 0; r < g.Rows; r++ {
+            for col := 0; col < g.Cols; col++ {
+                for b := 0; b < g.Batches; b++ {
+                    dst.Data[idx] = g.Data[g.At(b, c, r, col)]
+                    idx++
+                }
+            }
+        }
+    }
+    return dst
+}
+
+func (g *General) Transpose1302() General {
+    dst := NewZeros(g.Channels, g.Cols, g.Batches, g.Rows)
+    idx := 0
+    for c := 0; c < g.Channels; c++ {
+        for col := 0; col < g.Cols; col++ {
+            for b := 0; b < g.Batches; b++ {
+                for r := 0; r < g.Rows; r++ {
+                    dst.Data[idx] = g.Data[g.At(b, c, r, col)]
+                    idx++
+                }
+            }
+        }
+    }
+    return dst
+}
+
+func (g *General) Transpose1320() General {
+    dst := NewZeros(g.Channels, g.Cols, g.Rows, g.Batches)
+    idx := 0
+    for c := 0; c < g.Channels; c++ {
+        for col := 0; col < g.Cols; col++ {
+            for r := 0; r < g.Rows; r++ {
+                for b := 0; b < g.Batches; b++ {
+                    dst.Data[idx] = g.Data[g.At(b, c, r, col)]
+                    idx++
+                }
+            }
+        }
+    }
+    return dst
+}
+
+func (g *General) Transpose2013() General {
+    dst := NewZeros(g.Rows, g.Batches, g.Channels, g.Cols)
+    idx := 0
+    for r := 0; r < g.Rows; r++ {
+        for b := 0; b < g.Batches; b++ {
+            for c := 0; c < g.Channels; c++ {
+                srcBase := g.At(b, c, r, 0)
+                copy(dst.Data[idx:idx+g.Cols], g.Data[srcBase:srcBase+g.Cols])
+                idx += g.Cols
+            }
+        }
+    }
+    return dst
+}
+
+func (g *General) Transpose2031() General {
+    dst := NewZeros(g.Rows, g.Batches, g.Cols, g.Channels)
+    idx := 0
+    for r := 0; r < g.Rows; r++ {
+        for b := 0; b < g.Batches; b++ {
+            for col := 0; col < g.Cols; col++ {
+                for c := 0; c < g.Channels; c++ {
+                    dst.Data[idx] = g.Data[g.At(b, c, r, col)]
+                    idx++
+                }
+            }
+        }
+    }
+    return dst
+}
+
+func (g *General) Transpose2103() General {
+    dst := NewZeros(g.Rows, g.Channels, g.Batches, g.Cols)
+    idx := 0
+    for r := 0; r < g.Rows; r++ {
+        for c := 0; c < g.Channels; c++ {
+            for b := 0; b < g.Batches; b++ {
+                srcBase := g.At(b, c, r, 0)
+                copy(dst.Data[idx:idx+g.Cols], g.Data[srcBase:srcBase+g.Cols])
+                idx += g.Cols
+            }
+        }
+    }
+    return dst
+}
+
+func (g *General) Transpose2130() General {
+    dst := NewZeros(g.Rows, g.Channels, g.Cols, g.Batches)
+    idx := 0
+    for r := 0; r < g.Rows; r++ {
+        for c := 0; c < g.Channels; c++ {
+            for col := 0; col < g.Cols; col++ {
+                for b := 0; b < g.Batches; b++ {
+                    dst.Data[idx] = g.Data[g.At(b, c, r, col)]
+                    idx++
+                }
+            }
+        }
+    }
+    return dst
+}
+
+func (g *General) Transpose2301() General {
+    dst := NewZeros(g.Rows, g.Cols, g.Batches, g.Channels)
+    idx := 0
+    for r := 0; r < g.Rows; r++ {
+        for col := 0; col < g.Cols; col++ {
+            for b := 0; b < g.Batches; b++ {
+                for c := 0; c < g.Channels; c++ {
+                    dst.Data[idx] = g.Data[g.At(b, c, r, col)]
+                    idx++
+                }
+            }
+        }
+    }
+    return dst
+}
+
+func (g *General) Transpose2310() General {
+    dst := NewZeros(g.Rows, g.Cols, g.Channels, g.Batches)
+    idx := 0
+    for r := 0; r < g.Rows; r++ {
+        for col := 0; col < g.Cols; col++ {
+            for c := 0; c < g.Channels; c++ {
+                for b := 0; b < g.Batches; b++ {
+                    dst.Data[idx] = g.Data[g.At(b, c, r, col)]
+                    idx++
+                }
+            }
+        }
+    }
+    return dst
+}
+
+func (g *General) Transpose3012() General {
+    dst := NewZeros(g.Cols, g.Batches, g.Channels, g.Rows)
+    idx := 0
+    for col := 0; col < g.Cols; col++ {
+        for b := 0; b < g.Batches; b++ {
+            for c := 0; c < g.Channels; c++ {
+                srcBase := g.At(b, c, 0, col)
+                for r := 0; r < g.Rows; r++ {
+                    dst.Data[idx] = g.Data[srcBase+r*g.RowStride]
+                    idx++
+                }
+            }
+        }
+    }
+    return dst
+}
+
+func (g *General) Transpose3021() General {
+    dst := NewZeros(g.Cols, g.Batches, g.Rows, g.Channels)
+    idx := 0
+    for col := 0; col < g.Cols; col++ {
+        for b := 0; b < g.Batches; b++ {
+            for r := 0; r < g.Rows; r++ {
+                for c := 0; c < g.Channels; c++ {
+                    dst.Data[idx] = g.Data[g.At(b, c, r, col)]
+                    idx++
+                }
+            }
+        }
+    }
+    return dst
+}
+
+func (g *General) Transpose3102() General {
+    dst := NewZeros(g.Cols, g.Channels, g.Batches, g.Rows)
+    idx := 0
+    for col := 0; col < g.Cols; col++ {
+        for c := 0; c < g.Channels; c++ {
+            for b := 0; b < g.Batches; b++ {
+                srcBase := g.At(b, c, 0, col)
+                for r := 0; r < g.Rows; r++ {
+                    dst.Data[idx] = g.Data[srcBase+r*g.RowStride]
+                    idx++
+                }
+            }
+        }
+    }
+    return dst
+}
+
+func (g *General) Transpose3120() General {
+    dst := NewZeros(g.Cols, g.Channels, g.Rows, g.Batches)
+    idx := 0
+    for col := 0; col < g.Cols; col++ {
+        for c := 0; c < g.Channels; c++ {
+            for r := 0; r < g.Rows; r++ {
+                for b := 0; b < g.Batches; b++ {
+                    dst.Data[idx] = g.Data[g.At(b, c, r, col)]
+                    idx++
+                }
+            }
+        }
+    }
+    return dst
+}
+
+func (g *General) Transpose3201() General {
+    dst := NewZeros(g.Cols, g.Rows, g.Batches, g.Channels)
+    idx := 0
+    for col := 0; col < g.Cols; col++ {
+        for r := 0; r < g.Rows; r++ {
+            for b := 0; b < g.Batches; b++ {
+                for c := 0; c < g.Channels; c++ {
+                    dst.Data[idx] = g.Data[g.At(b, c, r, col)]
+                    idx++
+                }
+            }
+        }
+    }
+    return dst
+}
+
+func (g *General) Transpose3210() General {
+    dst := NewZeros(g.Cols, g.Rows, g.Channels, g.Batches)
+    idx := 0
+    for col := 0; col < g.Cols; col++ {
+        for r := 0; r < g.Rows; r++ {
+            for c := 0; c < g.Channels; c++ {
+                for b := 0; b < g.Batches; b++ {
+                    dst.Data[idx] = g.Data[g.At(b, c, r, col)]
+                    idx++
+                }
+            }
+        }
+    }
+    return dst
 }
