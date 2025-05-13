@@ -1,4 +1,4 @@
-package vector
+package tensor
 
 import (
 	"fmt"
@@ -61,20 +61,41 @@ func (d1 D1) Clone() D1 {
 	}
 }
 
+func (d1 D1) Axpy(alpha float32, x D1) D1 {
+	d1.Data = slices.Clone(d1)
+	blas32.Axpy(alpha, blas32.Vector(x), blas32.Vector(d1))
+	return d1
+}
+
+func (d1 D1) Scal(alpha float32) D1 {
+	d1.Data = slices.Clone(d1)
+	blas32.Scal(alpha, blas32.Vector(d1))
+	return d1
+}
+
+func (d1 D1) Hadamard(x D1) D1 {
+	newData := make([]float32, d1.N)
+	for i := range newData {
+		newData[i] = d1.Data[i] * x.Data[i]
+	}
+	d1.Data = newData
+	return d1
+}
+
 func (d1 D1) Reshape2D(rows, cols int) D2 {
 	if rows == -1 && cols == -1 {
 		panic("自動サイズ指定は1つまで")
 	}
 
 	if rows == -1 {
-		rows = vec.N / cols
+		rows = d1.N / cols
 	}
 
 	if cols == -1 {
-		cols = vec.N / rows
+		cols = d1.N / rows
 	}
 
-	if vec.N != (rows*cols) {
+	if d1.N != (rows*cols) {
 		panic("サイズが合わない")
 	}
 
@@ -92,19 +113,19 @@ func (d1 D1) Reshape3D(chs, rows, cols int) D3 {
 	}
 
 	if chs == -1 {
-		chs = vec.N / (rows * cols)
+		chs = d1.N / (rows * cols)
 	}
 
 	if rows == -1 {
-		rows = vec.N / (chs * cols)
+		rows = d1.N / (chs * cols)
 	}
 
 	if cols == -1 {
-		cols = vec.N / (chs * rows)
+		cols = d1.N / (chs * rows)
 	}
 
 	n := chs*rows*cols
-	if n != vec.N {
+	if n != d1.N {
 		panic("サイズが合わない")
 	}
 
@@ -115,7 +136,7 @@ func (d1 D1) Reshape3D(chs, rows, cols int) D3 {
 		Cols:cols,
 		ChannelStride:chStride,
 		RowStride:cols,
-		Data:slices.Clone(vec.Data),
+		Data:slices.Clone(d1.Data),
 	}
 }
 
@@ -125,23 +146,23 @@ func (d1 D1) Reshape4D(batches, chs, rows, cols int) D4 {
 	}
 
 	if batches == -1 {
-		batches = vec.N / (chs * rows * cols)
+		batches = d1.N / (chs * rows * cols)
 	}
 
 	if chs == -1 {
-		chs = vec.N / (batches * rows * cols)
+		chs = d1.N / (batches * rows * cols)
 	}
 
 	if rows == -1 {
-		rows = vec.N / (batches * chs * cols)
+		rows = d1.N / (batches * chs * cols)
 	}
 
 	if cols == -1 {
-		cols = vec.N / (batches * chs * rows)
+		cols = d1.N / (batches * chs * rows)
 	}
 
 	n := batches * chs * rows * cols
-	if n != vec.N  {
+	if n != d1.N  {
 		panic("サイズが合わない")
 	}
 
@@ -155,20 +176,8 @@ func (d1 D1) Reshape4D(batches, chs, rows, cols int) D4 {
 		BatchStride:batchStride,
 		ChannelStride:chStride,
 		RowStride:cols,
-		Data:slices.Clone(vec.Data),
+		Data:slices.Clone(d1.Data),
 	}, nil
-}
-
-func (d1 D1) Hadamard(v D1) D1 {
-	if d1.N != v.N {
-		panic("長さが一致しない")
-	}
-	newData := make([]float32, d1.N)
-	for i := range newData {
-		newData[i] = d1.Data[i] * v.Data[i]
-	}
-	d1.Data = newData
-	return d1
 }
 
 func (d1 D1) Standardize() D1 {
@@ -264,14 +273,14 @@ func (d1 D1) StandardizationDerivative(mean, std float32) D1 {
     return grad, nil
 }
 
-func (d1 D1) Outer(v D1) D2 {
+func (d1 D1) Outer(right D1) D2 {
 	y := blas32.General{
 		Rows:   d1.N,
-		Cols:   v.N,
-		Stride: v.N,
-		Data:   make([]float32, d1.N * v.N),
+		Cols:   right.N,
+		Stride: right.N,
+		Data:   make([]float32, d1.N * right.N),
 	}
-	blas32.Ger(1.0, blas32.Vector(d1), blas32.Vector(v), y)
+	blas32.Ger(1.0, blas32.Vector(d1), blas32.Vector(right), y)
 	return D2(y)
 }
 
@@ -287,25 +296,6 @@ func (d1 D1) DotTrans2D(d2 D2) D1 {
 	y := blas32.Vector{N: yn, Inc: 1, Data: make([]float32, yn)}
 	blas32.Gemv(blas.NoTrans, 1.0, blas32.General(d2), blas32.Vector(d1), 0.0, y)
 	return D1(y)
-}
-
-func (d1 D1) Softmax() D1 {
-    data := d1.Data
-    maxX := omath.Max(data...) // オーバーフロー対策
-    expX := make([]float32, d1.N)
-    var sumExpX float32 = 0.0
-    for i, e := range data {
-        expX[i] = math32.Exp(e - maxX)
-        sumExpX += expX[i]
-    }
-
-    y := make([]float32, d1.N)
-    for i := range expX {
-        y[i] = expX[i] / sumExpX
-    }
-
-	d1.Data = y
-	return d1
 }
 
 func (d1 D1) LeakyReLU(alpha float32) D1 {
@@ -333,31 +323,4 @@ func (d1 D1) LeakyReLUDerivative(alpha float32) D1 {
 	}
 	d1.Data = grad
 	return d1
-}
-
-const eps = 0.001
-
-func (d1 D1) CrossEntropy(t D1) float32 {
-	ce := float32(0.0)
-	for i := range d1.Data {
-		ye := omath.Max(d1.Data[i], eps)
-		te := t.Data[i]
-		ce += -te * math32.Log(ye)
-	}
-	return ce, nil
-}
-
-func (d1 D1) SoftmaxCrossEntropyLossDerivative(t D1) D1 {
-	if d1.N != t.N {
-		panic("要素数が一致しない")
-	}
-
-	grad := blas32.Vector{
-		N:    d1.N,
-		Inc:  d1.Inc,
-		Data: make([]float32, d1.N),
-	}
-	blas32.Copy(blas32.Vector(d1), grad)
-	blas32.Axpy(-1.0, blas32.Vector(t), grad)
-	return grad, nil
 }
