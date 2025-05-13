@@ -158,8 +158,8 @@ func (d2 D2) Transpose() D2 {
 		Data:make([]float32, d2.N()),
 	}
 
-	for i := range t.Rows {
-		for j := range t.Cols {
+	for i := 0; i < t.Rows; i++ {
+		for j := 0; j < t.Cols; j++ {
 			newIdx := t.At(i, j)
 			oldIdx := d2.At(j, i)
 			t.Data[newIdx] = d2.Data[oldIdx]
@@ -168,13 +168,46 @@ func (d2 D2) Transpose() D2 {
 	return t
 }
 
-func (d2 D2) Dot(right D2, tL, tR blas.Transpose) D2 {
+func (d2 D2) NoTransDotNoTrans(right D2) D2 {
 	y := blas32.General{
 		Rows:d2.Rows,
 		Cols:right.Cols,
 		Stride:right.Cols,
 		Data:make([]float32, d2.Rows*right.Cols),
 	}
-	blas32.Gemm(tL, tR, 1.0, blas32.General(d2), blas32.General(right), 0.0, y)
+	blas32.Gemm(blas.NoTrans, blas.NoTrans, 1.0, blas32.General(d2), blas32.General(right), 0.0, y)
+	return D2(y)
+}
+
+func (d2 D2) TransDotNoTrans(right D2) D2 {
+	y := blas32.General{
+		Rows:d2.Cols,
+		Cols:right.Cols,
+		Stride:right.Cols,
+		Data:make([]float32, d2.Cols*right.Cols),
+	}
+	blas32.Gemm(blas.Trans, blas.NoTrans, 1.0, blas32.General(d2), blas32.General(right), 0.0, y)
+	return D2(y)
+}
+
+func (d2 D2) NoTransDotTrans(right D2) D2 {
+	y := blas32.General{
+		Rows:d2.Rows,
+		Cols:right.Rows,
+		Stride:right.Rows,
+		Data:make([]float32, d2.Rows*right.Rows),
+	}
+	blas32.Gemm(blas.NoTrans, blas.Trans, 1.0, blas32.General(d2), blas32.General(right), 0.0, y)
+	return D2(y)
+}
+
+func (d2 D2) TransDotTrans(right D2) D2 {
+	y := blas32.General{
+		Rows:d2.Cols,
+		Cols:right.Rows,
+		Stride:right.Rows,
+		Data:make([]float32, d2.Cols*right.Rows),
+	}
+	blas32.Gemm(blas.Trans, blas.Trans, 1.0, blas32.General(d2), blas32.General(right), 0.0, y)
 	return D2(y)
 }

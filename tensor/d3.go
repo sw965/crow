@@ -121,87 +121,87 @@ func (d3 D3) Scal(alpha float32) D3 {
 }
 
 func (d3 D3) Transpose021() D3 {
-    dst := NewD3Zeros(d3.Channels, d3.Cols, d3.Rows)
-    dstChStride := dst.ChannelStride
-    dstRowStride := dst.RowStride
+    t := NewD3Zeros(d3.Channels, d3.Cols, d3.Rows)
+    tChStride := t.ChannelStride
+    tRowStride := t.RowStride
     for ch := 0; ch < d3.Channels; ch++ {
         srcBase := ch * d3.ChannelStride
-        dstBase := ch * dstChStride
+        tBase := ch * tChStride
         for col := 0; col < d3.Cols; col++ {
             srcOff := srcBase + col
-            dstOff := dstBase + col*dstRowStride
+            tOff := tBase + col*tRowStride
             for row := 0; row < d3.Rows; row++ {
-                dst.Data[dstOff+row] = d3.Data[srcOff+row*d3.RowStride]
+                t.Data[tOff+row] = d3.Data[srcOff+row*d3.RowStride]
             }
         }
     }
-    return dst
+    return t
 }
 
 func (d3 D3) Transpose102() D3 {
-    dst := NewD3Zeros(d3.Rows, d3.Channels, d3.Cols)
-    dstChStride := dst.ChannelStride
-    dstRowStride := dst.RowStride
+    t := NewD3Zeros(d3.Rows, d3.Channels, d3.Cols)
+    tChStride := t.ChannelStride
+    tRowStride := t.RowStride
     for row := 0; row < d3.Rows; row++ {
         srcRowBase := row * d3.RowStride
-        dstBase := row * dstChStride
+        tBase := row * tChStride
         for ch := 0; ch < d3.Channels; ch++ {
             srcBase := srcRowBase + ch*d3.ChannelStride
-            dstOff := dstBase + ch*dstRowStride
-            copy(dst.Data[dstOff:dstOff+d3.Cols], d3.Data[srcBase:srcBase+d3.Cols])
+            tOff := tBase + ch*tRowStride
+            copy(t.Data[tOff:tOff+d3.Cols], d3.Data[srcBase:srcBase+d3.Cols])
         }
     }
-    return dst
+    return t
 }
 
 func (d3 D3) Transpose120() D3 {
-    dst := NewD3Zeros(d3.Rows, d3.Cols, d3.Channels)
-    dstChStride := dst.ChannelStride
-    dstRowStride := dst.RowStride
+    t := NewD3Zeros(d3.Rows, d3.Cols, d3.Channels)
+    tChStride := t.ChannelStride
+    tRowStride := t.RowStride
     for row := 0; row < d3.Rows; row++ {
         srcRowBase := row * d3.RowStride
-        dstBase := row * dstChStride
+        tBase := row * tChStride
         for col := 0; col < d3.Cols; col++ {
-            dstOff := dstBase + col*dstRowStride
+            tOff := tBase + col*tRowStride
             srcOff := srcRowBase + col
             for ch := 0; ch < d3.Channels; ch++ {
-                dst.Data[dstOff+ch] = d3.Data[srcOff+ch*d3.ChannelStride]
+                t.Data[tOff+ch] = d3.Data[srcOff+ch*d3.ChannelStride]
             }
         }
     }
-    return dst
+    return t
 }
 
 func (d3 D3) Transpose201() D3 {
-    dst := NewD3Zeros(d3.Cols, d3.Channels, d3.Rows)
-    dstChStride := dst.ChannelStride
-    dstRowStride := dst.RowStride
+    t := NewD3Zeros(d3.Cols, d3.Channels, d3.Rows)
+    tChStride := t.ChannelStride
+    tRowStride := t.RowStride
     for col := 0; col < d3.Cols; col++ {
-        dstBase := col * dstChStride
+        tBase := col * tChStride
         for ch := 0; ch < d3.Channels; ch++ {
             srcBase := ch*d3.ChannelStride + col
-            dstOff := dstBase + ch*dstRowStride
+            tOff := tBase + ch*tRowStride
             for row := 0; row < d3.Rows; row++ {
-                dst.Data[dstOff+row] = d3.Data[srcBase+row*d3.RowStride]
+                t.Data[tOff+row] = d3.Data[srcBase+row*d3.RowStride]
             }
         }
     }
-    return dst
+    return t
 }
 
 func (d3 D3) Transpose210() D3 {
-    dst := NewD3Zeros(d3.Cols, d3.Rows, d3.Channels)
-    dstChStride := dst.ChannelStride
-    dstRowStride := dst.RowStride
+    t := NewD3Zeros(d3.Cols, d3.Rows, d3.Channels)
+    tChStride := t.ChannelStride
+    tRowStride := t.RowStride
     for col := 0; col < d3.Cols; col++ {
-        dstBase := col * dstChStride
+        tBase := col * tChStride
         for row := 0; row < d3.Rows; row++ {
-            dstOff := dstBase + row*dstRowStride
+            tOff := tBase + row*tRowStride
             srcBase := row*d3.RowStride + col
             for ch := 0; ch < d3.Channels; ch++ {
-                dst.Data[dstOff+ch] = d3.Data[srcBase+ch*d3.ChannelStride]
+                t.Data[tOff+ch] = d3.Data[srcBase+ch*d3.ChannelStride]
             }
         }
     }
-    return dst
+    return t
 }

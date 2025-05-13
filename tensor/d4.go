@@ -108,7 +108,7 @@ func (d4 D4) ToBlas32Vector() blas32.Vector {
 	return blas32.Vector{
 		N:    d4.N(),
 		Inc:  1,
-		Data: d4.Data,
+		Data: slices.Clone(d4.Data),
 	}
 }
 

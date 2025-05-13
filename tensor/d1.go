@@ -19,20 +19,12 @@ func NewD1Zeros(n int) D1 {
 	}
 }
 
-func NewD1ZerosLike(d1 D1) D1 {
-	return NewD1Zeros(d1.N)
-}
-
 func NewD1Ones(n int) D1 {
 	d1 := NewD1Zeros(n)
 	for i := range d1.Data {
 		d1.Data[i] = 1.0
 	}
 	return d1
-}
-
-func NewD1OnesLike(d1 D1) D1 {
-	return NewD1Ones(d1.N)
 }
 
 func NewD1Rademacher(n int, rng *rand.Rand) D1 {
@@ -43,7 +35,16 @@ func NewD1Rademacher(n int, rng *rand.Rand) D1 {
 	return d1
 }
 
-func NewD1RademacherLike(d1 D1, rng *rand.Rand) D1 {
+
+func (d1 D1) NewZerosLike() D1 {
+	return NewD1Zeros(d1.N)
+}
+
+func (d1 D1) NewOnesLike() D1 {
+	return NewD1Ones(d1.N)
+}
+
+func (d1 D1) NewRademacherLike(rng *rand.Rand) D1 {
 	return NewD1Rademacher(d1.N, rng)
 }
 
@@ -68,6 +69,10 @@ func (d1 D1) Scal(alpha float32) D1 {
 }
 
 func (d1 D1) Hadamard(x D1) D1 {
+	if d1.N != x.N {
+		panic("長さが一致しないのでアダマール積が出来ない")
+	}
+
 	newData := make([]float32, d1.N)
 	for i := range newData {
 		newData[i] = d1.Data[i] * x.Data[i]
