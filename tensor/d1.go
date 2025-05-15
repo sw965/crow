@@ -35,7 +35,6 @@ func NewD1Rademacher(n int, rng *rand.Rand) D1 {
 	return d1
 }
 
-
 func (d1 D1) NewZerosLike() D1 {
 	return NewD1Zeros(d1.N)
 }
@@ -62,10 +61,18 @@ func (d1 D1) Axpy(alpha float32, x D1) D1 {
 	return d1
 }
 
+func (d1 *D1) AxpyInPlace(alpha float32, x D1) {
+	blas32.Axpy(alpha, blas32.Vector(x), blas32.Vector(*d1))
+}
+
 func (d1 D1) Scal(alpha float32) D1 {
 	d1.Data = slices.Clone(d1.Data)
 	blas32.Scal(alpha, blas32.Vector(d1))
 	return d1
+}
+
+func (d1 *D1) ScalInPlace(alpha float32) {
+	blas32.Scal(alpha, blas32.Vector(*d1))
 }
 
 func (d1 D1) Hadamard(x D1) D1 {
@@ -79,6 +86,16 @@ func (d1 D1) Hadamard(x D1) D1 {
 	}
 	d1.Data = newData
 	return d1
+}
+
+func (d1 *D1) HadamardInPlace(x D1) {
+	if d1.N != x.N {
+		panic("長さが一致しないアダマール")
+	}
+
+	for i := range d1.Data {
+		d1.Data[i] *= x.Data[i]
+	}
 }
 
 func (d1 D1) Reshape2D(rows, cols int) D2 {
@@ -191,8 +208,28 @@ func (d1 D1) Outer(right D1) D2 {
 }
 
 func (d1 D1) DotNoTrans2D(d2 D2) D1 {
+	/*
+		x = np.array([[1.0, 2.0, 3.0, 4.0, 5.0]])
+    	w = np.array([
+	    	[0.1, 0.2, 0.3],
+	    	[0.2, 1.0, 3.0],
+	    	[3.0, 5.0, 2.5],
+	    	[6.0, 2.0, 1.5],
+	    	[0.3, 2.0, 3.0],
+    	])
+    	u = np.dot(x, w)
+		y = u[0]
+
+		上記のPythonのコードと同じ振る舞い。
+		1次元配列であるxを2次元配列と見なした内積の結果。
+	*/
+
 	yn := d2.Cols
 	y := blas32.Vector{N: yn, Inc: 1, Data: make([]float32, yn)}
+	/*
+		メソッド名はNoTransであるが、意図する振る舞いは、Transにするのが正しい。
+		結果として、xを転置しない場合の内積の結果が得られる。
+	*/
 	blas32.Gemv(blas.Trans, 1.0, blas32.General(d2), blas32.Vector(d1), 0.0, y)
 	return D1(y)
 }

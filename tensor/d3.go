@@ -107,6 +107,22 @@ func (d3 D3) Axpy(alpha float32, x D3) D3 {
 	}
 }
 
+func (d3 *D3) AxpyInPlace(alpha float32, x D3) {
+	yv := blas32.Vector{
+		N:d3.N(),
+		Inc:1,
+		Data:d3.Data,
+	}
+
+	xv := blas32.Vector{
+		N:x.N(),
+		Inc:1,
+		Data:x.Data,
+	}
+
+	blas32.Axpy(alpha, xv, yv)
+}
+
 func (d3 D3) Scal(alpha float32) D3 {
 	v := d3.ToBlas32Vector()
 	blas32.Scal(alpha, v)
@@ -118,6 +134,15 @@ func (d3 D3) Scal(alpha float32) D3 {
 		RowStride:d3.RowStride,
 		Data:v.Data,
 	}
+}
+
+func (d3 *D3) ScalInPlace(alpha float32) {
+	v := blas32.Vector{
+		N:d3.N(),
+		Inc:1,
+		Data:d3.Data,
+	}
+	blas32.Scal(alpha, v)
 }
 
 func (d3 D3) Transpose021() D3 {

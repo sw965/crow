@@ -2,6 +2,8 @@ package math
 
 import (
 	"github.com/sw965/crow/tensor"
+	omath "github.com/sw965/omw/math"
+	"github.com/chewxy/math32"
 )
 
 func Standardize(x tensor.D1) tensor.D1 {
@@ -31,7 +33,7 @@ func Standardize(x tensor.D1) tensor.D1 {
 	return x
 }
 
-func StandardizeWithStats(x tensor.D1) (D1, float32, float32) {
+func StandardizeWithStats(x tensor.D1) (tensor.D1, float32, float32) {
 	if x.N == 0 {
         panic("vector length is zero")
     }
@@ -58,7 +60,7 @@ func StandardizeWithStats(x tensor.D1) (D1, float32, float32) {
 	return x, mean, std
 }
 
-func StandardizationDerivative(x tensor.D1, mean, std float32) tensor.D1 {
+func StandardizationDerivative(x tensor.D1, mean, std float32) tensor.D2 {
 	n := x.N
 	if n == 0 {
         panic("vector length is zero")
@@ -67,7 +69,7 @@ func StandardizationDerivative(x tensor.D1, mean, std float32) tensor.D1 {
     avg := 1.0 / float32(n)
     std3 := math32.Pow(std, 3)
 
-    grad := blas32.General{
+    grad := tensor.D2{
         Rows:  n,
         Cols:  n,
         Stride: n,
@@ -84,11 +86,11 @@ func StandardizationDerivative(x tensor.D1, mean, std float32) tensor.D1 {
             xjd := x.Data[j] - mean
             one := (kd - avg) / std
             two := (xid * xjd) / (float32(n) * std3)
-            idx := tensor2d.At(grad, i, j)
+            idx := grad.At(i, j)
             grad.Data[idx] = one - two
         }
     }
-    return grad, nil
+    return grad
 }
 
 func Softmax(x tensor.D1) tensor.D1 {
@@ -112,24 +114,34 @@ func Softmax(x tensor.D1) tensor.D1 {
 
 func CrossEntropy(y, t tensor.D1) float32 {
 	ce := float32(0.0)
-	for i := range d1.Data {
-		ye := omath.Max(d1.Data[i], 0.0001)
+	for i := range y.Data {
+		ye := omath.Max(y.Data[i], 0.0001)
 		te := t.Data[i]
 		ce += -te * math32.Log(ye)
 	}
-	return ce, nil
+	return ce
 }
 
 func SoftmaxCrossEntropyLossDerivative(y, t tensor.D1) tensor.D1 {
 	if y.N != t.N {
 		panic("要素数が一致しない")
 	}
-	grad := blas32.Vector{
-		N:    y.N,
-		Inc:  y.Inc,
-		Data: make([]float32, y.N),
+	//y - t
+	return y.Axpy(-1.0, t)
+}
+
+func SumSquaredLoss(y, t tensor.D1) float32 {
+	if y.N != t.N {
+		panic("len(y) != len(t) であるため、SumSquaredErrorを計算できません。")
 	}
-	blas32.Copy(blas32.Vector(y), grad)
-	blas32.Axpy(-1.0, blas32.Vector(t), grad)
-	return grad
+	var sqSum float32 = 0.0
+	for i := range y.Data {
+		diff := y.Data[i] - t.Data[i]
+		sqSum += (diff * diff)
+	}
+	return 0.5 * sqSum
+}
+
+func SumSquaredLossDerivative(y, t tensor.D1) tensor.D1 {
+	return y.Axpy(-1.0, t)
 }

@@ -50,10 +50,25 @@ func (ds D1Slice) Axpy(alpha float32, xs D1Slice) D1Slice {
 	return ys
 }
 
+func (ds D1Slice) AxpyInPlace(alpha float32, xs D1Slice) {
+	if len(ds) != len(xs) {
+		panic("vectors.Axpy len(xs) != len(ys)")
+	}
+	for i := range ds {
+		ds[i].AxpyInPlace(alpha, xs[i])
+	}
+}
+
 func (ds D1Slice) Scal(alpha float32) D1Slice {
 	ys := make(D1Slice, len(ds))
 	for i, d := range ds {
 		ys[i] = d.Scal(alpha)
 	}
 	return ys
+}
+
+func (ds D1Slice) ScalInPlace(alpha float32) {
+	for i := range ds {
+		ds[i].ScalInPlace(alpha)
+	}
 }

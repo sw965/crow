@@ -3,7 +3,8 @@ package consts
 type LayerType int
 
 const (
-	DotLayer LayerType = iota
+	ConvLayer LayerType = iota
+	DotLayer
 	LeakyReLULayer
 	InstanceNormalizationLayer
 	SoftmaxLayer

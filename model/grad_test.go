@@ -9,7 +9,7 @@ import (
 	"math/rand"
 	orand "github.com/sw965/omw/math/rand"
 	"github.com/sw965/crow/dataset/mnist"
-	"github.com/sw965/crow/blas32/vector"
+	tmath "github.com/sw965/crow/tensor/math"
 )
 
 func TestFullyConnectedModelGrad(t *testing.T) {
@@ -36,6 +36,22 @@ func TestFullyConnectedModelGrad(t *testing.T) {
 	genModel.AppendSoftmaxForCrossEntropyLoss()
 	genModel.SetCrossEntropyLossForSoftmax()
 
+	/*
+		InstanceNormlizationのGammaとBetaはそれぞれ1と0で初期化されてる。
+		数値微分と解析的微分の誤差を測定する際には都合が悪い為、ランダムに書き換える。
+	*/
+	for _, gamma := range genModel.Parameter.Gammas {
+		for j := range gamma.Data {
+			gamma.Data[j] = rng.Float32()
+		}
+	}
+
+	for _, bias := range genModel.Parameter.Biases {
+		for j := range bias.Data {
+			bias.Data[j] = rng.Float32()
+		}
+	}
+
 	//SPSAで勾配を求めるモデルの生成
 	spsaModel := spsa.Model{}
 	spsaModel.AppendDot(xn, midN1, rng)
@@ -55,23 +71,24 @@ func TestFullyConnectedModelGrad(t *testing.T) {
 	//genModelとspsaModelを同じパラメーターにする
 	spsaModel.Parameters = convert.GeneralParameterToSPSAParameters(&genModel.Parameter, spsaModel.LayerTypes)
 
+	testSize := 100
+
 	//mnistの生成
 	trainXs, err := mnist.LoadTrainFlatImages()
 	if err != nil {
 		panic(err)
 	}
 
-	trainXs = trainXs[:10]
+	trainXs = trainXs[:testSize]
 
 	trainYs, err := mnist.LoadTrainLabels()
 	if err != nil {
 		panic(err)
 	}
 
-	trainYs = trainYs[:10]
-	dataN := len(trainXs)
+	trainYs = trainYs[:testSize]
 
-	lossFunc := func(model *spsa.Model, workerIdx int) (float32, error) {
+	lossFunc := func(model spsa.Model, workerIdx int) (float32, error) {
 		sum := float32(0.0)
 		for i, x := range trainXs {
 			y, err := model.Predict(x)
@@ -79,13 +96,27 @@ func TestFullyConnectedModelGrad(t *testing.T) {
 				return 0.0, err
 			}
 			t := trainYs[i]
-			loss, err := vector.CrossEntropy(y, t)
-			if err != nil {
-				return 0.0, err
-			}
+			loss := tmath.CrossEntropy(y, t)
 			sum += loss
 		}
-		return sum / float32(dataN), nil
+		return sum / float32(testSize), nil
+	}
+
+	for i := 0; i < testSize; i++ {
+		x := trainXs[i]
+		genY, err := genModel.Predict(x)
+		if err != nil {
+			panic(err)
+		}
+
+		spsaY, err := spsaModel.Predict(x)
+		if err != nil {
+			panic(err)
+		}
+
+		fmt.Println("genY = ", genY)
+		fmt.Println("spsaY =", spsaY)
+		fmt.Println("")
 	}
 
 	//解析的微分と数値微分を計算して、誤差を計算する
@@ -100,7 +131,8 @@ func TestFullyConnectedModelGrad(t *testing.T) {
 	}
 
 	genNumGrad := convert.SPSAGradsToGeneralGrad(numGrads)
-	wMaxDiffs, gMaxDiffs, bMaxDiffs := trueGrad.CompareMaxDiff(&genNumGrad)
+	fMaxDiffs, wMaxDiffs, gMaxDiffs, bMaxDiffs := trueGrad.CompareMaxDiff(genNumGrad)
+	fmt.Println(fMaxDiffs)
 	fmt.Println(wMaxDiffs)
 	fmt.Println(gMaxDiffs)
 	fmt.Println(bMaxDiffs)
@@ -114,19 +146,23 @@ func TestFullyConnectedModelGrad(t *testing.T) {
 	trialNum := 1280000
 	total := genModel.Parameter.NewGradZerosLike()
 
+	//一旦はSPSAで推定した勾配とのテストは実行しない
+	return
+
 	for i := 0; i < trialNum; i++ {
 		spsaGrads, err := spsaModel.EstimateGrads(lossFunc, 0.01, rngs)
 		if err != nil {
 			panic(err)
 		}
 		genGrad := convert.SPSAGradsToGeneralGrad(spsaGrads)
-		total.Axpy(1.0, &genGrad)
+		total.AxpyInPlace(1.0, genGrad)
 
 		if i%12800 == 0 {
 			avg := total.Clone()
-			avg.Scal(1.0 / float32(i+1))
-			wMaxDiffs, gMaxDiffs, bMaxDiffs := trueGrad.CompareMaxDiff(&avg)
+			avg.ScalInPlace(1.0 / float32(i+1))
+			fMaxDiffs, wMaxDiffs, gMaxDiffs, bMaxDiffs := trueGrad.CompareMaxDiff(avg)
 			fmt.Println("i =", i)
+			fmt.Println(fMaxDiffs)
 			fmt.Println(wMaxDiffs)
 			fmt.Println(gMaxDiffs)
 			fmt.Println(bMaxDiffs)

@@ -1,12 +1,10 @@
 package main
 
 import (
-	"fmt"
 	"os"
 	ojson "github.com/sw965/omw/encoding/json"
 	ogob "github.com/sw965/omw/encoding/gob"
-	"gonum.org/v1/gonum/blas/blas32"
-	"github.com/sw965/crow/blas32/tensor/3d"
+	"github.com/sw965/crow/tensor"
 
 )
 
@@ -32,10 +30,10 @@ func saveGob(jsonPath, gobPath string) {
 		panic(err)
 	}
 
-	gobVectorXs := make([]blas32.Vector, len(jsonXs))
+	gobVectorXs := make(tensor.D1Slice, len(jsonXs))
 	for i := range gobVectorXs {
 		x := jsonXs[i]
-		gobVectorXs[i] = blas32.Vector{
+		gobVectorXs[i] = tensor.D1{
 			N:len(x),
 			Inc:1,
 			Data:x,
@@ -47,9 +45,9 @@ func saveGob(jsonPath, gobPath string) {
 		panic(err)
 	}
 
-	gobD3Xs := make([]tensor3d.General, len(jsonXs))
+	gobD3Xs := make(tensor.D3Slice, len(jsonXs))
 	for i := range gobD3Xs {
-		gobD3Xs[i] = tensor3d.NewZeros(CHANNELS, ROWS, COLS)
+		gobD3Xs[i] = tensor.NewD3Zeros(CHANNELS, ROWS, COLS)
 		gobD3Xs[i].Data = jsonXs[i]
 	}
 
@@ -63,10 +61,10 @@ func saveGob(jsonPath, gobPath string) {
 		panic(err)
 	}
 
-	gobLabels := make([]blas32.Vector, len(jsonLabels))
+	gobLabels := make(tensor.D1Slice, len(jsonLabels))
 	for i := range gobLabels {
 		label := jsonLabels[i]
-		gobLabels[i] = blas32.Vector{
+		gobLabels[i] = tensor.D1{
 			N:len(label),
 			Inc:1,
 			Data:label,

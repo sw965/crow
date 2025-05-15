@@ -104,6 +104,22 @@ func (d2 D2) Axpy(alpha float32, x D2) D2 {
 	}
 }
 
+func (d2 *D2) AxpyInPlace(alpha float32, x D2) {
+	yv := blas32.Vector{
+		N:d2.N(),
+		Inc:1,
+		Data:d2.Data,
+	}
+
+	xv := blas32.Vector{
+		N:x.N(),
+		Inc:1,
+		Data:x.Data,
+	}
+
+	blas32.Axpy(alpha, xv, yv)
+}
+
 func (d2 D2) Scal(alpha float32) D2 {
 	y := d2.ToBlas32Vector()
 	blas32.Scal(alpha, y)
@@ -113,6 +129,15 @@ func (d2 D2) Scal(alpha float32) D2 {
 		Stride:d2.Stride,
 		Data:y.Data,
 	}
+}
+
+func (d2 *D2) ScalInPlace(alpha float32) {
+	y := blas32.Vector{
+		N:d2.N(),
+		Inc:1,
+		Data:d2.Data,
+	}
+	blas32.Scal(alpha, y)
 }
 
 func (d2 D2) Sum0() D1 {

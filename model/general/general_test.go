@@ -6,23 +6,28 @@ import (
 	"github.com/sw965/crow/model/general"
 	"github.com/sw965/crow/dataset/mnist"
 	orand "github.com/sw965/omw/math/rand"
-	"gonum.org/v1/gonum/blas/blas32"
+	"github.com/sw965/crow/tensor"
 )
 
 func TestModel(t *testing.T) {
+	xn := 784
+	mid1N := 1280
+	mid2N := 320
+	yn := 10
+
 	rng := orand.NewMt19937()
 	model := general.Model{}
-	model.AppendDot(784, 1280, rng)
+	model.AppendDot(xn, mid1N, rng)
 	model.AppendLeakyReLU(0.1)
-	model.AppendInstanceNormalization(1280)
+	model.AppendInstanceNormalization(mid1N)
 
-	model.AppendDot(1280, 100, rng)
+	model.AppendDot(mid1N, mid2N, rng)
 	model.AppendLeakyReLU(0.1)
-	model.AppendInstanceNormalization(100)
+	model.AppendInstanceNormalization(mid2N)
 
-	model.AppendDot(100, 10, rng)
+	model.AppendDot(mid2N, yn, rng)
 	model.AppendLeakyReLU(0.1)
-	model.AppendInstanceNormalization(10)
+	model.AppendInstanceNormalization(yn)
 
 	model.AppendSoftmaxForCrossEntropyLoss()
 	model.SetCrossEntropyLossForSoftmax()
@@ -56,8 +61,8 @@ func TestModel(t *testing.T) {
 	opt.LearningRate = lr
 
 	for i := 0; i < trainNum; i++ {
-		miniXs := make([]blas32.Vector, miniBatchSize)
-		miniTs := make([]blas32.Vector, miniBatchSize)
+		miniXs := make(tensor.D1Slice, miniBatchSize)
+		miniTs := make(tensor.D1Slice, miniBatchSize)
 		for j := 0; j < miniBatchSize; j++ {
 			idx := rng.Intn(60000)
 			miniXs[j] = trainXs[idx]
@@ -69,7 +74,7 @@ func TestModel(t *testing.T) {
 			panic(err)
 		}
 		opt.Optimize(&model, &grad, 0)
-		//model.Parameter.AxpyGrad(-lr, &grad)
+		//model.Parameter.AxpyInPlaceGrad(-lr, &grad)
 
 		if i%512 == 0 {
 			acc, err := model.Accuracy(testXs[:1000], testYs[:1000])

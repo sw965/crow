@@ -7,22 +7,26 @@ import (
 	"math/rand"
 	orand "github.com/sw965/omw/math/rand"
 	"github.com/sw965/crow/model/spsa"
-	"github.com/sw965/crow/blas32/vector"
+	tmath "github.com/sw965/crow/tensor/math"
 )
 
 func TestModel(t *testing.T) {
-	return
+	xn := 784
+	mid1N := 128
+	mid2N := 32
+	yn := 10
+
 	rng := orand.NewMt19937()
 	model := spsa.Model{}
-	model.AppendDot(784, 128, rng)
+	model.AppendDot(xn, mid1N, rng)
 	model.AppendLeakyReLU(0.1)
-	model.AppendInstanceNormalization(128)
+	model.AppendInstanceNormalization(mid1N)
 
-	model.AppendDot(128, 32, rng)
+	model.AppendDot(mid1N, mid2N, rng)
 	model.AppendLeakyReLU(0.1)
 	model.AppendInstanceNormalization(32)
 
-	model.AppendDot(32, 10, rng)
+	model.AppendDot(mid2N, yn, rng)
 	model.AppendLeakyReLU(0.1)
 	model.AppendInstanceNormalization(10)
 
@@ -55,7 +59,7 @@ func TestModel(t *testing.T) {
 	}
 	miniBatchSize := 128
 
-	lossFunc := func(model *spsa.Model, workerIdx int) (float32, error) {
+	lossFunc := func(model spsa.Model, workerIdx int) (float32, error) {
 		rng := rngs[workerIdx]
 		sum := float32(0.0)
 		for i := 0; i < miniBatchSize; i++ {
@@ -66,10 +70,7 @@ func TestModel(t *testing.T) {
 				return 0.0, err
 			}
 			t := trainYs[idx]
-			loss, err := vector.CrossEntropy(y, t)
-			if err != nil {
-				return 0.0, err
-			}
+			loss := tmath.CrossEntropy(y, t)
 			sum += loss
 		}
 		return sum / float32(miniBatchSize), nil
@@ -82,7 +83,7 @@ func TestModel(t *testing.T) {
 		if err != nil {
 			panic(err)
 		}
-		model.Parameters.AxpyGrads(-lr, grads)
+		model.Parameters.AxpyInPlaceGrads(-lr, grads)
 
 		if i%512 == 0 {
 			acc, err := model.Accuracy(testXs, testYs)

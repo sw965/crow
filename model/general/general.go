@@ -2,415 +2,111 @@ package general
 
 import (
 	"fmt"
-	"github.com/sw965/crow/blas32/tensor/2d"
-	"github.com/sw965/crow/blas32/tensors/2d"
-	"github.com/sw965/crow/blas32/vector"
-	"github.com/sw965/crow/blas32/vectors"
+	"github.com/sw965/crow/tensor"
+	tmath "github.com/sw965/crow/tensor/math"
 	oslices "github.com/sw965/omw/slices"
-	"gonum.org/v1/gonum/blas/blas32"
 	"math/rand"
-	"slices"
 	"github.com/sw965/omw/parallel"
-	omath "github.com/sw965/omw/math"
-	"github.com/chewxy/math32"
 )
 
-type GradBuffer struct {
-	Filters []tensor4d.General
-	Weights []blas32.General
-	Gammas  []blas32.Vector
-	Biases  []blas32.Vector
-}
-
-func (g *GradBuffer) NewZerosLike() GradBuffer {
-	return GradBuffer{
-		Filters:tensors4d.NewZerosLike(g.Filters),
-		Weights:tensors2d.NewZerosLike(g.Weights),
-		Gammas:vectors.NewZerosLike(g.Gammas),
-		Biases:vectors.NewZerosLike(g.Biases),
-	}
-}
-
-func (g *GradBuffer) Clone() GradBuffer {
-	return GradBuffer{
-		Filters:tensors4d.Clone(g.Filters),
-		Weights:tensors2d.Clone(g.Weights),
-		Gammas:vectors.Clone(g.Gammas),
-		Biases:vectors.Clone(g.Biases),
-	}
-}
-
-func (g *GradBuffer) Axpy(alpha float32, x *GradBuffer) {
-	tensors4d.Axpy(alpha, x.Filters, g.Filters)
-	tensors2d.Axpy(alpha, x.Weights, g.Weights)
-	vectors.Axpy(alpha, x.Gammas, g.Gammas)
-	vectors.Axpy(alpha, x.Biases, g.Biases)
-}
-
-func (g *GradBuffer) Scal(alpha float32) {
-	tensors4d.Scal(alpha, g.Filters)
-	tensors2d.Scal(alpha, g.Weights)
-	vectors.Scal(alpha, g.Gammas)
-	vectors.Scal(alpha, g.Biases)
-}
-
-func (g *GradBuffer) CompareMaxDiff(other *GradBuffer) ([]float32, []float32, []float32, []float32) {
-	fMaxDiffs := make([]float32, len(g.Filters))
-	wMaxDiffs := make([]float32, len(g.Weights))
-	gMaxDiffs := make([]float32, len(g.Gammas))
-	bMaxDiffs := make([]float32, len(g.Biases))
-
-	for i, gf := range g.Filters {
-		of := other.Filters[i]
-		of = tensor4d.Clone(of)
-		tensor4d.Axpy(-1.0, gf, of)
-		for i, e := range of.Data {
-			of.Data[i] = math32.Abs(e)
-		}
-		maxDiff := omath.Max(of.Data...)
-		fMaxDiffs[i] = maxDiff
-	}
-
-	for i, gw := range g.Weights {
-		ow := other.Weights[i]
-		ow = tensor2d.Clone(ow)
-		tensor2d.Axpy(-1.0, gw, ow)
-		for i, e := range ow.Data {
-			ow.Data[i] = math32.Abs(e)
-		}
-		maxDiff := omath.Max(ow.Data...)
-		wMaxDiffs[i] = maxDiff
-	}
-
-	compareVecs := func(vs1, vs2 []blas32.Vector, result []float32) {
-		for i, v1 := range vs1 {
-			v2 := vs2[i]
-			v2 = vector.Clone(v2)
-			blas32.Axpy(-1.0, v1, v2)
-			for i, e := range v2.Data {
-				v2.Data[i] = math32.Abs(e)
-			}
-			maxDiff := omath.Max(v2.Data...)
-			result[i] = maxDiff
-		}
-	}
-
-	compareVecs(g.Gammas, other.Gammas, gMaxDiffs)
-	compareVecs(g.Biases, other.Biases, bMaxDiffs)
-	return fMaxDiffs, wMaxDiffs, gMaxDiffs, bMaxDiffs
-}
-
-type GradBuffers []GradBuffer
-
-func (gs GradBuffers) Total() GradBuffer {
-	total := gs[0].Clone()
-	for _, g := range gs[1:] {
-		total.Axpy(1.0, &g)
-	}
-	return total
-}
-
-type Parameter struct {
-	Filters  []tensor4d.General
-	Weights []blas32.General
-	Gammas  []blas32.Vector
-	Biases  []blas32.Vector
-}
-
-func (p *Parameter) NewGradZerosLike() GradBuffer {
-	return GradBuffer{
-		Filters: tensors4d.NewZerosLike(p.Filters),
-		Weights: tensors2d.NewZerosLike(p.Weights),
-		Gammas:  vectors.NewZerosLike(p.Gammas),
-		Biases:  vectors.NewZerosLike(p.Biases),
-	}
-}
-
-func (p *Parameter) Clone() Parameter {
-	return Parameter{
-		Filters : tensors4d.Clone(p.Filters),
-		Weights: tensors2d.Clone(p.Weights),
-		Gammas:  vectors.Clone(p.Gammas),
-		Biases:  vectors.Clone(p.Biases),
-	}
-}
-
-func (p *Parameter) AxpyGrad(alpha float32, grad *GradBuffer) {
-	tensors4d.Axpy(alpha, grad.Filters, p.Filters)
-	tensors2d.Axpy(alpha, grad.Weights, p.Weights)
-	vectors.Axpy(alpha, grad.Gammas, p.Gammas)
-	vectors.Axpy(alpha, grad.Biases, p.Biases)
-}
-
-type Forward3D func(tensor3d.General) (blas32.General, Backward3D, error)
-type Forwards3D []Forward3D
-
-func (fs Forwards3D) Propagate(x tensor3d.General) (tensor3d.General, Backwards3D, error) {
-	var err error
-	var backward Backward3D
-	backwards := make(Backwards3D, len(fs))
-	for i, f := range fs {
-		x, backward, err := f(x)
-		if err != nil {
-			return tensor3d.General{}, nil, err
-		}
-		backwards[i] = backward
-	}
-	y := x
-	slices.Reverse(backwards)
-	return y, backwards, nil
-}
-
-type Backward3D func(tensor3d.General, *GradBuffer) (tensor3d.General, error)
-type Backwards3D []Backward3D
-
-func (bs Backwards3D) Propagate() (tensor3d.General, *GradBuffer, error) {
-	n := len(bs)
-	grad := GradBuffer{
-		Filter:make([]tensor4d.General, 0, n),
-		Weights:make([]blas32.General, 0, n),
-		Gammas: make([]blas32.Vector, 0, n),
-		Biases: make([]blas32.Vector, 0, n),
-	}
-	var err error
-
-	for _, b := range bs {
-		chain, err = b(chain, &grad)
-		if err != nil {
-			return blas32.Vector{}, GradBuffer{}, err
-		}
-	}
-
-	slices.Reverse(grad.Filter)
-	slices.Reverse(grad.Weights)
-	slices.Reverse(grad.Gammas)
-	slices.Reverse(grad.Biases)
-	dx := chain
-	return dx, grad, nil
-}
-
-func NewConvForward(filter tensor4d.Filter) Forward3D {
-	return func(x tensor3d.General) (tensor3d.General, Backward3D, error) {
-		outRows := x.ConvOutputRows()
-		outCols := x.ConvOutputCols()
-		
-		colImg := x.ToCol(filter.Rows, filter.Cols)
-		flatFilter := filter.ToVector()
-		colFilter := vector.Reshaped2D(flatFilter, filter.Batches, filter.BatchStride)
-		colFilter = tensor2d.Transpose(colFilter)
-		
-		out := tensor2d.Dot(blas.NoTrans, blas.NoTrans, col, colFilter)
-		flatOut := tensor2d.ToVector(dot)
-		imgOut := vector.Reshape3D(flatDot, outRows, outCols, -1)
-		y := imgOut.Transpose312()
-
-		var backward Backward3D
-		backward = func(chain tensor3d.General) (tensor3d.General, error) {
-			chainT := chain.Transpose(2, 3, 1)
-			flatChainT := chainT.ToVector()
-			chainT2d := vector.Reshape2D(-1, filter.Batches)
-
-			dFilter2D := tensor2d.Transpose(tensor2d.Dot(blas.Trans, blas.NoTrans, colImg, chainT2d))
-			dFilter1D := tensor2d.ToVector(dFilter2D)
-			dFilter := vector.Reshape4D(filter.Batches, filter.Channels, filter.Rows, filter.Cols)
-
-			dCol := tensor2d.Dot(blas32.NoTrans, blas32.Trans, chainT2d)
-			dx := tensor2d.Col2Im(dCol, x, filter.Rows, filter.Cols)
-			return dx, nil
-		}
-		return y, backward, nil
-	}
-}
-
-type Forward func(blas32.Vector) (blas32.Vector, Backward, error)
-type Forwards []Forward
-
-func (fs Forwards) Propagate(x blas32.Vector) (blas32.Vector, Backwards, error) {
-	var err error
-	var backward Backward
-	backwards := make(Backwards, len(fs))
-	for i, f := range fs {
-		x, backward, err = f(x)
-		if err != nil {
-			return blas32.Vector{}, nil, err
-		}
-		backwards[i] = backward
-	}
-	y := x
-	slices.Reverse(backwards)
-	return y, backwards, nil
-}
-
-type Backward func(blas32.Vector, *GradBuffer) (blas32.Vector, error)
-type Backwards []Backward
-
-func (bs Backwards) Propagate(chain blas32.Vector) (blas32.Vector, GradBuffer, error) {
-	n := len(bs)
-	grad := GradBuffer{
-		Weights:make([]blas32.General, 0, n),
-		Gammas: make([]blas32.Vector, 0, n),
-		Biases: make([]blas32.Vector, 0, n),
-	}
-	var err error
-
-	for _, b := range bs {
-		chain, err = b(chain, &grad)
-		if err != nil {
-			return blas32.Vector{}, GradBuffer{}, err
-		}
-	}
-
-	slices.Reverse(grad.Weights)
-	slices.Reverse(grad.Gammas)
-	slices.Reverse(grad.Biases)
-	dx := chain
-	return dx, grad, nil
-}
-
-func NewDotForward(w blas32.General) Forward {
-	return func(x blas32.Vector) (blas32.Vector, Backward, error) {
-		y := vector.DotNoTrans2D(x, w)
-		var backward Backward
-		backward = func(chain blas32.Vector, grad *GradBuffer) (blas32.Vector, error) {
-			dx := vector.DotTrans2D(chain, w)
-			dw := vector.Outer(x, chain)
-			grad.Weights = append(grad.Weights, dw)
-			return dx, nil
-		}
-		return y, backward, nil
-	}
-}
-
-func NewLeakyReLUForward(alpha float32) Forward {
-	return func(x blas32.Vector) (blas32.Vector, Backward, error) {
-		y := vector.LeakyReLU(x, alpha)
-		var backward Backward
-		backward = func(chain blas32.Vector, _ *GradBuffer) (blas32.Vector, error) {
-			grad := vector.LeakyReLUDerivative(x, alpha)
-			dx, err := vector.Hadamard(grad, chain)
-			return dx, err
-		}
-		return y, backward, nil
-	}
-}
-
-func NewInstanceNormalizationForward(gamma, beta blas32.Vector) (Forward, error) {
-	return func(x blas32.Vector) (blas32.Vector, Backward, error) {
-		u, mean, std, err := vector.StandardizeWithStats(x)
-		if err != nil {
-			return blas32.Vector{}, nil, err
-		}
-
-		y, err := vector.Hadamard(u, gamma)
-		if err != nil {
-			return blas32.Vector{}, nil, err
-		}
-
-		blas32.Axpy(1.0, beta, y)
-
-		var backward Backward
-		backward = func(chain blas32.Vector, grad *GradBuffer) (blas32.Vector, error) {
-			dBeta := vector.Clone(chain)
-			grad.Biases = append(grad.Biases, dBeta)
-
-			dGamma, err := vector.Hadamard(chain, u)
-			if err != nil {
-				return blas32.Vector{}, err
-			}
-			grad.Gammas = append(grad.Gammas, dGamma)
-
-			jacobianGradX, err := vector.StandardizationDerivative(x, mean, std)
-			if err != nil {
-				return blas32.Vector{}, err
-			}
-
-			gradY, err := vector.Hadamard(chain, gamma)
-    		if err != nil {
-        		return blas32.Vector{}, err
-    		}
-
-			dx := vector.DotNoTrans2D(gradY, jacobianGradX)
-			return dx, nil
-		}
-		return y, backward, nil
-	}, nil
-}
-
-func SoftmaxForwardForCrossEntropyLoss(x blas32.Vector) (blas32.Vector, Backward, error) {
-	y := vector.Softmax(x)
-	var backward Backward
-	backward = func(chain blas32.Vector, _ *GradBuffer) (blas32.Vector, error) {
-		dx := chain
-		return dx, nil
-	}
-	return y, backward, nil
-}
-
 type PredictLoss struct {
-	Func       func(blas32.Vector, blas32.Vector) (float32, error)
-	Derivative func(blas32.Vector, blas32.Vector) (blas32.Vector, error)
+	Func       func(tensor.D1, tensor.D1) float32
+	Derivative func(tensor.D1, tensor.D1) tensor.D1
 }
 
 func NewCrossEntropyLossForSoftmax() PredictLoss {
 	return PredictLoss{
-		Func:       vector.CrossEntropy,
-		Derivative: vector.SoftmaxCrossEntropyLossDerivative,
+		Func:       tmath.CrossEntropy,
+		Derivative: tmath.SoftmaxCrossEntropyLossDerivative,
+	}
+}
+
+func NewSumSquaredLoss() PredictLoss {
+	return PredictLoss{
+		Func : tmath.SumSquaredLoss,
+		Derivative : tmath.SumSquaredLossDerivative,
 	}
 }
 
 type Model struct {
 	Parameter   Parameter
-	Forwards1D  Forwards
+	ForwardsD3  ForwardsD3
+	D3ToD1      func(tensor.D3) tensor.D1
+	D1ToD3      func(tensor.D1, tensor.D3) tensor.D3
+	ForwardsD1  ForwardsD1
 	PredictLoss PredictLoss
 }
 
+func (m *Model) SetFlat() {
+	m.D3ToD1 = func(d3 tensor.D3) tensor.D1 {
+		return d3.ToD1()
+	}
+
+	m.D1TOD3 = func(d1, d3 tensor.D1) tensor.D3 {
+		return d1.Reshape3D(d3.Channels, d3.Rows, d3.Cols)
+	}
+}
+
+func (m *Model) AppendConv2D(fb, fch, fr, fcol, stride int, rng *rand.Rand) {
+	filter := tensor.NewD4Zeros(fb, fch, fr, fcol)
+	for i := range filter.Data {
+		filter.Data[i] = rng.Float32()
+	}
+	m.Parameter.Filters = append(m.Parameter.Filters, filter)
+	m.ForwardsD3 = append(m.ForwardsD3, NewConvForward(filter, stride))
+}
+
 func (m *Model) AppendDot(xn, yn int, rng *rand.Rand) {
-	w := tensor2d.NewHe(xn, yn, rng)
+	w := tensor.NewD2He(xn, yn, rng)
 	m.Parameter.Weights = append(m.Parameter.Weights, w)
-	m.Forwards1D = append(m.Forwards1D, NewDotForward(w))
+	m.ForwardsD1 = append(m.ForwardsD1, NewDotForwardD1(w))
 }
 
 func (m *Model) AppendLeakyReLU(alpha float32) {
-	m.Forwards1D = append(m.Forwards1D, NewLeakyReLUForward(alpha))
+	m.ForwardsD1 = append(m.ForwardsD1, NewLeakyReLUForwardD1(alpha))
 }
 
 func (m *Model) AppendInstanceNormalization(n int) error {
-	gamma := vector.NewOnes(n)
+	gamma := tensor.NewD1Ones(n)
 	m.Parameter.Gammas = append(m.Parameter.Gammas, gamma)
 
-	beta := vector.NewZeros(n)
+	beta := tensor.NewD1Zeros(n)
 	m.Parameter.Biases = append(m.Parameter.Biases, beta)
 
-	forward, err := NewInstanceNormalizationForward(gamma, beta)
+	forward, err := NewInstanceNormalizationForwardD1(gamma, beta)
 	if err != nil {
 		return err
 	}
-	m.Forwards1D = append(m.Forwards1D, forward)
+	m.ForwardsD1 = append(m.ForwardsD1, forward)
 	return nil
 }
 
 func (m *Model) AppendSoftmaxForCrossEntropyLoss() {
-	m.Forwards1D = append(m.Forwards1D, SoftmaxForwardForCrossEntropyLoss)
+	m.ForwardsD1 = append(m.ForwardsD1, SoftmaxForwardForCrossEntropyLoss)
 }
 
 func (m *Model) SetCrossEntropyLossForSoftmax() {
 	m.PredictLoss = NewCrossEntropyLossForSoftmax()
 }
 
+func (m *Model) SetSumSquaredLoss() {
+	m.PredictLoss = NewSumSquaredLoss()
+}
+
 func (m Model) Clone() Model {
 	return Model{
 		Parameter: m.Parameter.Clone(),
-		Forwards1D: m.Forwards1D,
+		ForwardsD1: m.ForwardsD1,
 		PredictLoss:m.PredictLoss,
 	}
 }
 
-func (m *Model) Predict(x blas32.Vector) (blas32.Vector, error) {
-	y, _, err := m.Forwards1D.Propagate(x)
+func (m *Model) Predict(x tensor.D1) (tensor.D1, error) {
+	y, _, err := m.ForwardsD1.Propagate(x)
 	return y, err
 }
 
-func (m *Model) Accuracy(xs, ts []blas32.Vector) (float32, error) {
+func (m *Model) Accuracy(xs, ts tensor.D1Slice) (float32, error) {
 	n := len(xs)
 	if n != len(ts) {
 		return 0.0, fmt.Errorf("バッチサイズが一致しません。")
@@ -429,19 +125,16 @@ func (m *Model) Accuracy(xs, ts []blas32.Vector) (float32, error) {
 	return float32(correct) / float32(n), nil
 }
 
-func (m *Model) BackPropagate(x, t blas32.Vector) (blas32.Vector, GradBuffer, error) {
-	y, backwards, err := m.Forwards1D.Propagate(x)
+func (m *Model) BackPropagate(x, t tensor.D1) (tensor.D1, GradBuffer, error) {
+	y, backwards, err := m.ForwardsD1.Propagate(x)
 	if err != nil {
-		return blas32.Vector{}, GradBuffer{}, err
+		return tensor.D1{}, GradBuffer{}, err
 	}
-	firstChain, err := m.PredictLoss.Derivative(y, t)
-	if err != nil {
-		return blas32.Vector{}, GradBuffer{}, err
-	}
+	firstChain := m.PredictLoss.Derivative(y, t)
 	return backwards.Propagate(firstChain)
 }
 
-func (m *Model) ComputeGrad(xs, ts []blas32.Vector, p int) (GradBuffer, error) {	
+func (m *Model) ComputeGrad(xs, ts tensor.D1Slice, p int) (GradBuffer, error) {	
 	n := len(xs)
 	if n != len(ts) {
 		return GradBuffer{}, fmt.Errorf("バッチサイズが一致しません。")
@@ -462,7 +155,7 @@ func (m *Model) ComputeGrad(xs, ts []blas32.Vector, p int) (GradBuffer, error) {
 				errCh <- err
 				return
 			}
-			gradByWorker[workerIdx].Axpy(1.0, &grad)
+			gradByWorker[workerIdx].AxpyInPlace(1.0, grad)
 		}
 		errCh <- nil
 	}
@@ -478,11 +171,11 @@ func (m *Model) ComputeGrad(xs, ts []blas32.Vector, p int) (GradBuffer, error) {
 	}
 
 	total := gradByWorker.Total()
-	total.Scal(1.0 / float32(n))
+	total.ScalInPlace(1.0 / float32(n))
 	return total, nil
 }
 
-type Optimize func(*Model, *GradBuffer) error
+type Optimize func(*Model, *GradBuffer, float32) error
 
 type Momentum struct {
 	LearningRate float32
@@ -499,10 +192,7 @@ func NewMomentum(param *Parameter) Momentum {
 }
 
 func (m *Momentum) Optimize(model *Model, grad *GradBuffer, c float32) error {
-	l2Grad := GradBuffer{
-		Weights:tensors2d.NewZerosLike(model.Parameter.Weights),
-		Biases:vectors.NewZerosLike(model.Parameter.Biases),
-	}
+	l2Grad := model.Parameter.NewGradZerosLike()
 	for i := range l2Grad.Weights {
 		w := model.Parameter.Weights[i]
 		g := l2Grad.Weights[i]
@@ -512,10 +202,9 @@ func (m *Momentum) Optimize(model *Model, grad *GradBuffer, c float32) error {
 		}
 	}
 
-	grad.Axpy(1.0, &l2Grad)
-	m.velocity.Scal(m.MomentumRate)
-	m.velocity.Axpy(-m.LearningRate, grad)
-	model.Parameter.AxpyGrad(1.0, &m.velocity)
-
+	grad.AxpyInPlace(1.0, l2Grad)
+	m.velocity.ScalInPlace(m.MomentumRate)
+	m.velocity.AxpyInPlace(-m.LearningRate, *grad)
+	model.Parameter.AxpyInPlaceGrad(1.0, &m.velocity)
 	return nil
 }

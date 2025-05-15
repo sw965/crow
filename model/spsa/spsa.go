@@ -3,61 +3,73 @@ package spsa
 import (
 	"fmt"
 	"github.com/sw965/crow/model/consts"
-	"github.com/sw965/crow/blas32/tensor/2d"
-	"github.com/sw965/crow/blas32/vector"
+	"github.com/sw965/crow/tensor"
+	tmath "github.com/sw965/crow/tensor/math"
+	"github.com/sw965/crow/tensor/nn"
 	cmath "github.com/sw965/crow/math"
 	oslices "github.com/sw965/omw/slices"
-	"gonum.org/v1/gonum/blas/blas32"
 	"math/rand"
+	"slices"
 )
 
 type GradBuffer struct {
-	Weight blas32.General
-	Gamma  blas32.Vector
-	Bias   blas32.Vector
+	Filter tensor.D4
+	Weight tensor.D2
+	Gamma  tensor.D1
+	Bias   tensor.D1
 }
 
-func (g *GradBuffer) NewZerosLike() GradBuffer {
+func (g GradBuffer) NewZerosLike() GradBuffer {
 	return GradBuffer{
-		Weight:tensor2d.NewZerosLike(g.Weight),
-		Gamma:vector.NewZerosLike(g.Gamma),
-		Bias:vector.NewZerosLike(g.Bias),
+		Filter:g.Filter.NewZerosLike(),
+		Weight:g.Weight.NewZerosLike(),
+		Gamma:g.Gamma.NewZerosLike(),
+		Bias:g.Bias.NewZerosLike(),
 	}
 }
 
 func (g GradBuffer) Clone() GradBuffer {
 	return GradBuffer{
-		Weight:tensor2d.Clone(g.Weight),
-		Gamma:vector.Clone(g.Gamma),
-		Bias:vector.Clone(g.Bias),
+		Filter:g.Filter.Clone(),
+		Weight:g.Weight.Clone(),
+		Gamma:g.Gamma.Clone(),
+		Bias:g.Bias.Clone(),
 	}
 }
 
-func (g *GradBuffer) Axpy(alpha float32, x *GradBuffer) {
-	if x.Weight.Rows != 0 {
-		tensor2d.Axpy(alpha, x.Weight, g.Weight)
+func (g *GradBuffer) AxpyInPlace(alpha float32, x *GradBuffer) {
+	if g.Filter.Batches != 0 {
+		g.Filter.AxpyInPlace(alpha, x.Filter)
 	}
 
-	if x.Gamma.N != 0 {
-		blas32.Axpy(alpha, x.Gamma, g.Gamma)
-	}
-
-	if x.Bias.N != 0 {
-		blas32.Axpy(alpha, x.Bias, g.Bias)
-	}
-}
-
-func (g *GradBuffer) Scal(alpha float32) {
 	if g.Weight.Rows != 0 {
-		tensor2d.Scal(alpha, g.Weight)
+		g.Weight.AxpyInPlace(alpha, x.Weight)
 	}
 
 	if g.Gamma.N != 0 {
-		blas32.Scal(alpha, g.Gamma)
+		g.Gamma.AxpyInPlace(alpha, x.Gamma)
 	}
 
 	if g.Bias.N != 0 {
-		blas32.Scal(alpha, g.Bias)
+		g.Bias.AxpyInPlace(alpha, x.Bias)
+	}
+}
+
+func (g *GradBuffer) ScalInPlace(alpha float32) {
+	if g.Filter.Batches != 0 {
+		g.Filter.ScalInPlace(alpha)
+	}
+
+	if g.Weight.Rows != 0 {
+		g.Weight.ScalInPlace(alpha)
+	}
+
+	if g.Gamma.N != 0 {
+		g.Gamma.ScalInPlace(alpha)
+	}
+
+	if g.Bias.N != 0 {
+		g.Bias.ScalInPlace(alpha)
 	}
 }
 
@@ -79,59 +91,67 @@ func (gs GradBuffers) Clone() GradBuffers {
 	return clone
 }
 
-func (gs GradBuffers) Axpy(alpha float32, xs GradBuffers) {
+func (gs GradBuffers) AxpyInPlace(alpha float32, xs GradBuffers) {
 	for i := range gs {
-		gs[i].Axpy(alpha, &xs[i])
+		gs[i].AxpyInPlace(alpha, &xs[i])
 	}
 }
 
-func (gs GradBuffers) Scal(alpha float32) {
+func (gs GradBuffers) ScalInPlace(alpha float32) {
 	for i := range gs {
-		gs[i].Scal(alpha)
+		gs[i].ScalInPlace(alpha)
 	}
 }
 
 type Parameter struct {
-	Weight blas32.General
-	Gamma  blas32.Vector
-	Bias   blas32.Vector
+	Filter tensor.D4
+	Weight tensor.D2
+	Gamma  tensor.D1
+	Bias   tensor.D1
 }
 
-func (p *Parameter) NewGradRademacherLike(rng *rand.Rand) GradBuffer {
+func (p Parameter) NewGradRademacherLike(rng *rand.Rand) GradBuffer {
 	return GradBuffer{
-		Weight: tensor2d.NewRademacherLike(p.Weight, rng),
-		Gamma : vector.NewRademacherLike(p.Gamma, rng),
-		Bias:   vector.NewRademacherLike(p.Bias, rng),
+		Filter: p.Filter.NewRademacherLike(rng),
+		Weight: p.Weight.NewRademacherLike(rng),
+		Gamma : p.Gamma.NewRademacherLike(rng),
+		Bias:   p.Bias.NewRademacherLike(rng),
 	}
 }
 
-func (p *Parameter) NewGradZerosLike() GradBuffer {
+func (p Parameter) NewGradZerosLike() GradBuffer {
 	return GradBuffer{
-		Weight: tensor2d.NewZerosLike(p.Weight),
-		Gamma : vector.NewZerosLike(p.Gamma),
-		Bias:   vector.NewZerosLike(p.Bias),
+		Filter: p.Filter.NewZerosLike(),
+		Weight: p.Weight.NewZerosLike(),
+		Gamma : p.Gamma.NewZerosLike(),
+		Bias:   p.Bias.NewZerosLike(),
 	}
 }
 
-func (p *Parameter) Clone() Parameter {
+func (p Parameter) Clone() Parameter {
 	return Parameter{
-		Weight: tensor2d.Clone(p.Weight),
-		Gamma :vector.Clone(p.Gamma),
-		Bias:   vector.Clone(p.Bias),
+		Filter: p.Filter.Clone(),
+		Weight: p.Weight.Clone(),
+		Gamma : p.Gamma.Clone(),
+		Bias:   p.Bias.Clone(),
 	}
 }
 
-func (p *Parameter) AxpyGrad(alpha float32, grad *GradBuffer) {
+func (p *Parameter) AxpyInPlaceGrad(alpha float32, grad GradBuffer) {
+	if p.Filter.Batches != 0 {
+		p.Filter.AxpyInPlace(alpha, grad.Filter)
+	}
+
 	if p.Weight.Rows != 0 {
-		tensor2d.Axpy(alpha, grad.Weight, p.Weight)
+		p.Weight.AxpyInPlace(alpha, grad.Weight)
 	}
 
 	if p.Gamma.N != 0 {
-		blas32.Axpy(alpha, grad.Gamma, p.Gamma)
+		p.Gamma.AxpyInPlace(alpha, grad.Gamma)
 	}
 
 	if p.Bias.N != 0 {
-		blas32.Axpy(alpha, grad.Bias, p.Bias)
+		p.Bias.AxpyInPlace(alpha, grad.Bias)
 	}
 }
 
@@ -161,31 +181,31 @@ func (ps Parameters) Clone() Parameters {
 	return clone
 }
 
-func (ps Parameters) AxpyGrads(alpha float32, grads GradBuffers) {
+func (ps Parameters) AxpyInPlaceGrads(alpha float32, grads GradBuffers) {
 	for i := range ps {
-		ps[i].AxpyGrad(alpha, &grads[i])
+		ps[i].AxpyInPlaceGrad(alpha, grads[i])
 	}
 }
 
-type Forward func(blas32.Vector, *Parameter) (blas32.Vector, error)
+type Forward func(tensor.D1, Parameter) (tensor.D1, error)
 type Forwards []Forward
 
-func (fs Forwards) Propagate(x blas32.Vector, params Parameters) (blas32.Vector, error) {
+func (fs Forwards) Propagate(x tensor.D1, params Parameters) (tensor.D1, error) {
 	if len(fs) != len(params) {
-		return blas32.Vector{}, fmt.Errorf("フォワードとパラメーターの長さが一致しない")
+		return tensor.D1{}, fmt.Errorf("フォワードとパラメーターの長さが一致しない")
 	}
 
 	var err error
 	for i, f := range fs {
-		x, err = f(x, &params[i])
+		x, err = f(x, params[i])
 		if err != nil {
-			return blas32.Vector{}, err
+			return tensor.D1{}, err
 		}
 	}
 	return x, nil
 }
 
-type LossFunc func(*Model, int) (float32, error)
+type LossFunc func(Model, int) (float32, error)
 
 type Model struct {
 	Parameters  Parameters
@@ -195,12 +215,12 @@ type Model struct {
 
 func (m *Model) AppendDot(xn, yn int, rng *rand.Rand) {
 	param := Parameter{
-		Weight: tensor2d.NewHe(xn, yn, rng),
+		Weight: tensor.NewD2He(xn, yn, rng),
 	}
 	m.Parameters = append(m.Parameters, param)
 
-	forward := func(x blas32.Vector, param *Parameter) (blas32.Vector, error) {
-		return vector.DotNoTrans2D(x, param.Weight), nil
+	forward := func(x tensor.D1, p Parameter) (tensor.D1, error) {
+		return x.DotNoTrans2D(p.Weight), nil
 	}
 	m.Forwards = append(m.Forwards, forward)
 	m.LayerTypes = append(m.LayerTypes, consts.DotLayer)
@@ -210,33 +230,25 @@ func (m *Model) AppendLeakyReLU(alpha float32) {
 	param := Parameter{}
 	m.Parameters = append(m.Parameters, param)
 
-	forward := func(x blas32.Vector, _ *Parameter) (blas32.Vector, error) {
-		return vector.LeakyReLU(x, alpha), nil
+	forward := func(x tensor.D1, _ Parameter) (tensor.D1, error) {
+		return nn.ReLUD1WithAlpha(x, alpha), nil
 	}
 	m.Forwards = append(m.Forwards, forward)
 	m.LayerTypes = append(m.LayerTypes, consts.LeakyReLULayer)
 }
 
 func (m *Model) AppendInstanceNormalization(n int) {
-	gamma := vector.NewOnes(n)
-	beta := vector.NewZeros(n)
+	gamma := tensor.NewD1Ones(n)
+	beta := tensor.NewD1Zeros(n)
 	param := Parameter{
 		Gamma:  gamma,
 		Bias:   beta,
 	}
 
 	m.Parameters = append(m.Parameters, param)
-	forward := func(x blas32.Vector, param *Parameter) (blas32.Vector, error) {
-		u, err := vector.Standardize(x)
-		if err != nil {
-			return blas32.Vector{}, err
-		}
-
-		y, err := vector.Hadamard(u, param.Gamma)
-		if err != nil {
-			return blas32.Vector{}, err
-		}
-		blas32.Axpy(1.0, param.Bias, y)
+	forward := func(x tensor.D1, p Parameter) (tensor.D1, error) {
+		z := tmath.Standardize(x)
+		y := z.Hadamard(p.Gamma).Axpy(1.0, p.Bias)
 		return y, nil
 	}
 	m.Forwards = append(m.Forwards, forward)
@@ -247,8 +259,8 @@ func (m *Model) AppendSoftmax() {
 	param := Parameter{}
 	m.Parameters = append(m.Parameters, param)
 
-	forward := func(x blas32.Vector, _ *Parameter) (blas32.Vector, error) {
-		return vector.Softmax(x), nil
+	forward := func(x tensor.D1, _ Parameter) (tensor.D1, error) {
+		return tmath.Softmax(x), nil
 	}
 	m.Forwards = append(m.Forwards, forward)
 	m.LayerTypes = append(m.LayerTypes, consts.SoftmaxLayer)
@@ -258,15 +270,16 @@ func (m Model) Clone() Model {
 	return Model{
 		Parameters: m.Parameters.Clone(),
 		Forwards:   m.Forwards,
+		LayerTypes: slices.Clone(m.LayerTypes),
 	}
 }
 
-func (m *Model) Predict(x blas32.Vector) (blas32.Vector, error) {
+func (m Model) Predict(x tensor.D1) (tensor.D1, error) {
 	y, err := m.Forwards.Propagate(x, m.Parameters)
 	return y, err
 }
 
-func (m *Model) Accuracy(xs, ts []blas32.Vector) (float32, error) {
+func (m Model) Accuracy(xs, ts []tensor.D1) (float32, error) {
 	n := len(xs)
 	if n != len(ts) {
 		return 0.0, fmt.Errorf("バッチサイズが一致しません。")
@@ -285,7 +298,7 @@ func (m *Model) Accuracy(xs, ts []blas32.Vector) (float32, error) {
 	return float32(correct) / float32(n), nil
 }
 
-func (m *Model) EstimateGrads(lossFunc LossFunc, c float32, rngs []*rand.Rand) (GradBuffers, error) {
+func (m Model) EstimateGrads(lossFunc LossFunc, c float32, rngs []*rand.Rand) (GradBuffers, error) {
 	p := len(rngs)
 	gradsByParallel := make([]GradBuffers, p)
 	errCh := make(chan error, p)
@@ -295,18 +308,18 @@ func (m *Model) EstimateGrads(lossFunc LossFunc, c float32, rngs []*rand.Rand) (
 		deltas := m.Parameters.NewGradsRademacherLike(rng)
 
 		plusModel := m.Clone()
-		plusModel.Parameters.AxpyGrads(c, deltas)
+		plusModel.Parameters.AxpyInPlaceGrads(c, deltas)
 
 		minusModel := m.Clone()
-		minusModel.Parameters.AxpyGrads(-c, deltas)
+		minusModel.Parameters.AxpyInPlaceGrads(-c, deltas)
 
-		plusLoss, err := lossFunc(&plusModel, workerIdx)
+		plusLoss, err := lossFunc(plusModel, workerIdx)
 		if err != nil {
 			errCh <- err
 			return
 		}
 
-		minusLoss, err := lossFunc(&minusModel, workerIdx)
+		minusLoss, err := lossFunc(minusModel, workerIdx)
 		if err != nil {
 			errCh <- err
 			return
@@ -314,6 +327,10 @@ func (m *Model) EstimateGrads(lossFunc LossFunc, c float32, rngs []*rand.Rand) (
 
 		grads := m.Parameters.NewGradsZerosLike()
 		for i, delta := range deltas {
+			for j, d := range delta.Filter.Data {
+				grads[i].Filter.Data[j] = cmath.CentralDifference(plusLoss, minusLoss, c*d)
+			}
+
 			for j, d := range delta.Weight.Data {
 				grads[i].Weight.Data[j] = cmath.CentralDifference(plusLoss, minusLoss, c*d)
 			}
@@ -342,19 +359,41 @@ func (m *Model) EstimateGrads(lossFunc LossFunc, c float32, rngs []*rand.Rand) (
 	}
 
 	firstGrads := gradsByParallel[0]
-	firstGrads.Scal(1.0 / float32(p))
+	firstGrads.ScalInPlace(1.0 / float32(p))
 	for _, grads := range gradsByParallel[1:] {
-		firstGrads.Axpy(1.0/float32(p), grads)
+		firstGrads.AxpyInPlace(1.0/float32(p), grads)
 	}
 	return firstGrads, nil
 }
 
-func (m *Model) NumericalGrads(lossFunc LossFunc) (GradBuffers, error) {
+func (m Model) NumericalGrads(lossFunc LossFunc) (GradBuffers, error) {
 	const h float32 = 1e-4
 	grads := m.Parameters.NewGradsZerosLike()
 
 	for i := range m.Parameters {
 		p := &m.Parameters[i]
+
+		for j := range p.Filter.Data {
+			tmp := p.Filter.Data[j]
+
+			//プラス方向への微小変化
+			p.Filter.Data[j] = tmp + h
+			plusLoss, err := lossFunc(m, 0)
+			if err != nil {
+				return nil, err
+			}
+
+			//マイナス方向への微小変化
+			p.Filter.Data[j] = tmp - h
+			minusLoss, err := lossFunc(m, 0)
+			if err != nil {
+				return nil, err
+			}
+
+			grads[i].Filter.Data[j] = cmath.CentralDifference(plusLoss, minusLoss, h)
+			//微小変化前に戻す
+			p.Filter.Data[j] = tmp
+		}
 
 		for j := range p.Weight.Data {
 			tmp := p.Weight.Data[j]
