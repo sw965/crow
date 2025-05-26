@@ -312,3 +312,63 @@ func (m Model) PartialDifferentiation(lossFunc func(Model, int) (float32, error)
 	total.Scal(1.0 / float32(p))
 	return total, nil
 }
+
+func (m Model) ComputeGradByReinforce(inputs Inputs, actions []int, returns []float32, p int) (GradBuffer, error) {
+	n := len(inputs)
+	if n != len(actions) || n != len(returns) {
+		return GradBuffer{}, fmt.Errorf("バッチサイズが一致しません。")
+	}
+
+	gradByWorker := make(GradBuffers, p)
+	for i := 0; i < p; i++ {
+		gradByWorker[i] = m.Parameter.NewGradBufferZerosLike()
+	}
+
+	errCh := make(chan error, p)
+
+	worker := func(workerIdx int, dataIdxs []int) {
+		grad := gradByWorker[workerIdx]
+
+		for _, idx := range dataIdxs {
+			input := inputs[idx]
+			a := actions[idx]
+			G := returns[idx]
+
+			u := m.U(input)
+			y := m.OutputLayer.Func(u)
+
+			dLdu := make([]float32, len(u))
+			for i := range dLdu {
+				if i == a {
+					dLdu[i] = -G * (1.0 - y[i])
+				} else {
+					dLdu[i] = -G * (-y[i])
+				}
+			}
+
+			for row, entries := range input {
+				for _, entry := range entries {
+					grad.Weight[entry.WeightIndex] += dLdu[row] * entry.X
+				}
+			}
+			for i, idx := range m.BiasIndices {
+				grad.Bias[idx] += dLdu[i]
+			}
+		}
+		errCh <- nil
+	}
+
+	for workerIdx, dataIdxs := range parallel.DistributeIndicesEvenly(n, p) {
+		go worker(workerIdx, dataIdxs)
+	}
+
+	for i := 0; i < p; i++ {
+		if err := <-errCh; err != nil {
+			return GradBuffer{}, err
+		}
+	}
+
+	total := gradByWorker.Total()
+	total.Scal(1.0 / float32(n))
+	return total, nil
+}
