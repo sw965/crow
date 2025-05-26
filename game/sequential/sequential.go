@@ -163,13 +163,15 @@ func (l Logic[S, As, A, G]) Playout(state S, players PlayerByAgent[S, As, A, G])
 	return state, nil
 }
 
-func (l Logic[S, As, A, G]) Playouts(states []S, players PlayerByAgent[S, As, A, G], p int) ([]S, error) {
+func (l Logic[S, As, A, G]) Playouts(states []S, playersByWorker []PlayerByAgent[S, As, A, G]) ([]S, error) {
 	n := len(states)
+	p := len(playersByWorker)
 	finals := make([]S, n)
 	errCh := make(chan error, p)
 
-	worker := func(idxs []int) {
-		for _, idx := range idxs {
+	worker := func(workerIdx int, statesIdxs []int) {
+		players := playersByWorker[workerIdx]
+		for _, idx := range statesIdxs {
 			final, err := l.Playout(states[idx], players)
 			if err != nil {
 				errCh <- err
@@ -180,8 +182,8 @@ func (l Logic[S, As, A, G]) Playouts(states []S, players PlayerByAgent[S, As, A,
 		errCh <- nil
 	}
 
-	for _, idxs := range parallel.DistributeIndicesEvenly(n, p) {
-		go worker(idxs)
+	for workerIdx, statesIdxs := range parallel.DistributeIndicesEvenly(n, p) {
+		go worker(workerIdx, statesIdxs)
 	}
 
 	for i := 0; i < p; i++ {
@@ -192,9 +194,9 @@ func (l Logic[S, As, A, G]) Playouts(states []S, players PlayerByAgent[S, As, A,
 	return finals, nil
 }
 
-func (l *Logic[S, As, A, G]) NewRandActionPlayer(r *rand.Rand) Player[S, As, A] {
+func (l *Logic[S, As, A, G]) NewRandActionPlayer(rng *rand.Rand) Player[S, As, A] {
 	return func(_ *S, legalActions As) (A, error) {
-		return omwrand.Choice(legalActions, r), nil
+		return omwrand.Choice(legalActions, rng), nil
 	}
 }
 
