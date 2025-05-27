@@ -204,5 +204,5 @@ func (l *Logic[S, As, A, G]) MakePlayerByAgent() PlayerByAgent[S, As, A, G] {
 	return PlayerByAgent[S, As, A, G]{}
 }
 
-type Player[S any, As ~[]A, A comparable] func(*S, As) (A, error)
+type Player[S any, As ~[]A, A comparable] func(S, As) (A, error)
 type PlayerByAgent[S any, As ~[]A, A, G comparable] map[G]Player[S, As, A]
