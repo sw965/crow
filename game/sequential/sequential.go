@@ -148,7 +148,7 @@ func (l Logic[S, As, A, G]) Playout(state S, players PlayerByAgent[S, As, A, G])
 		player := players[agent]
 		legalActions := l.LegalActionsProvider(state)
 
-		action, err := player(&state, legalActions)
+		action, err := player(state, legalActions)
 		if err != nil {
 			var s S
 			return s, err
@@ -195,7 +195,7 @@ func (l Logic[S, As, A, G]) Playouts(states []S, playersByWorker []PlayerByAgent
 }
 
 func (l *Logic[S, As, A, G]) NewRandActionPlayer(rng *rand.Rand) Player[S, As, A] {
-	return func(_ *S, legalActions As) (A, error) {
+	return func(_ S, legalActions As) (A, error) {
 		return omwrand.Choice(legalActions, rng), nil
 	}
 }
