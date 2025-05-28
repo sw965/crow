@@ -3,8 +3,6 @@ package sequential
 import (
 	"fmt"
 	"sort"
-	"math/rand"
-	omwrand "github.com/sw965/omw/math/rand"
 	"github.com/sw965/omw/parallel"
 )
 
@@ -132,7 +130,7 @@ func (l Logic[S, As, A, G]) EvaluateResultScoreByAgent(state S) (ResultScoreByAg
 	return l.ResultScoresEvaluator(placements)
 }
 
-func (l Logic[S, As, A, G]) Playout(state S, players PlayerByAgent[S, As, A, G]) (S, error) {
+func (l Logic[S, As, A, G]) Playout(state S, player Player[S, As, A], workerIdx int) (S, error) {
 	for {
 		isEnd, err := l.IsEnd(state)
 		if err != nil {
@@ -144,11 +142,9 @@ func (l Logic[S, As, A, G]) Playout(state S, players PlayerByAgent[S, As, A, G])
 			break
 		}
 
-		agent := l.CurrentTurnAgentGetter(state)
-		player := players[agent]
 		legalActions := l.LegalActionsProvider(state)
 
-		action, err := player(state, legalActions)
+		action, err := player(state, legalActions, workerIdx)
 		if err != nil {
 			var s S
 			return s, err
@@ -163,16 +159,14 @@ func (l Logic[S, As, A, G]) Playout(state S, players PlayerByAgent[S, As, A, G])
 	return state, nil
 }
 
-func (l Logic[S, As, A, G]) Playouts(states []S, playersByWorker []PlayerByAgent[S, As, A, G]) ([]S, error) {
+func (l Logic[S, As, A, G]) Playouts(states []S, player Player[S, As, A], p int) ([]S, error) {
 	n := len(states)
-	p := len(playersByWorker)
 	finals := make([]S, n)
 	errCh := make(chan error, p)
 
 	worker := func(workerIdx int, statesIdxs []int) {
-		players := playersByWorker[workerIdx]
 		for _, idx := range statesIdxs {
-			final, err := l.Playout(states[idx], players)
+			final, err := l.Playout(states[idx], player, workerIdx)
 			if err != nil {
 				errCh <- err
 				return
@@ -194,15 +188,4 @@ func (l Logic[S, As, A, G]) Playouts(states []S, playersByWorker []PlayerByAgent
 	return finals, nil
 }
 
-func (l *Logic[S, As, A, G]) NewRandActionPlayer(rng *rand.Rand) Player[S, As, A] {
-	return func(_ S, legalActions As) (A, error) {
-		return omwrand.Choice(legalActions, rng), nil
-	}
-}
-
-func (l *Logic[S, As, A, G]) MakePlayerByAgent() PlayerByAgent[S, As, A, G] {
-	return PlayerByAgent[S, As, A, G]{}
-}
-
-type Player[S any, As ~[]A, A comparable] func(S, As) (A, error)
-type PlayerByAgent[S any, As ~[]A, A, G comparable] map[G]Player[S, As, A]
+type Player[S any, As ~[]A, A comparable] func(S, As, int) (A, error)
