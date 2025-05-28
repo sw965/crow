@@ -83,9 +83,9 @@ func (e *Engine[S, As, A, G]) SetUniformPolicyProvider() {
 	e.PolicyProvider = UniformPolicyProvider[S, As, A]
 }
 
-func (e *Engine[S, As, A, G]) SetPlayout(players game.PlayerByAgent[S, As, A, G]) {
+func (e *Engine[S, As, A, G]) SetPlayout(player game.Player[S, As, A]) {
 	e.LeafNodeEvaluator = func(state S) (LeafNodeEvalByAgent[G], error) {
-		final, err := e.GameLogic.Playout(state, players)
+		final, err := e.GameLogic.Playout(state, player, 0)
 		if err != nil {
 			return LeafNodeEvalByAgent[G]{}, err
 		}
@@ -193,23 +193,4 @@ func (e Engine[S, As, A, G]) Search(rootNode *Node[S, As, A, G], simulation int,
 
 	rootEvals.DivScalar(float32(simulation))
 	return rootEvals, nil
-}
-
-func (e Engine[S, As, A, G]) NewPlayer(simulation int, rng *rand.Rand) game.Player[S, As, A] {
-	return func(state S, _ As) (A, error) {
-		rootNode, err := e.NewNode(state)
-		if err != nil {
-			var a A
-			return a, err
-		}
-
-		_, err = e.Search(rootNode, simulation, rng)
-		if err != nil {
-			var a A
-			return a, err
-		}
-
-		actions := rootNode.UCBManager.MaxTrialKeys()
-		return orand.Choice(actions, rng), nil
-	}
 }
