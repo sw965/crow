@@ -17,6 +17,20 @@ type Experience[S any] struct {
 
 type Experiences[S any] []Experience[S]
 
+func (es Experiences) Split() ([]S, []int, []float32) {
+	n := len(es)
+	states := make([]S, n)
+	actionIdxs := make([]int, n)
+	rewards := make([]float32, n)
+
+	for i, e := range es {
+		states[i] = e.State
+		actionIdxs[i] = e.ActionIndex
+		rewards[i] = e.Reward
+	}
+	return states, actionIdxs, rewards
+}
+
 type Reinforcer[M, S any, As ~[]A, A, G comparable] struct {
 	GameLogic    game.Logic[S, As, A, G]
 	Predictor    func(M, S) ([]float32, error)

@@ -327,7 +327,6 @@ func (m Model) ComputeGradByReinforce(inputs Inputs, actionIdxs []int, rewards [
 	errCh := make(chan error, p)
 	worker := func(workerIdx int, dataIdxs []int) {
 		grad := gradByWorker[workerIdx]
-
 		for _, idx := range dataIdxs {
 			input := inputs[idx]
 			actionIdx := actionIdxs[idx]
