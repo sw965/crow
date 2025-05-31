@@ -24,7 +24,7 @@ type Reinforcer[M, S any, As ~[]A, A, G comparable] struct {
 	Actions      As
 }
 
-func (r Reinforcer[M, S, As, A, G]) CollectExperiences(initStates []S, rng *rand.Rand, p int) (Experiences[S], error) {
+func (r Reinforcer[M, S, As, A, G]) CollectExperiences(initStates []S, rngs []*rand.Rand) (Experiences[S], error) {
 	player := func(state S, legalActions As, workerIdx int) (A, error) {
 		agent := r.GameLogic.CurrentAgentGetter(state)
 		model, ok := r.ModelByAgent[agent]
@@ -49,12 +49,14 @@ func (r Reinforcer[M, S, As, A, G]) CollectExperiences(initStates []S, rng *rand
 			legalY[i] = y[idx]
 		}
 
+		rng := rngs[workerIdx]
 		idx := orand.IntByWeight(legalY, rng)
 		actionIdx := legalActionIdxs[idx]
 		action := r.Actions[actionIdx]
 		return action, nil
 	}
 
+	p := len(rngs)
 	history, err := r.GameLogic.PlayoutsWithHistory(initStates, player, p)
 	if err != nil {
 		return nil, err

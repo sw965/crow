@@ -313,9 +313,9 @@ func (m Model) PartialDifferentiation(lossFunc func(Model, int) (float32, error)
 	return total, nil
 }
 
-func (m Model) ComputeGradByReinforce(inputs Inputs, actions []int, returns []float32, p int) (GradBuffer, error) {
+func (m Model) ComputeGradByReinforce(inputs Inputs, actionIdxs []int, rewards []float32, p int) (GradBuffer, error) {
 	n := len(inputs)
-	if n != len(actions) || n != len(returns) {
+	if n != len(actionIdxs) || n != len(rewards) {
 		return GradBuffer{}, fmt.Errorf("バッチサイズが一致しません。")
 	}
 
@@ -325,24 +325,23 @@ func (m Model) ComputeGradByReinforce(inputs Inputs, actions []int, returns []fl
 	}
 
 	errCh := make(chan error, p)
-
 	worker := func(workerIdx int, dataIdxs []int) {
 		grad := gradByWorker[workerIdx]
 
 		for _, idx := range dataIdxs {
 			input := inputs[idx]
-			a := actions[idx]
-			G := returns[idx]
+			actionIdx := actionIdxs[idx]
+			reward := rewards[idx]
 
 			u := m.U(input)
 			y := m.OutputLayer.Func(u)
 
 			dLdu := make([]float32, len(u))
 			for i := range dLdu {
-				if i == a {
-					dLdu[i] = -G * (1.0 - y[i])
+				if i == actionIdx {
+					dLdu[i] = -reward * (1.0 - y[i])
 				} else {
-					dLdu[i] = -G * (-y[i])
+					dLdu[i] = -reward * (-y[i])
 				}
 			}
 
