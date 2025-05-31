@@ -85,10 +85,12 @@ func (e *Engine[S, As, A, G]) SetUniformPolicyProvider() {
 
 func (e *Engine[S, As, A, G]) SetPlayout(player game.Player[S, As, A]) {
 	e.LeafNodeEvaluator = func(state S) (LeafNodeEvalByAgent[G], error) {
-		final, err := e.GameLogic.Playout(state, player, 0)
+		finals, err := e.GameLogic.Playouts([]S{state}, player, 1)
 		if err != nil {
 			return LeafNodeEvalByAgent[G]{}, err
 		}
+		final := finals[0]
+
 		scores, err := e.GameLogic.EvaluateResultScoreByAgent(final)
 		evals := LeafNodeEvalByAgent[G]{}
 		for k, v := range scores {
@@ -109,7 +111,7 @@ func (e Engine[S, As, A, G]) NewNode(state S) (*Node[S, As, A, G], error) {
 		u[a] = &pucb.Calculator{Func: e.UCBFunc, P: p}
 	}
 
-	agent := e.GameLogic.CurrentTurnAgentGetter(state)
+	agent := e.GameLogic.CurrentAgentGetter(state)
 	nextNodes := make(Nodes[S, As, A, G], 0, e.NextNodesCap)
 	return &Node[S, As, A, G]{State: state, Agent: agent, UCBManager: u, NextNodes: nextNodes}, nil
 }

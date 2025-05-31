@@ -9,7 +9,7 @@ import (
 type LegalActionsProvider[S any, As ~[]A, A comparable] func(S) As
 type Transitioner[S any, A comparable] func(S, A) (S, error)
 type Comparator[S any] func(S, S) bool
-type CurrentTurnAgentGetter[S any, G comparable] func(S) G
+type CurrentAgentGetter[S any, G comparable] func(S) G
 
 // ゲームが終了していない場合は、戻り値は空あるいはnilである事を想定。
 type PlacementByAgent[G comparable] map[G]int
@@ -75,12 +75,12 @@ type ResultScoreByAgent[G comparable] map[G]float32
 type ResultScoresEvaluator[G comparable] func(PlacementByAgent[G]) (ResultScoreByAgent[G], error)
 
 type Logic[S any, As ~[]A, A, G comparable] struct {
-	LegalActionsProvider     LegalActionsProvider[S, As, A]
-	Transitioner             Transitioner[S, A]
-	Comparator               Comparator[S]
-	CurrentTurnAgentGetter   CurrentTurnAgentGetter[S, G]
-	PlacementsJudger         PlacementsJudger[S, G]
-	ResultScoresEvaluator    ResultScoresEvaluator[G]
+	LegalActionsProvider  LegalActionsProvider[S, As, A]
+	Transitioner          Transitioner[S, A]
+	Comparator            Comparator[S]
+	CurrentAgentGetter    CurrentAgentGetter[S, G]
+	PlacementsJudger      PlacementsJudger[S, G]
+	ResultScoresEvaluator ResultScoresEvaluator[G]
 }
 
 func (l Logic[S, As, A, G]) IsEnd(state S) (bool, error) {
@@ -130,48 +130,40 @@ func (l Logic[S, As, A, G]) EvaluateResultScoreByAgent(state S) (ResultScoreByAg
 	return l.ResultScoresEvaluator(placements)
 }
 
-func (l Logic[S, As, A, G]) Playout(state S, player Player[S, As, A], workerIdx int) (S, error) {
-	for {
-		isEnd, err := l.IsEnd(state)
-		if err != nil {
-			var s S
-			return s, err
-		}
-
-		if isEnd {
-			break
-		}
-
-		legalActions := l.LegalActionsProvider(state)
-
-		action, err := player(state, legalActions, workerIdx)
-		if err != nil {
-			var s S
-			return s, err
-		}
-
-		state, err = l.Transitioner(state, action)
-		if err != nil {
-			var s S
-			return s, err
-		}
-	}
-	return state, nil
-}
-
-func (l Logic[S, As, A, G]) Playouts(states []S, player Player[S, As, A], p int) ([]S, error) {
-	n := len(states)
+func (l Logic[S, As, A, G]) Playouts(initStates []S, player Player[S, As, A], p int) ([]S, error) {
+	n := len(initStates)
 	finals := make([]S, n)
-	errCh := make(chan error, p)
 
+	errCh := make(chan error, p)
 	worker := func(workerIdx int, statesIdxs []int) {
 		for _, idx := range statesIdxs {
-			final, err := l.Playout(states[idx], player, workerIdx)
-			if err != nil {
-				errCh <- err
-				return
+			state := initStates[idx]
+			for {
+				isEnd, err := l.IsEnd(state)
+				if err != nil {
+					errCh <- err
+					return
+				}
+
+				if isEnd {
+					break
+				}
+
+				legalActions := l.LegalActionsProvider(state)
+
+				action, err := player(state, legalActions, workerIdx)
+				if err != nil {
+					errCh <- err
+					return
+				}
+
+				state, err = l.Transitioner(state, action)
+				if err != nil {
+					errCh <- err
+					return
+				}
 			}
-			finals[idx] = final
+			finals[idx] = state
 		}
 		errCh <- nil
 	}
@@ -188,4 +180,82 @@ func (l Logic[S, As, A, G]) Playouts(states []S, player Player[S, As, A], p int)
 	return finals, nil
 }
 
+func (l Logic[S, As, A, G]) PlayoutsWithHistory(initStates []S, player Player[S, As, A], p int) (History[S, As, A], error) {
+	n := len(initStates)
+	history := History[S, As, A]{
+		IntermediateStatesByGame:make([][]S, n),
+		FinalStateByGame:make([]S, n),
+		ActionsByGame:make([]As, n),
+	}
+
+	for i := range history.IntermediateStatesByGame {
+		history.IntermediateStatesByGame[i] = make([]S, 0, oneGameCap)
+		history.ActionsByGame[i] = make(As, 0, oneGameCap)
+	}
+
+	errCh := make(chan error, p)
+	worker := func(workerIdx int, statesIdxs []int) {
+		for _, idx := range statesIdxs {
+			state := initStates[idx]
+			for {
+				isEnd, err := l.IsEnd(state)
+				if err != nil {
+					errCh <- err
+					return
+				}
+
+				if isEnd {
+					history.FinalStateByGame[idx] = state
+					break
+				}
+
+				legalActions := l.LegalActionsProvider(state)
+
+				action, err := player(state, legalActions, workerIdx)
+				if err != nil {
+					errCh <- err
+					return
+				}
+
+				state, err = l.Transitioner(state, action)
+				if err != nil {
+					errCh <- err
+					return
+				}
+
+				history.IntermediateStatesByGame[idx] = append(history.IntermediateStatesByGame[idx], state)
+				history.ActionsByGame[idx] = append(history.ActionsByGame[idx], action)
+			}
+		}
+		errCh <- nil
+	}
+
+	for workerIdx, statesIdxs := range parallel.DistributeIndicesEvenly(n, p) {
+		go worker(workerIdx, statesIdxs)
+	}
+
+	for i := 0; i < p; i++ {
+		if err := <-errCh; err != nil {
+			return History[S, As, A]{}, err
+		}
+	}
+	return history, nil	
+}
+
 type Player[S any, As ~[]A, A comparable] func(S, As, int) (A, error)
+
+type History[S any, As ~[]A, A comparable] struct {
+	IntermediateStatesByGame [][]S
+	FinalStateByGame         []S
+	ActionsByGame            []As
+}
+
+var oneGameCap int = 256
+
+func GetOneGameCap() int {
+	return oneGameCap
+}
+
+func SetOneGameCap(c int) {
+	oneGameCap = c
+}
