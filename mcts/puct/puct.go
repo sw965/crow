@@ -58,34 +58,21 @@ func (ss selectionInfoSlice[S, As, A, G]) backward(evals LeafNodeEvalByAgent[G])
 	}
 }
 
-type Policy[A comparable] map[A]float32
-type PolicyProvider[S any, As ~[]A, A comparable] func(S, As) Policy[A]
-
-func UniformPolicyProvider[S any, As ~[]A, A comparable](state S, legalActions As) Policy[A] {
-	n := len(legalActions)
-	p := 1.0 / float32(n)
-	policy := Policy[A]{}
-	for _, a := range legalActions {
-		policy[a] = p
-	}
-	return policy
-}
-
 type Engine[S any, As ~[]A, A, G comparable] struct {
 	GameLogic         game.Logic[S, As, A, G]
 	UCBFunc           pucb.Func
-	PolicyProvider    PolicyProvider[S, As, A]
+	PolicyProvider    game.PolicyProvider[S, As, A]
 	LeafNodeEvaluator LeafNodeEvaluator[S, G]
 	NextNodesCap      int
 }
 
 func (e *Engine[S, As, A, G]) SetUniformPolicyProvider() {
-	e.PolicyProvider = UniformPolicyProvider[S, As, A]
+	e.PolicyProvider = game.UniformPolicyProvider[S, As, A]
 }
 
-func (e *Engine[S, As, A, G]) SetPlayout(selector game.Selector[S, As, A], rng *rand.Rand) {
+func (e *Engine[S, As, A, G]) SetPlayout(popp game.PolicyProvider[S, As, A], rng *rand.Rand) {
 	e.LeafNodeEvaluator = func(state S) (LeafNodeEvalByAgent[G], error) {
-		finals, err := e.GameLogic.Playouts([]S{state}, selector, []*rand.Rand{rng})
+		finals, err := e.GameLogic.Playouts([]S{state}, popp, []*rand.Rand{rng})
 		if err != nil {
 			return LeafNodeEvalByAgent[G]{}, err
 		}
