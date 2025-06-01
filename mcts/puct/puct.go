@@ -83,9 +83,9 @@ func (e *Engine[S, As, A, G]) SetUniformPolicyProvider() {
 	e.PolicyProvider = UniformPolicyProvider[S, As, A]
 }
 
-func (e *Engine[S, As, A, G]) SetPlayout(player game.Player[S, As, A]) {
+func (e *Engine[S, As, A, G]) SetPlayout(selector game.Selector[S, As, A], rng *rand.Rand) {
 	e.LeafNodeEvaluator = func(state S) (LeafNodeEvalByAgent[G], error) {
-		finals, err := e.GameLogic.Playouts([]S{state}, player, 1)
+		finals, err := e.GameLogic.Playouts([]S{state}, selector, []*rand.Rand{rng})
 		if err != nil {
 			return LeafNodeEvalByAgent[G]{}, err
 		}

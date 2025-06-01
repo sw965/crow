@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"sort"
 	"github.com/sw965/omw/parallel"
+	"math/rand"
+	orand "github.com/sw965/omw/math/rand"
 )
 
 type LegalActionsProvider[S any, As ~[]A, A comparable] func(S) As
@@ -130,10 +132,11 @@ func (l Logic[S, As, A, G]) EvaluateResultScoreByAgent(state S) (ResultScoreByAg
 	return l.ResultScoresEvaluator(placements)
 }
 
-func (l Logic[S, As, A, G]) Playouts(initStates []S, player Player[S, As, A], p int) ([]S, error) {
+func (l Logic[S, As, A, G]) Playouts(initStates []S, selector Selector[S, As, A], rngs []*rand.Rand) ([]S, error) {
 	n := len(initStates)
 	finals := make([]S, n)
 
+	p := len(rngs)
 	errCh := make(chan error, p)
 	worker := func(workerIdx int, statesIdxs []int) {
 		for _, idx := range statesIdxs {
@@ -150,12 +153,23 @@ func (l Logic[S, As, A, G]) Playouts(initStates []S, player Player[S, As, A], p 
 				}
 
 				legalActions := l.LegalActionsProvider(state)
-
-				action, err := player(state, legalActions, workerIdx)
+				percentByAction, err := selector(state, legalActions)
 				if err != nil {
 					errCh <- err
 					return
 				}
+
+				actions := make(As, 0, len(percentByAction))
+				percents := make([]float32, 0, len(percentByAction))
+
+				for a, p := range percentByAction {
+					actions = append(actions, a)
+					percents = append(percents, p)
+				}
+
+				rng := rngs[workerIdx]
+				actionIdx := orand.IntByWeight(percents, rng)
+				action := actions[actionIdx]
 
 				state, err = l.Transitioner(state, action)
 				if err != nil {
@@ -180,7 +194,7 @@ func (l Logic[S, As, A, G]) Playouts(initStates []S, player Player[S, As, A], p 
 	return finals, nil
 }
 
-func (l Logic[S, As, A, G]) PlayoutsWithHistory(initStates []S, player Player[S, As, A], p int) (History[S, As, A], error) {
+func (l Logic[S, As, A, G]) PlayoutsWithHistory(initStates []S, selector Selector[S, As, A], rngs []*rand.Rand) (History[S, As, A], error) {
 	n := len(initStates)
 	history := History[S, As, A]{
 		IntermediateStatesByGame:make([][]S, n),
@@ -193,6 +207,7 @@ func (l Logic[S, As, A, G]) PlayoutsWithHistory(initStates []S, player Player[S,
 		history.ActionsByGame[i] = make(As, 0, oneGameCap)
 	}
 
+	p := len(rngs)
 	errCh := make(chan error, p)
 	worker := func(workerIdx int, statesIdxs []int) {
 		for _, idx := range statesIdxs {
@@ -210,12 +225,23 @@ func (l Logic[S, As, A, G]) PlayoutsWithHistory(initStates []S, player Player[S,
 				}
 
 				legalActions := l.LegalActionsProvider(state)
-
-				action, err := player(state, legalActions, workerIdx)
+				percentByAction, err := selector(state, legalActions)
 				if err != nil {
 					errCh <- err
 					return
 				}
+
+				actions := make(As, 0, len(percentByAction))
+				percents := make([]float32, 0, len(percentByAction))
+
+				for a, p := range percentByAction {
+					actions = append(actions, a)
+					percents = append(percents, p)
+				}
+
+				rng := rngs[workerIdx]
+				actionIdx := orand.IntByWeight(percents, rng)
+				action := actions[actionIdx]
 
 				state, err = l.Transitioner(state, action)
 				if err != nil {
@@ -242,7 +268,17 @@ func (l Logic[S, As, A, G]) PlayoutsWithHistory(initStates []S, player Player[S,
 	return history, nil	
 }
 
-type Player[S any, As ~[]A, A comparable] func(S, As, int) (A, error)
+type Selector[S any, As ~[]A, A comparable] func(S, As) (map[A]float32, error)
+
+func UniformSelector[S any, As ~[]A, A comparable](state S, legalActions As) (map[A]float32, error) {
+	n := len(legalActions)
+	p := 1.0 / float32(n)
+	m := map[A]float32{}
+	for _, a := range legalActions {
+		m[a] = p
+	}
+	return m, nil
+}
 
 type History[S any, As ~[]A, A comparable] struct {
 	IntermediateStatesByGame [][]S
