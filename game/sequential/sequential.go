@@ -159,10 +159,32 @@ func (l Logic[S, As, A, G]) Playouts(initStates []S, selector Selector[S, As, A]
 					return
 				}
 
-				actions := make(As, 0, len(percentByAction))
-				percents := make([]float32, 0, len(percentByAction))
+				percentByLegalAction := map[A]float32{}
+				pSum := float32(0.0)
+				for _, a := range legalActions {
+					p, ok := percentByAction[a]
+					if !ok {
+						errCh <- fmt.Errorf("Selectorの戻り値には、必ず全ての合法行動を含む必要があります。")
+						return
+					}
+					percentByLegalAction[a] = p
+					pSum += p
+				}
 
-				for a, p := range percentByAction {
+				if len(percentByLegalAction) == 0 {
+					errCh <- fmt.Errorf("合法行動が存在しない")
+					return
+				}
+
+				if pSum <= 0.0 {
+					errCh <- fmt.Errorf("合法行動の確率分布の和が0以下")
+					return
+				}
+
+				actions := make(As, 0, len(percentByLegalAction))
+				percents := make([]float32, 0, len(percentByLegalAction))
+
+				for a, p := range percentByLegalAction {
 					actions = append(actions, a)
 					percents = append(percents, p)
 				}
@@ -231,10 +253,32 @@ func (l Logic[S, As, A, G]) PlayoutsWithHistory(initStates []S, selector Selecto
 					return
 				}
 
-				actions := make(As, 0, len(percentByAction))
-				percents := make([]float32, 0, len(percentByAction))
+				percentByLegalAction := map[A]float32{}
+				pSum := float32(0.0)
+				for _, a := range legalActions {
+					p, ok := percentByAction[a]
+					if !ok {
+						errCh <- fmt.Errorf("Selectorの戻り値には、必ず全ての合法行動を含む必要があります。")
+						return
+					}
+					percentByLegalAction[a] = p
+					pSum += p
+				}
 
-				for a, p := range percentByAction {
+				if len(percentByLegalAction) == 0 {
+					errCh <- fmt.Errorf("合法行動が存在しない")
+					return
+				}
+
+				if pSum <= 0.0 {
+					errCh <- fmt.Errorf("合法行動の確率分布の和が0以下")
+					return
+				}
+
+				actions := make(As, 0, len(percentByLegalAction))
+				percents := make([]float32, 0, len(percentByLegalAction))
+
+				for a, p := range percentByLegalAction {
 					actions = append(actions, a)
 					percents = append(percents, p)
 				}
