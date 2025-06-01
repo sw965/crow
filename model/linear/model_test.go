@@ -149,7 +149,7 @@ func TestSoftmaxCrossEntropyLossGrad(t *testing.T) {
 		OutputLayer: linear.NewIdentityLayer(),
 		BiasIndices:[]int{0, 1, 0, 1, 2},
 	}
-	//lossLayer := linear.NewCrossEntropyLossLayer()
+	//lossLayer := linear.NewCrossEntropyLossLayer(0.001, 0.99)
 	lossLayer := linear.NewMSELoss()
 
 	batchSize := 16

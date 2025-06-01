@@ -54,32 +54,51 @@ func NewSigmoidLayer() OutputLayer {
 	}
 }
 
-func NewSoftmaxLayer() OutputLayer {
-	f := func(u []float32) []float32 {
-		un := len(u)
-		maxU := omath.Max(u...) // オーバーフロー対策
-		expU := make([]float32, un)
-		sumExpU := float32(0.0)
-		for i := range u {
-			expU[i] = math32.Exp(u[i] - maxU)
-			sumExpU += expU[i]
-		}
+func NewSoftmaxLayer(minProb, maxProb float32) OutputLayer {
+    if minProb <= 0 || maxProb >= 1 || minProb >= maxProb {
+        panic("invalid minProb / maxProb")
+    }
 
-		y := make([]float32, un)
-		for i := range expU {
-			y[i] = expU[i] / sumExpU
-		}
-		return y
-	}
+    f := func(u []float32) []float32 {
+        n := len(u)
 
-	return OutputLayer{
-		Func: f,
-		/*
-			CrossEntropyLossを使うことを前提としている為、導関数は不要
-			連鎖律で伝ってくる勾配をそのまま通せばいい
-		*/
-		Derivative: nil,
-	}
+        // ---- 1. 通常の softmax 計算（オーバーフロー対策あり） ----
+        maxU := omath.Max(u...)
+        expU := make([]float32, n)
+        sumExpU := float32(0.0)
+        for i := range u {
+            expU[i] = math32.Exp(u[i] - maxU)
+            sumExpU += expU[i]
+        }
+        y := make([]float32, n)
+        for i := range expU {
+            y[i] = expU[i] / sumExpU
+        }
+
+        // ---- 2. クリッピング → 3. 再正規化 ----
+        sumY := float32(0.0)
+        for i := range y {
+            if y[i] < minProb {
+                y[i] = minProb
+            } else if y[i] > maxProb {
+                y[i] = maxProb
+            }
+            sumY += y[i]
+        }
+
+        // 合計が 1 になるよう再スケーリング
+        invSum := 1.0 / sumY
+        for i := range y {
+            y[i] *= invSum
+        }
+
+        return y
+    }
+
+    return OutputLayer{
+        Func:       f,
+        Derivative: nil, // CrossEntropyLoss 前提なので不要
+    }
 }
 
 type PredictLossLayer struct {

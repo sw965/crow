@@ -165,7 +165,7 @@ func (l Logic[S, As, A, G]) Playouts(initStates []S, pp PolicyProvider[S, As, A]
 						return
 					}
 
-					if p < 0 || math.IsNaN(float64(p)) {
+					if p <= 0 || math.IsNaN(float64(p)) {
         				errCh <- fmt.Errorf("確率 p が 0 より小さいまたは NaN です: p = %v", p)
         				return
     				}
@@ -252,7 +252,7 @@ func (l Logic[S, As, A, G]) PlayoutsWithHistory(initStates []S, pp PolicyProvide
 						return
 					}
 
-					if p < 0 || math.IsNaN(float64(p)) {
+					if p <= 0 || math.IsNaN(float64(p)) {
         				errCh <- fmt.Errorf("確率 p が 0より小さい または NaN です: p = %v", p)
         				return
     				}
