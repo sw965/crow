@@ -41,9 +41,9 @@ func (c *Calculator) Calculation(totalTrial int) float32 {
 	return c.Func(v, c.P, totalTrial, c.Trial)
 }
 
-type Manager[KS ~[]K, K comparable]map[K]*Calculator
+type Manager[K comparable]map[K]*Calculator
 
-func (m Manager[KS, K]) TotalValue() float32 {
+func (m Manager[K]) TotalValue() float32 {
 	var t float32 = 0.0
 	for _, v := range m {
 		t += v.TotalValue
@@ -51,7 +51,7 @@ func (m Manager[KS, K]) TotalValue() float32 {
 	return t
 }
 
-func (m Manager[KS, K]) TotalTrial() int {
+func (m Manager[K]) TotalTrial() int {
 	t := 0
 	for _, v := range m {
 		t += v.Trial
@@ -59,7 +59,7 @@ func (m Manager[KS, K]) TotalTrial() int {
 	return t
 }
 
-func (m Manager[KS, K]) AverageValue() float32 {
+func (m Manager[K]) AverageValue() float32 {
 	totalTrial := m.TotalTrial()
 	if totalTrial == 0 {
 		return 0.0
@@ -68,7 +68,7 @@ func (m Manager[KS, K]) AverageValue() float32 {
 	return float32(totalValue) / float32(totalTrial)
 }
 
-func (m Manager[KS, K]) Max() float32 {
+func (m Manager[K]) Max() float32 {
 	total := m.TotalTrial()
 	pucbs := make([]float32, 0, len(m))
 	for _, v := range m {
@@ -77,10 +77,10 @@ func (m Manager[KS, K]) Max() float32 {
 	return omath.Max(pucbs...)
 }
 
-func (m Manager[KS, K]) MaxKeys() KS {
+func (m Manager[K]) MaxKeys() []K {
 	max := m.Max()
 	total := m.TotalTrial()
-	ks := make(KS, 0, len(m))
+	ks := make([]K, 0, len(m))
 	for k, v := range m {
 		if v.Calculation(total) == max {
 			ks = append(ks, k)
@@ -89,9 +89,9 @@ func (m Manager[KS, K]) MaxKeys() KS {
 	return ks
 }
 
-func (m Manager[KS, K]) MaxTrialKeys() KS {
+func (m Manager[K]) MaxTrialKeys() []K {
 	max := m.MaxTrial()
-	ks := make(KS, 0, len(m))
+	ks := make([]K, 0, len(m))
 	for k, v := range m {
 		if v.Trial == max {
 			ks = append(ks, k)
@@ -100,7 +100,7 @@ func (m Manager[KS, K]) MaxTrialKeys() KS {
 	return ks
 }
 
-func (m Manager[KS, K]) MaxTrial() int {
+func (m Manager[K]) MaxTrial() int {
 	trials := make([]int, 0, len(m))
 	for _, v := range m {
 		trials = append(trials, v.Trial)
@@ -108,7 +108,7 @@ func (m Manager[KS, K]) MaxTrial() int {
 	return omath.Max(trials...)
 }
 
-func (m Manager[KS, K]) TrialPercentByKey() map[K]float32 {
+func (m Manager[K]) TrialPercentByKey() map[K]float32 {
 	total := m.TotalTrial()
 	ps := map[K]float32{}
 	for k, v := range m {
@@ -117,4 +117,4 @@ func (m Manager[KS, K]) TrialPercentByKey() map[K]float32 {
 	return ps
 }
 
-type Managers[KS ~[]K, K comparable] []Manager[KS, K]
+type Managers[K comparable] []Manager[K]

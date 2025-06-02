@@ -19,20 +19,20 @@ func (es RootNodeEvalByAgent[G]) DivScalar(s float32) {
 type LeafNodeEvalByAgent[G comparable] map[G]float32
 type LeafNodeEvaluator[S any, G comparable] func(S) (LeafNodeEvalByAgent[G], error)
 
-type Node[S any, As ~[]A, A, G comparable] struct {
+type Node[S any, A, G comparable] struct {
 	State      S
 	Agent      G
-	UCBManager pucb.Manager[As, A]
-	NextNodes  Nodes[S, As, A, G]
+	UCBManager pucb.Manager[A]
+	NextNodes  Nodes[S, A, G]
 }
 
-func (node *Node[S, As, A, G]) Trial() int {
+func (node *Node[S, A, G]) Trial() int {
 	return node.UCBManager.TotalTrial()
 }
 
-type Nodes[S any, As ~[]A, A, G comparable] []*Node[S, As, A, G]
+type Nodes[S any, A, G comparable] []*Node[S, A, G]
 
-func (nodes Nodes[S, As, A, G]) FindByState(state S, eq game.Comparator[S]) (*Node[S, As, A, G], bool) {
+func (nodes Nodes[S, A, G]) FindByState(state S, eq game.Comparator[S]) (*Node[S, A, G], bool) {
 	for _, node := range nodes {
 		if eq(node.State, state) {
 			return node, true
@@ -41,14 +41,14 @@ func (nodes Nodes[S, As, A, G]) FindByState(state S, eq game.Comparator[S]) (*No
 	return nil, false
 }
 
-type selectionInfo[S any, As ~[]A, A, G comparable] struct {
-	node   *Node[S, As, A, G]
+type selectionInfo[S any, A, G comparable] struct {
+	node   *Node[S, A, G]
 	action A
 }
 
-type selectionInfoSlice[S any, As ~[]A, A, G comparable] []selectionInfo[S, As, A, G]
+type selectionInfoSlice[S any, A, G comparable] []selectionInfo[S, A, G]
 
-func (ss selectionInfoSlice[S, As, A, G]) backward(evals LeafNodeEvalByAgent[G]) {
+func (ss selectionInfoSlice[S, A, G]) backward(evals LeafNodeEvalByAgent[G]) {
 	for _, s := range ss {
 		node := s.node
 		action := s.action
@@ -58,23 +58,23 @@ func (ss selectionInfoSlice[S, As, A, G]) backward(evals LeafNodeEvalByAgent[G])
 	}
 }
 
-type Engine[S any, As ~[]A, A, G comparable] struct {
-	GameLogic         game.Logic[S, As, A, G]
+type Engine[S any, A, G comparable] struct {
+	GameLogic         game.Logic[S, A, G]
 	UCBFunc           pucb.Func
-	PolicyProvider    game.PolicyProvider[S, As, A]
+	PolicyProvider    game.PolicyProvider[S, A]
 	LeafNodeEvaluator LeafNodeEvaluator[S, G]
 	NextNodesCap      int
 }
 
-func (e *Engine[S, As, A, G]) SetUniformPolicyProvider() {
-	e.PolicyProvider = game.UniformPolicyProvider[S, As, A]
+func (e *Engine[S, A, G]) SetUniformPolicyProvider() {
+	e.PolicyProvider = game.UniformPolicyProvider[S, A]
 }
 
-func (e *Engine[S, As, A, G]) SetPlayout(popp game.PolicyProvider[S, As, A], rng *rand.Rand) {
+func (e *Engine[S, A, G]) SetPlayout(popp game.PolicyProvider[S, A], rng *rand.Rand) {
 	e.LeafNodeEvaluator = func(state S) (LeafNodeEvalByAgent[G], error) {
 		finals, err := e.GameLogic.Playouts([]S{state}, popp, []*rand.Rand{rng})
 		if err != nil {
-			return LeafNodeEvalByAgent[G]{}, err
+			return nil, err
 		}
 		final := finals[0]
 
@@ -87,40 +87,44 @@ func (e *Engine[S, As, A, G]) SetPlayout(popp game.PolicyProvider[S, As, A], rng
 	}
 }
 
-func (e Engine[S, As, A, G]) NewNode(state S) (*Node[S, As, A, G], error) {
+func (e Engine[S, A, G]) NewNode(state S) (*Node[S, A, G], error) {
 	policy := e.PolicyProvider(state, e.GameLogic.LegalActionsProvider(state))
 	if len(policy) == 0 {
-		return &Node[S, As, A, G]{}, fmt.Errorf("len(Policy) == 0 である為、新しくNodeを生成出来ません。")
+		return &Node[S, A, G]{}, fmt.Errorf("len(Policy) == 0 である為、新しくNodeを生成出来ません。")
 	}
 
-	u := pucb.Manager[As, A]{}
+	u := pucb.Manager[A]{}
 	for a, p := range policy {
 		u[a] = &pucb.Calculator{Func: e.UCBFunc, P: p}
 	}
 
 	agent := e.GameLogic.CurrentAgentGetter(state)
-	nextNodes := make(Nodes[S, As, A, G], 0, e.NextNodesCap)
-	return &Node[S, As, A, G]{State: state, Agent: agent, UCBManager: u, NextNodes: nextNodes}, nil
+	nextNodes := make(Nodes[S, A, G], 0, e.NextNodesCap)
+	return &Node[S, A, G]{State: state, Agent: agent, UCBManager: u, NextNodes: nextNodes}, nil
 }
 
-func (e Engine[S, As, A, G]) SelectExpansionBackward(node *Node[S, As, A, G], capacity int, rng *rand.Rand) (LeafNodeEvalByAgent[G], int, error) {
+func (e Engine[S, A, G]) SelectExpansionBackward(node *Node[S, A, G], capacity int, rng *rand.Rand) (LeafNodeEvalByAgent[G], int, error) {
 	state := node.State
-	selections := make(selectionInfoSlice[S, As, A, G], 0, capacity)
+	selections := make(selectionInfoSlice[S, A, G], 0, capacity)
 	var err error
 	var isEnd bool
 
 	for {
-		action := orand.Choice(node.UCBManager.MaxKeys(), rng)
-		selections = append(selections, selectionInfo[S, As, A, G]{node: node, action: action})
+		action, err := orand.Choice(node.UCBManager.MaxKeys(), rng)
+		if err != nil {
+			return nil, 0, err
+		}
+
+		selections = append(selections, selectionInfo[S, A, G]{node: node, action: action})
 
 		state, err = e.GameLogic.Transitioner(state, action)
 		if err != nil {
-			return LeafNodeEvalByAgent[G]{}, 0, err
+			return nil, 0, err
 		}
 
 		isEnd, err = e.GameLogic.IsEnd(state)
 		if err != nil {
-			return LeafNodeEvalByAgent[G]{}, 0, err
+			return nil, 0, err
 		}
 
 		if isEnd {
@@ -132,7 +136,7 @@ func (e Engine[S, As, A, G]) SelectExpansionBackward(node *Node[S, As, A, G], ca
 			// expansion
 			nextNode, err = e.NewNode(state)
 			if err != nil {
-				return LeafNodeEvalByAgent[G]{}, 0, err
+				return nil, 0, err
 			}
 			node.NextNodes = append(node.NextNodes, nextNode)
 			// 新しくノードを作成したら、selectを終了する
@@ -146,7 +150,7 @@ func (e Engine[S, As, A, G]) SelectExpansionBackward(node *Node[S, As, A, G], ca
 	if isEnd {
 		scores, err := e.GameLogic.EvaluateResultScoreByAgent(state)
 		if err != nil {
-			return LeafNodeEvalByAgent[G]{}, 0, err
+			return nil, 0, err
 		}
 		for k, v := range scores {
 			evals[k] = v
@@ -154,7 +158,7 @@ func (e Engine[S, As, A, G]) SelectExpansionBackward(node *Node[S, As, A, G], ca
 	} else {
 		evals, err = e.LeafNodeEvaluator(state)
 		if err != nil {
-			return LeafNodeEvalByAgent[G]{}, 0, err
+			return nil, 0, err
 		}
 	}
 
@@ -162,9 +166,9 @@ func (e Engine[S, As, A, G]) SelectExpansionBackward(node *Node[S, As, A, G], ca
 	return evals, len(selections), err
 }
 
-func (e Engine[S, As, A, G]) Search(rootNode *Node[S, As, A, G], simulation int, rng *rand.Rand) (RootNodeEvalByAgent[G], error) {
+func (e Engine[S, A, G]) Search(rootNode *Node[S, A, G], simulation int, rng *rand.Rand) (RootNodeEvalByAgent[G], error) {
 	if e.NextNodesCap <= 0 {
-		return RootNodeEvalByAgent[G]{}, fmt.Errorf("Engine.NextNodesCap > 0 でなければなりません。")
+		return nil, fmt.Errorf("Engine.NextNodesCap > 0 でなければなりません。")
 	}
 
 	rootEvals := RootNodeEvalByAgent[G]{}
@@ -172,7 +176,7 @@ func (e Engine[S, As, A, G]) Search(rootNode *Node[S, As, A, G], simulation int,
 	for i := 0; i < simulation; i++ {
 		leafEvals, depth, err := e.SelectExpansionBackward(rootNode, capacity, rng)
 		if err != nil {
-			return RootNodeEvalByAgent[G]{}, err
+			return nil, err
 		}
 		for k, v := range leafEvals {
 			rootEvals[k] += v

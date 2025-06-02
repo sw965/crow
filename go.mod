@@ -4,9 +4,7 @@ go 1.24.2
 
 require (
 	github.com/chewxy/math32 v1.11.1
-	github.com/sw965/omw v0.0.0-20250501132227-76199108b489
-	gonum.org/v1/gonum v0.16.0
-	gonum.org/v1/netlib v0.0.0-20230729102104-8b8060e7531f
+	github.com/sw965/omw v0.0.0-20250602153719-aeb98fb7d077
 )
 
 require (
