@@ -274,17 +274,20 @@ func (l Logic[S, Ac, Ag]) CrossPlayouts(inits []S, actors []Actor[S, Ac, Ag], rn
 	}
 
 	actorsByOrder := oslices.Permutation[[][]Actor[S, Ac, Ag]](actors, agentN)
-	agentsByOrder := oslices.Permutation[[][]Ag](l.Agents, agentN)
+	agentsByOrder := make([][]Ag, len(actorsByOrder))
 	finalsByOrder := make([][]S, len(actorsByOrder))
 
-	for i, actors := range actorsByOrder {
+	for i, as := range actorsByOrder {
 		ppByAgent := map[Ag]PolicyProvider[S, Ac]{}
 		selectorByAgent := map[Ag]Selector[Ac, Ag]{}
-		for j, actor := range actors {
-			agent := agentsByOrder[i][j]
-			ppByAgent[agent] = actor.PolicyProvider
-			selectorByAgent[agent] = actor.Selector
+		agents := make([]Ag, len(l.Agents))
+		for j, a := range as {
+			agent := l.Agents[j]
+			agents[j] = agent
+			ppByAgent[agent] = a.PolicyProvider
+			selectorByAgent[agent] = a.Selector
 		}
+		agentsByOrder[i] = agents
 
 		pp := func(state S, legalActions []Ac) Policy[Ac] {
 			ag := l.CurrentAgentGetter(state)
