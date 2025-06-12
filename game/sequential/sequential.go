@@ -6,27 +6,28 @@ import (
 	"github.com/sw965/omw/parallel"
 	"math/rand"
 	orand "github.com/sw965/omw/math/rand"
+	oslices "github.com/sw965/omw/slices"
 )
 
-type LegalActionsProvider[S any, A comparable] func(S) []A
-type Transitioner[S any, A comparable] func(S, A) (S, error)
+type LegalActionsProvider[S any, Ac comparable] func(S) []Ac
+type Transitioner[S any, Ac comparable] func(S, Ac) (S, error)
 type Comparator[S any] func(S, S) bool
-type CurrentAgentGetter[S any, G comparable] func(S) G
+type CurrentAgentGetter[S any, Ag comparable] func(S) Ag
 
 // ゲームが終了していない場合は、戻り値は空あるいはnilである事を想定。
-type PlacementByAgent[G comparable] map[G]int
+type PlacementByAgent[Ag comparable] map[Ag]int
 
-func NewPlacementByAgent[Gss ~[]Gs, Gs ~[]G, G comparable](agentTable Gss) (PlacementByAgent[G], error) {
-	placements := PlacementByAgent[G]{}
+func NewPlacementByAgent[Ag comparable](agentsByPlacement [][]Ag) (PlacementByAgent[Ag], error) {
+	placements := PlacementByAgent[Ag]{}
 	rank := 1
-	for _, agents := range agentTable {
+	for _, agents := range agentsByPlacement {
 		if len(agents) == 0 {
-			return PlacementByAgent[G]{}, fmt.Errorf("順位 %d に対応するエージェントが存在しません", rank)
+			return nil, fmt.Errorf("順位 %d に対応するエージェントが存在しません", rank)
 		}
 
 		for _, agent := range agents {
 			if _, ok := placements[agent]; ok {
-				return PlacementByAgent[G]{}, fmt.Errorf("エージェント %v が複数回出現しています", agent)
+				return nil, fmt.Errorf("エージェント %v が複数回出現しています", agent)
 			}
 			placements[agent] = rank
 		}
@@ -35,7 +36,7 @@ func NewPlacementByAgent[Gss ~[]Gs, Gs ~[]G, G comparable](agentTable Gss) (Plac
 	return placements, nil
 }
 
-func (ps PlacementByAgent[G]) Validate() error {
+func (ps PlacementByAgent[Ag]) Validate() error {
 	n := len(ps)
 	if n == 0 {
 		return nil
@@ -71,29 +72,30 @@ func (ps PlacementByAgent[G]) Validate() error {
 	return nil
 }
 
-type PlacementsJudger[S any, G comparable] func(S) (PlacementByAgent[G], error)
-type ResultScoreByAgent[G comparable] map[G]float32
+type PlacementsJudger[S any, Ag comparable] func(S) (PlacementByAgent[Ag], error)
+type ResultScoreByAgent[Ag comparable] map[Ag]float32
 
-type ResultScoresEvaluator[G comparable] func(PlacementByAgent[G]) (ResultScoreByAgent[G], error)
+type ResultScoresEvaluator[Ag comparable] func(PlacementByAgent[Ag]) (ResultScoreByAgent[Ag], error)
 
-type Logic[S any, A, G comparable] struct {
-	LegalActionsProvider  LegalActionsProvider[S, A]
-	Transitioner          Transitioner[S, A]
+type Logic[S any, Ac, Ag comparable] struct {
+	LegalActionsProvider  LegalActionsProvider[S, Ac]
+	Transitioner          Transitioner[S, Ac]
 	Comparator            Comparator[S]
-	CurrentAgentGetter    CurrentAgentGetter[S, G]
-	PlacementsJudger      PlacementsJudger[S, G]
-	ResultScoresEvaluator ResultScoresEvaluator[G]
+	CurrentAgentGetter    CurrentAgentGetter[S, Ag]
+	PlacementsJudger      PlacementsJudger[S, Ag]
+	ResultScoresEvaluator ResultScoresEvaluator[Ag]
+	Agents                []Ag
 }
 
-func (l Logic[S, A, G]) IsEnd(state S) (bool, error) {
+func (l Logic[S, Ac, Ag]) IsEnd(state S) (bool, error) {
 	placements, err := l.PlacementsJudger(state)
 	return len(placements) != 0, err
 }
 
-func (l *Logic[S, A, G]) SetStandardResultScoresEvaluator() {
-	l.ResultScoresEvaluator = func(placements PlacementByAgent[G]) (ResultScoreByAgent[G], error) {
+func (l *Logic[S, Ac, Ag]) SetStandardResultScoresEvaluator() {
+	l.ResultScoresEvaluator = func(placements PlacementByAgent[Ag]) (ResultScoreByAgent[Ag], error) {
 		if err := placements.Validate(); err != nil {
-			return ResultScoreByAgent[G]{} , err
+			return ResultScoreByAgent[Ag]{} , err
 		}
 
 		n := len(placements)
@@ -106,7 +108,7 @@ func (l *Logic[S, A, G]) SetStandardResultScoresEvaluator() {
 			}
 		}
 
-		scores := ResultScoreByAgent[G]{}
+		scores := ResultScoreByAgent[Ag]{}
 
 		if n == 1 {
             for agent := range placements {
@@ -124,24 +126,24 @@ func (l *Logic[S, A, G]) SetStandardResultScoresEvaluator() {
 	}
 }
 
-func (l Logic[S, A, G]) EvaluateResultScoreByAgent(state S) (ResultScoreByAgent[G], error) {
+func (l Logic[S, Ac, Ag]) EvaluateResultScoreByAgent(state S) (ResultScoreByAgent[Ag], error) {
 	placements, err := l.PlacementsJudger(state)
 	if err != nil {
-		return ResultScoreByAgent[G]{}, err
+		return ResultScoreByAgent[Ag]{}, err
 	}
 	return l.ResultScoresEvaluator(placements)
 }
 
-func (l Logic[S, A, G]) Playouts(initStates []S, pp PolicyProvider[S, A], rngByWorker []*rand.Rand) ([]S, error) {
-	n := len(initStates)
+func (l Logic[S, Ac, Ag]) Playouts(inits []S, actor Actor[S, Ac, Ag], rngByWorker []*rand.Rand) ([]S, error) {
+	n := len(inits)
 	finals := make([]S, n)
-
 	p := len(rngByWorker)
 	errCh := make(chan error, p)
+
 	worker := func(workerIdx int, statesIdxs []int) {
 		rng := rngByWorker[workerIdx]
 		for _, idx := range statesIdxs {
-			state := initStates[idx]
+			state := inits[idx]
 			for {
 				isEnd, err := l.IsEnd(state)
 				if err != nil {
@@ -154,9 +156,9 @@ func (l Logic[S, A, G]) Playouts(initStates []S, pp PolicyProvider[S, A], rngByW
 				}
 
 				legalActions := l.LegalActionsProvider(state)
-				policy := pp(state, legalActions)
+				policy := actor.PolicyProvider(state, legalActions)
 
-				legalPolicy := Policy[A]{}
+				legalPolicy := Policy[Ac]{}
 				for _, a := range legalActions {
 					p, ok := policy[a]
 					if !ok {
@@ -166,7 +168,8 @@ func (l Logic[S, A, G]) Playouts(initStates []S, pp PolicyProvider[S, A], rngByW
 					legalPolicy[a] = p
 				}
 
-				action, err := legalPolicy.Sample(rng)
+				agent := l.CurrentAgentGetter(state)
+				action, err := actor.Selector(legalPolicy, agent, rng)
 				if err != nil {
 					errCh <- err
 					return
@@ -195,16 +198,16 @@ func (l Logic[S, A, G]) Playouts(initStates []S, pp PolicyProvider[S, A], rngByW
 	return finals, nil
 }
 
-func (l Logic[S, A, G]) PlayoutsWithHistory(initStates []S, pp PolicyProvider[S, A], rngByWorker []*rand.Rand) (History[S, A, G], error) {
-	n := len(initStates)
-	history := NewHistory[S, A, G](n)
-
+func (l Logic[S, Ac, Ag]) PlayoutsWithHistory(inits []S, actor Actor[S, Ac, Ag], rngByWorker []*rand.Rand) (History[S, Ac, Ag], error) {
+	n := len(inits)
+	history := NewHistory[S, Ac, Ag](n)
 	p := len(rngByWorker)
 	errCh := make(chan error, p)
+
 	worker := func(workerIdx int, statesIdxs []int) {
 		rng := rngByWorker[workerIdx]
 		for _, idx := range statesIdxs {
-			state := initStates[idx]
+			state := inits[idx]
 			for {
 				isEnd, err := l.IsEnd(state)
 				if err != nil {
@@ -218,9 +221,9 @@ func (l Logic[S, A, G]) PlayoutsWithHistory(initStates []S, pp PolicyProvider[S,
 				}
 
 				legalActions := l.LegalActionsProvider(state)
-				policy := pp(state, legalActions)
+				policy := actor.PolicyProvider(state, legalActions)
 
-				legalPolicy := Policy[A]{}
+				legalPolicy := Policy[Ac]{}
 				for _, a := range legalActions {
 					p, ok := policy[a]
 					if !ok {
@@ -230,14 +233,8 @@ func (l Logic[S, A, G]) PlayoutsWithHistory(initStates []S, pp PolicyProvider[S,
 					legalPolicy[a] = p
 				}
 
-				action, err := legalPolicy.Sample(rng)
-				if err != nil {
-					errCh <- err
-					return
-				}
-
 				agent := l.CurrentAgentGetter(state)
-				state, err = l.Transitioner(state, action)
+				action, err := actor.Selector(legalPolicy, agent, rng)
 				if err != nil {
 					errCh <- err
 					return
@@ -247,6 +244,12 @@ func (l Logic[S, A, G]) PlayoutsWithHistory(initStates []S, pp PolicyProvider[S,
 				history.PoliciesByGame[idx] = append(history.PoliciesByGame[idx], policy)
 				history.ActionsByGame[idx] = append(history.ActionsByGame[idx], action)
 				history.AgentsByGame[idx] = append(history.AgentsByGame[idx], agent)
+
+				state, err = l.Transitioner(state, action)
+				if err != nil {
+					errCh <- err
+					return
+				}
 			}
 		}
 		errCh <- nil
@@ -258,81 +261,118 @@ func (l Logic[S, A, G]) PlayoutsWithHistory(initStates []S, pp PolicyProvider[S,
 
 	for i := 0; i < p; i++ {
 		if err := <-errCh; err != nil {
-			return History[S, A, G]{}, err
+			return History[S, Ac, Ag]{}, err
 		}
 	}
 	return history, nil	
 }
 
-/*
-	Selector は「state → 各合法手とその重みを返す」関数。
-	返却される Policy[A] は以下を必ず満たすこと：
-	1) キーに legalActions のすべての要素を含むこと。
-	2) 各 value (float32) は NaN でもマイナスでもなく、合計が 0 より大きいこと。
-	これらを満たしていない場合、Playouts 系メソッド呼び出し時にエラーになる。
-
-	※合法手以外をキーに含めても問題なし。(Playouts系メソッドでは、内部でそぎ落とされる)
-	よってソフトマックスなどを出力するモデルの確率分布とそれに対応する行動からPolicyを作っても問題ない。
-	また確率分布は内部(orand.IntByWeight)で1に正規化される為、合計が1である必要はなし。
-*/
-type Policy[A comparable] map[A]float32
-
-func (p Policy[A]) Sample(rng *rand.Rand) (A, error) {
-	n := len(p)
-	actions := make([]A, 0, n)
-	percents := make([]float32, 0, n)
-	for a, v := range p {
-		actions = append(actions, a)
-		percents = append(percents, v)
+func (l Logic[S, Ac, Ag]) CrossPlayouts(inits []S, actors []Actor[S, Ac, Ag], rngByWorker []*rand.Rand) ([][]S, [][]Ag, error) {
+	agentN := len(l.Agents)
+	if len(actors) != agentN {
+		return nil, nil, fmt.Errorf("len(actors) != len(Logic.Agents)")
 	}
-	idx, err := orand.IntByWeight(percents, rng)
-	if err != nil {
-		var a A
-		return a, err
+
+	actorsByOrder := oslices.Permutation[[][]Actor[S, Ac, Ag]](actors, agentN)
+	agentsByOrder := oslices.Permutation[[][]Ag](l.Agents, agentN)
+	finalsByOrder := make([][]S, len(actorsByOrder))
+
+	for i, actors := range actorsByOrder {
+		ppByAgent := map[Ag]PolicyProvider[S, Ac]{}
+		selectorByAgent := map[Ag]Selector[Ac, Ag]{}
+		for j, actor := range actors {
+			agent := agentsByOrder[i][j]
+			ppByAgent[agent] = actor.PolicyProvider
+			selectorByAgent[agent] = actor.Selector
+		}
+
+		pp := func(state S, legalActions []Ac) Policy[Ac] {
+			ag := l.CurrentAgentGetter(state)
+			return ppByAgent[ag](state, legalActions)
+		}
+
+		selector := func(p Policy[Ac], ag Ag, rng *rand.Rand) (Ac, error) {
+			return selectorByAgent[ag](p, ag, rng)
+		}
+
+		newActor := Actor[S, Ac, Ag]{
+			PolicyProvider:pp,
+			Selector:selector,
+		}
+
+		finals, err := l.Playouts(inits, newActor, rngByWorker)
+		if err != nil {
+			return nil, nil, err
+		}
+		finalsByOrder[i] = finals
 	}
-	return actions[idx], nil
+	return finalsByOrder, agentsByOrder, nil
 }
 
-type PolicyProvider[S any, A comparable] func(S, []A) Policy[A]
+type Policy[Ac comparable] map[Ac]float32
+type PolicyProvider[S any, Ac comparable] func(S, []Ac) Policy[Ac]
 
-func UniformPolicyProvider[S any, A comparable](state S, legalActions []A) Policy[A] {
+func UniformLegalPolicyProvider[S any, Ac comparable](state S, legalActions []Ac) Policy[Ac] {
 	n := len(legalActions)
 	p := 1.0 / float32(n)
-	m := Policy[A]{}
+	m := Policy[Ac]{}
 	for _, a := range legalActions {
 		m[a] = p
 	}
 	return m
 }
 
-type History[S any, A, G comparable] struct {
-	IntermediateStatesByGame [][]S
-	FinalStateByGame         []S
-	PoliciesByGame           [][]Policy[A]
-	ActionsByGame            [][]A
-	AgentsByGame             [][]G
+type Selector[Ac, Ag comparable] func(Policy[Ac], Ag, *rand.Rand) (Ac, error)
+
+func WeightedRandomSelector[Ac, Ag comparable](policy Policy[Ac], agent Ag, rng *rand.Rand) (Ac, error) {
+	n := len(policy)
+	actions := make([]Ac, 0, n)
+	percents := make([]float32, 0, n)
+	for a, p := range policy {
+		actions = append(actions, a)
+		percents = append(percents, p)
+	}
+	idx, err := orand.IntByWeight(percents, rng)
+	if err != nil {
+		var a Ac
+		return a, err
+	}
+	return actions[idx], nil
 }
 
-func NewHistory[S any, A, G comparable](n int) History[S, A, G] {
-	h := History[S, A, G]{
+type Actor[S any, Ac, Ag comparable] struct {
+	PolicyProvider PolicyProvider[S, Ac]
+	Selector       Selector[Ac, Ag]
+}
+
+type History[S any, Ac, Ag comparable] struct {
+	IntermediateStatesByGame [][]S
+	FinalStateByGame         []S
+	PoliciesByGame           [][]Policy[Ac]
+	ActionsByGame            [][]Ac
+	AgentsByGame             [][]Ag
+}
+
+func NewHistory[S any, Ac, Ag comparable](n int) History[S, Ac, Ag] {
+	h := History[S, Ac, Ag]{
     	IntermediateStatesByGame: make([][]S, n),
     	FinalStateByGame:         make([]S, n),
-    	PoliciesByGame:           make([][]Policy[A], n),
-    	ActionsByGame:            make([][]A, n),
-		AgentsByGame:             make([][]G, n),
+    	PoliciesByGame:           make([][]Policy[Ac], n),
+    	ActionsByGame:            make([][]Ac, n),
+		AgentsByGame:             make([][]Ag, n),
 	}
 
 	for i := 0; i < n; i++ {
     	h.IntermediateStatesByGame[i] = make([]S, 0, oneGameCap)
-    	h.PoliciesByGame[i] = make([]Policy[A], 0, oneGameCap)
-    	h.ActionsByGame[i] = make([]A, 0, oneGameCap)
-		h.AgentsByGame[i] = make([]G, 0, oneGameCap)
+    	h.PoliciesByGame[i] = make([]Policy[Ac], 0, oneGameCap)
+    	h.ActionsByGame[i] = make([]Ac, 0, oneGameCap)
+		h.AgentsByGame[i] = make([]Ag, 0, oneGameCap)
 	}
 	return h
 }
 
-func (h History[S, A, G]) ToExperiences(logic Logic[S, A, G]) (Experiences[S, A, G], error) {
-	experiences := make(Experiences[S, A, G], 0, len(h.FinalStateByGame) * oneGameCap)
+func (h History[S, Ac, Ag]) ToExperiences(logic Logic[S, Ac, Ag]) (Experiences[S, Ac, Ag], error) {
+	experiences := make(Experiences[S, Ac, Ag], 0, len(h.FinalStateByGame) * oneGameCap)
 	for gameI, final := range h.FinalStateByGame {
 		states := h.IntermediateStatesByGame[gameI]
 		policies := h.PoliciesByGame[gameI]
@@ -344,7 +384,7 @@ func (h History[S, A, G]) ToExperiences(logic Logic[S, A, G]) (Experiences[S, A,
 		}
 		for i, state := range states {
 			agent := agents[i]
-			experiences = append(experiences, Experience[S, A, G]{
+			experiences = append(experiences, Experience[S, Ac, Ag]{
 				State:state,
 				Policy:policies[i],
 				Action:actions[i],
@@ -356,23 +396,23 @@ func (h History[S, A, G]) ToExperiences(logic Logic[S, A, G]) (Experiences[S, A,
 	return experiences, nil
 }
 
-type Experience[S any, A, G comparable] struct {
+type Experience[S any, Ac, Ag comparable] struct {
 	State       S
-	Policy      Policy[A]
-	Action      A
+	Policy      Policy[Ac]
+	Action      Ac
 	ResultScore float32
-	Agent       G
+	Agent       Ag
 }
 
-type Experiences[S any, A, G comparable] []Experience[S, A, G]
+type Experiences[S any, Ac, Ag comparable] []Experience[S, Ac, Ag]
 
-func (es Experiences[S, A, G]) Split() ([]S, []Policy[A], []A, []float32, []G) {
+func (es Experiences[S, Ac, Ag]) Split() ([]S, []Policy[Ac], []Ac, []float32, []Ag) {
 	n := len(es)
 	states := make([]S, n)
-	policies := make([]Policy[A], n)
-	actions := make([]A, n)
+	policies := make([]Policy[Ac], n)
+	actions := make([]Ac, n)
 	scores := make([]float32, n)
-	agents := make([]G, n)
+	agents := make([]Ag, n)
 
 	for i, e := range es {
 		states[i] = e.State

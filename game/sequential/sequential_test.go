@@ -10,9 +10,9 @@ type State string
 type Agent string
 
 func Test(t *testing.T) {
-	logic := sequential.Logic[State, []string, string, Agent]{}
+	logic := sequential.Logic[State, string, Agent]{}
 	logic.PlacementsJudger = func(_ State) (sequential.PlacementByAgent[Agent], error) {
-		return sequential.NewPlacementByAgent[[][]Agent, []Agent, Agent](
+		return sequential.NewPlacementByAgent[Agent](
 			[][]Agent{[]Agent{"白"}, []Agent{"水"}},
 		)
 	}
