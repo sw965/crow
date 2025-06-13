@@ -1,6 +1,7 @@
 package linear
 
 import (
+	"fmt"
 	"slices"
 	ojson "github.com/sw965/omw/encoding/json"
 )
@@ -26,7 +27,7 @@ func (p Parameter) Clone() Parameter {
 	}
 }
 
-func (p *Parameter) NewGradBufferZerosLike() GradBuffer {
+func (p Parameter) NewGradBufferZerosLike() GradBuffer {
 	return GradBuffer{
 		Weight: make([]float32, len(p.Weight)),
 		Bias:   make([]float32, len(p.Bias)),
@@ -54,11 +55,29 @@ func (p *Parameter) Scal(alpha float32) {
 }
 
 func (p *Parameter) AxpyGrad(alpha float32, grad GradBuffer) {
-	for i := range p.Weight {
-		p.Weight[i] += (alpha * grad.Weight[i])
-	}
+	p.Axpy(alpha, Parameter(grad))
+}
 
-	for i := range p.Bias {
-		p.Bias[i] += (alpha * grad.Bias[i])
-	}
+type Parameters []Parameter
+
+func (ps Parameters) Sum() (Parameter, error) {
+    if len(ps) == 0 {
+        return Parameter{}, fmt.Errorf("Parameters is empty")
+    }
+    wn, bn := len(ps[0].Weight), len(ps[0].Bias)
+    sumW := make([]float32, wn)
+    sumB := make([]float32, bn)
+
+    for _, p := range ps {
+        if len(p.Weight) != wn || len(p.Bias) != bn {
+            return Parameter{}, fmt.Errorf("shape mismatch")
+        }
+        for i := 0; i < wn; i++ {
+            sumW[i] += p.Weight[i]
+        }
+        for i := 0; i < bn; i++ {
+            sumB[i] += p.Bias[i]
+        }
+    }
+    return Parameter{Weight: sumW, Bias: sumB}, nil
 }
