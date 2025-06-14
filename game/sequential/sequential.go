@@ -270,23 +270,21 @@ func (l Logic[S, Ac, Ag]) PlayoutHistories(inits []S, actor Actor[S, Ac, Ag], rn
 	return histories, nil	
 }
 
-func (l Logic[S, Ac, Ag]) CrossPlayouts(inits []S, actors []Actor[S, Ac, Ag], rngByWorker []*rand.Rand) ([][]S, [][]Ag, error) {
+func (l Logic[S, Ac, Ag]) CrossPlayouts(inits []S, actors []Actor[S, Ac, Ag], rngByWorker []*rand.Rand) ([][]S, error) {
 	agentsN := len(l.Agents)
 	if len(actors) != agentsN {
-		return nil, nil, fmt.Errorf("len(actors) != len(Logic.Agents)")
+		return nil, fmt.Errorf("len(actors) != len(Logic.Agents)")
 	}
 
 	actorPerms := oslices.Permutations[[]Actor[S, Ac, Ag]](actors, agentsN)
 	permsN := len(actorPerms)
-	agentPerms := oslices.Permutations[[]Ag](l.Agents, agentsN)
 	finalsByAgPerm := make([][]S, permsN)
 
 	for i, actorPerm := range actorPerms {
 		ppByAgent := map[Ag]PolicyProvider[S, Ac]{}
 		selectorByAgent := map[Ag]Selector[Ac, Ag]{}
-		agents := agentPerms[i]
 		for j, actor := range actorPerm {
-			agent := agents[j]
+			agent := l.Agents[j]
 			ppByAgent[agent] = actor.PolicyProvider
 			selectorByAgent[agent] = actor.Selector
 		}
@@ -307,30 +305,28 @@ func (l Logic[S, Ac, Ag]) CrossPlayouts(inits []S, actors []Actor[S, Ac, Ag], rn
 
 		finals, err := l.Playouts(inits, newActor, rngByWorker)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		finalsByAgPerm[i] = finals
 	}
-	return finalsByAgPerm, agentPerms, nil
+	return finalsByAgPerm, nil
 }
 
-func (l Logic[S, Ac, Ag]) CrossPlayoutHistoriesByAgentPermutation(inits []S, actors []Actor[S, Ac, Ag], rngByWorker []*rand.Rand) ([]Histories[S, Ac, Ag], [][]Ag, error) {
+func (l Logic[S, Ac, Ag]) CrossPlayoutHistories(inits []S, actors []Actor[S, Ac, Ag], rngByWorker []*rand.Rand) ([]Histories[S, Ac, Ag], error) {
 	agentsN := len(l.Agents)
 	if len(actors) != agentsN {
-		return nil, nil, fmt.Errorf("len(actors) != len(Logic.Agents)")
+		return nil, fmt.Errorf("len(actors) != len(Logic.Agents)")
 	}
 
 	actorPerms := oslices.Permutations[[]Actor[S, Ac, Ag]](actors, agentsN)
 	permsN := len(actorPerms)
-	agentPerms := oslices.Permutations[[]Ag](l.Agents, agentsN)
 	historiesByAgPerm := make([]Histories[S, Ac, Ag], permsN)
 
 	for i, actorPerm := range actorPerms {
 		ppByAgent := make(map[Ag]PolicyProvider[S, Ac])
 		selectorByAgent := make(map[Ag]Selector[Ac, Ag])
-		agents := agentPerms[i]
 		for j, actor := range actorPerm {
-			agent := agents[j]
+			agent := l.Agents[j]
 			ppByAgent[agent] = actor.PolicyProvider
 			selectorByAgent[agent] = actor.Selector
 		}
@@ -350,12 +346,12 @@ func (l Logic[S, Ac, Ag]) CrossPlayoutHistoriesByAgentPermutation(inits []S, act
 
 		histories, err := l.PlayoutHistories(inits, newActor, rngByWorker)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		historiesByAgPerm[i] = histories
 	}
 
-	return historiesByAgPerm, agentPerms, nil
+	return historiesByAgPerm, nil
 }
 
 type Policy[Ac comparable] map[Ac]float32
