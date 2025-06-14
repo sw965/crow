@@ -313,7 +313,7 @@ func (m Model) PartialDifferentiation(lossFunc func(Model, int) (float32, error)
 	return total, nil
 }
 
-func (m Model) ComputeGradByReinforce(inputs Inputs, actionIdxs []int, rewards []float32, p int) (GradBuffer, error) {
+func (m Model) EstimateGradByReinforce(inputs Inputs, actionIdxs []int, rewards []float32, p int) (GradBuffer, error) {
 	n := len(inputs)
 	if n != len(actionIdxs) || n != len(rewards) {
 		return GradBuffer{}, fmt.Errorf("バッチサイズが一致しません。")

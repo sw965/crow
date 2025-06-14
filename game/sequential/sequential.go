@@ -198,9 +198,12 @@ func (l Logic[S, Ac, Ag]) Playouts(inits []S, actor Actor[S, Ac, Ag], rngByWorke
 	return finals, nil
 }
 
-func (l Logic[S, Ac, Ag]) PlayoutsWithHistory(inits []S, actor Actor[S, Ac, Ag], rngByWorker []*rand.Rand) (History[S, Ac, Ag], error) {
+func (l Logic[S, Ac, Ag]) PlayoutHistories(inits []S, actor Actor[S, Ac, Ag], rngByWorker []*rand.Rand) (Histories[S, Ac, Ag], error) {
 	n := len(inits)
-	history := NewHistory[S, Ac, Ag](n)
+	histories := make(Histories[S, Ac, Ag], n)
+	for i := range histories {
+		histories[i] = NewHistory[S, Ac, Ag]()
+	}
 	p := len(rngByWorker)
 	errCh := make(chan error, p)
 
@@ -216,7 +219,7 @@ func (l Logic[S, Ac, Ag]) PlayoutsWithHistory(inits []S, actor Actor[S, Ac, Ag],
 				}
 
 				if isEnd {
-					history.FinalStateByGame[idx] = state
+					histories[idx].FinalState = state
 					break
 				}
 
@@ -240,10 +243,10 @@ func (l Logic[S, Ac, Ag]) PlayoutsWithHistory(inits []S, actor Actor[S, Ac, Ag],
 					return
 				}
 
-				history.IntermediateStatesByGame[idx] = append(history.IntermediateStatesByGame[idx], state)
-				history.PoliciesByGame[idx] = append(history.PoliciesByGame[idx], policy)
-				history.ActionsByGame[idx] = append(history.ActionsByGame[idx], action)
-				history.AgentsByGame[idx] = append(history.AgentsByGame[idx], agent)
+				histories[idx].IntermediateStates = append(histories[idx].IntermediateStates, state)
+				histories[idx].Policies = append(histories[idx].Policies, policy)
+				histories[idx].Actions = append(histories[idx].Actions, action)
+				histories[idx].Agents = append(histories[idx].Agents, agent)
 
 				state, err = l.Transitioner(state, action)
 				if err != nil {
@@ -261,10 +264,10 @@ func (l Logic[S, Ac, Ag]) PlayoutsWithHistory(inits []S, actor Actor[S, Ac, Ag],
 
 	for i := 0; i < p; i++ {
 		if err := <-errCh; err != nil {
-			return History[S, Ac, Ag]{}, err
+			return nil, err
 		}
 	}
-	return history, nil	
+	return histories, nil	
 }
 
 func (l Logic[S, Ac, Ag]) CrossPlayouts(inits []S, actors []Actor[S, Ac, Ag], rngByWorker []*rand.Rand) ([][]S, [][]Ag, error) {
@@ -273,21 +276,22 @@ func (l Logic[S, Ac, Ag]) CrossPlayouts(inits []S, actors []Actor[S, Ac, Ag], rn
 		return nil, nil, fmt.Errorf("len(actors) != len(Logic.Agents)")
 	}
 
-	actorsByOrder := oslices.Permutation[[][]Actor[S, Ac, Ag]](actors, agentN)
-	agentsByOrder := make([][]Ag, len(actorsByOrder))
-	finalsByOrder := make([][]S, len(actorsByOrder))
+	actorPerms := oslices.Permutations[[]Actor[S, Ac, Ag]](actors, agentN)
+	n := len(actorPerms)
+	agentPerms := make([][]Ag, n)
+	finalsByAgPerm := make([][]S, n)
 
-	for i, as := range actorsByOrder {
+	for i, actorPerm := range actorPerms {
 		ppByAgent := map[Ag]PolicyProvider[S, Ac]{}
 		selectorByAgent := map[Ag]Selector[Ac, Ag]{}
 		agents := make([]Ag, len(l.Agents))
-		for j, a := range as {
+		for j, actor := range actorPerm {
 			agent := l.Agents[j]
 			agents[j] = agent
-			ppByAgent[agent] = a.PolicyProvider
-			selectorByAgent[agent] = a.Selector
+			ppByAgent[agent] = actor.PolicyProvider
+			selectorByAgent[agent] = actor.Selector
 		}
-		agentsByOrder[i] = agents
+		agentPerms[i] = agents
 
 		pp := func(state S, legalActions []Ac) Policy[Ac] {
 			ag := l.CurrentAgentGetter(state)
@@ -307,9 +311,55 @@ func (l Logic[S, Ac, Ag]) CrossPlayouts(inits []S, actors []Actor[S, Ac, Ag], rn
 		if err != nil {
 			return nil, nil, err
 		}
-		finalsByOrder[i] = finals
+		finalsByAgPerm[i] = finals
 	}
-	return finalsByOrder, agentsByOrder, nil
+	return finalsByAgPerm, agentPerms, nil
+}
+
+func (l Logic[S, Ac, Ag]) CrossPlayoutHistoriesByAgentPermutation(inits []S, actors []Actor[S, Ac, Ag], rngByWorker []*rand.Rand) ([]Histories[S, Ac, Ag], [][]Ag, error) {
+	agentN := len(l.Agents)
+	if len(actors) != agentN {
+		return nil, nil, fmt.Errorf("len(actors) != len(Logic.Agents)")
+	}
+
+	actorPerms := oslices.Permutations[[]Actor[S, Ac, Ag]](actors, agentN)
+	n := len(actorPerms)
+	agentPerms := make([][]Ag, n)
+	historiesByAgPerm := make([]Histories[S, Ac, Ag], n)
+
+	for i, actorPerm := range actorPerms {
+		ppByAgent := make(map[Ag]PolicyProvider[S, Ac])
+		selectorByAgent := make(map[Ag]Selector[Ac, Ag])
+		agents := make([]Ag, agentN)
+		for j, actor := range actorPerm {
+			agent := l.Agents[j]
+			agents[j] = agent
+			ppByAgent[agent] = actor.PolicyProvider
+			selectorByAgent[agent] = actor.Selector
+		}
+		agentPerms[i] = agents
+
+		pp := func(state S, legalActions []Ac) Policy[Ac] {
+			ag := l.CurrentAgentGetter(state)
+			return ppByAgent[ag](state, legalActions)
+		}
+		selector := func(p Policy[Ac], ag Ag, rng *rand.Rand) (Ac, error) {
+			return selectorByAgent[ag](p, ag, rng)
+		}
+
+		newActor := Actor[S, Ac, Ag]{
+			PolicyProvider: pp,
+			Selector:       selector,
+		}
+
+		histories, err := l.PlayoutHistories(inits, newActor, rngByWorker)
+		if err != nil {
+			return nil, nil, err
+		}
+		historiesByAgPerm[i] = histories
+	}
+
+	return historiesByAgPerm, agentPerms, nil
 }
 
 type Policy[Ac comparable] map[Ac]float32
@@ -349,52 +399,57 @@ type Actor[S any, Ac, Ag comparable] struct {
 }
 
 type History[S any, Ac, Ag comparable] struct {
-	IntermediateStatesByGame [][]S
-	FinalStateByGame         []S
-	PoliciesByGame           [][]Policy[Ac]
-	ActionsByGame            [][]Ac
-	AgentsByGame             [][]Ag
+	IntermediateStates []S
+	FinalState         S
+	Policies           []Policy[Ac]
+	Actions            []Ac
+	Agents             []Ag
 }
 
-func NewHistory[S any, Ac, Ag comparable](n int) History[S, Ac, Ag] {
+func NewHistory[S any, Ac, Ag comparable]() History[S, Ac, Ag] {
 	h := History[S, Ac, Ag]{
-    	IntermediateStatesByGame: make([][]S, n),
-    	FinalStateByGame:         make([]S, n),
-    	PoliciesByGame:           make([][]Policy[Ac], n),
-    	ActionsByGame:            make([][]Ac, n),
-		AgentsByGame:             make([][]Ag, n),
-	}
-
-	for i := 0; i < n; i++ {
-    	h.IntermediateStatesByGame[i] = make([]S, 0, oneGameCap)
-    	h.PoliciesByGame[i] = make([]Policy[Ac], 0, oneGameCap)
-    	h.ActionsByGame[i] = make([]Ac, 0, oneGameCap)
-		h.AgentsByGame[i] = make([]Ag, 0, oneGameCap)
+    	IntermediateStates: make([]S, 0, oneGameCap),
+    	Policies:           make([]Policy[Ac], 0, oneGameCap),
+    	Actions:            make([]Ac, 0, oneGameCap),
+		Agents:             make([]Ag, 0, oneGameCap),
 	}
 	return h
 }
 
 func (h History[S, Ac, Ag]) ToExperiences(logic Logic[S, Ac, Ag]) (Experiences[S, Ac, Ag], error) {
-	experiences := make(Experiences[S, Ac, Ag], 0, len(h.FinalStateByGame) * oneGameCap)
-	for gameI, final := range h.FinalStateByGame {
-		states := h.IntermediateStatesByGame[gameI]
-		policies := h.PoliciesByGame[gameI]
-		actions := h.ActionsByGame[gameI]
-		agents := h.AgentsByGame[gameI]
-		scores, err := logic.EvaluateResultScoreByAgent(final)
+	experiences := make(Experiences[S, Ac, Ag], 0, len(h.Agents))
+	scores, err := logic.EvaluateResultScoreByAgent(h.FinalState)
+	if err != nil {
+		return nil, err
+	}
+	for i, state := range h.IntermediateStates {
+		agent := h.Agents[i]
+		experiences = append(experiences, Experience[S, Ac, Ag]{
+			State:state,
+			Policy:h.Policies[i],
+			Action:h.Actions[i],
+			ResultScore:scores[agent],
+			Agent:agent,
+		})
+	}
+	return experiences, nil
+}
+
+type Histories[S any, Ac, Ag comparable] []History[S, Ac, Ag]
+
+func (hs Histories[S, Ac, Ag]) ToExperiences(logic Logic[S, Ac, Ag]) (Experiences[S, Ac, Ag], error) {
+	n := 0
+	for _, h := range hs {
+		n += len(h.Agents)
+	}
+
+	experiences := make(Experiences[S, Ac, Ag], 0, n)
+	for _, h := range hs {
+		es, err := h.ToExperiences(logic)
 		if err != nil {
 			return nil, err
 		}
-		for i, state := range states {
-			agent := agents[i]
-			experiences = append(experiences, Experience[S, Ac, Ag]{
-				State:state,
-				Policy:policies[i],
-				Action:actions[i],
-				ResultScore:scores[agent],
-				Agent:agent,
-			})
-		}
+		experiences = append(experiences, es...)
 	}
 	return experiences, nil
 }
