@@ -271,27 +271,25 @@ func (l Logic[S, Ac, Ag]) PlayoutHistories(inits []S, actor Actor[S, Ac, Ag], rn
 }
 
 func (l Logic[S, Ac, Ag]) CrossPlayouts(inits []S, actors []Actor[S, Ac, Ag], rngByWorker []*rand.Rand) ([][]S, [][]Ag, error) {
-	agentN := len(l.Agents)
-	if len(actors) != agentN {
+	agentsN := len(l.Agents)
+	if len(actors) != agentsN {
 		return nil, nil, fmt.Errorf("len(actors) != len(Logic.Agents)")
 	}
 
-	actorPerms := oslices.Permutations[[]Actor[S, Ac, Ag]](actors, agentN)
-	n := len(actorPerms)
-	agentPerms := make([][]Ag, n)
-	finalsByAgPerm := make([][]S, n)
+	actorPerms := oslices.Permutations[[]Actor[S, Ac, Ag]](actors, agentsN)
+	permsN := len(actorPerms)
+	agentPerms := oslices.Permutations[[]Ag](l.Agents, agentsN)
+	finalsByAgPerm := make([][]S, permsN)
 
 	for i, actorPerm := range actorPerms {
 		ppByAgent := map[Ag]PolicyProvider[S, Ac]{}
 		selectorByAgent := map[Ag]Selector[Ac, Ag]{}
-		agents := make([]Ag, len(l.Agents))
+		agents := agentPerms[i]
 		for j, actor := range actorPerm {
-			agent := l.Agents[j]
-			agents[j] = agent
+			agent := agents[j]
 			ppByAgent[agent] = actor.PolicyProvider
 			selectorByAgent[agent] = actor.Selector
 		}
-		agentPerms[i] = agents
 
 		pp := func(state S, legalActions []Ac) Policy[Ac] {
 			ag := l.CurrentAgentGetter(state)
@@ -317,27 +315,25 @@ func (l Logic[S, Ac, Ag]) CrossPlayouts(inits []S, actors []Actor[S, Ac, Ag], rn
 }
 
 func (l Logic[S, Ac, Ag]) CrossPlayoutHistoriesByAgentPermutation(inits []S, actors []Actor[S, Ac, Ag], rngByWorker []*rand.Rand) ([]Histories[S, Ac, Ag], [][]Ag, error) {
-	agentN := len(l.Agents)
-	if len(actors) != agentN {
+	agentsN := len(l.Agents)
+	if len(actors) != agentsN {
 		return nil, nil, fmt.Errorf("len(actors) != len(Logic.Agents)")
 	}
 
-	actorPerms := oslices.Permutations[[]Actor[S, Ac, Ag]](actors, agentN)
-	n := len(actorPerms)
-	agentPerms := make([][]Ag, n)
-	historiesByAgPerm := make([]Histories[S, Ac, Ag], n)
+	actorPerms := oslices.Permutations[[]Actor[S, Ac, Ag]](actors, agentsN)
+	permsN := len(actorPerms)
+	agentPerms := oslices.Permutations[[]Ag](l.Agents, agentsN)
+	historiesByAgPerm := make([]Histories[S, Ac, Ag], permsN)
 
 	for i, actorPerm := range actorPerms {
 		ppByAgent := make(map[Ag]PolicyProvider[S, Ac])
 		selectorByAgent := make(map[Ag]Selector[Ac, Ag])
-		agents := make([]Ag, agentN)
+		agents := agentPerms[i]
 		for j, actor := range actorPerm {
-			agent := l.Agents[j]
-			agents[j] = agent
+			agent := agents[j]
 			ppByAgent[agent] = actor.PolicyProvider
 			selectorByAgent[agent] = actor.Selector
 		}
-		agentPerms[i] = agents
 
 		pp := func(state S, legalActions []Ac) Policy[Ac] {
 			ag := l.CurrentAgentGetter(state)
