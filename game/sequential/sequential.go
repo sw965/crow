@@ -202,7 +202,7 @@ func (l Logic[S, Ac, Ag]) PlayoutHistories(inits []S, actor Actor[S, Ac, Ag], rn
 	n := len(inits)
 	histories := make(Histories[S, Ac, Ag], n)
 	for i := range histories {
-		histories[i] = NewHistory[S, Ac, Ag]()
+		histories[i] = NewHistory[S, Ac, Ag](oneGameCap)
 	}
 	p := len(rngByWorker)
 	errCh := make(chan error, p)
@@ -350,7 +350,6 @@ func (l Logic[S, Ac, Ag]) CrossPlayoutHistories(inits []S, actors []Actor[S, Ac,
 		}
 		historiesByAgPerm[i] = histories
 	}
-
 	return historiesByAgPerm, nil
 }
 
@@ -398,14 +397,35 @@ type History[S any, Ac, Ag comparable] struct {
 	Agents             []Ag
 }
 
-func NewHistory[S any, Ac, Ag comparable]() History[S, Ac, Ag] {
+func NewHistory[S any, Ac, Ag comparable](n int) History[S, Ac, Ag] {
 	h := History[S, Ac, Ag]{
-    	IntermediateStates: make([]S, 0, oneGameCap),
-    	Policies:           make([]Policy[Ac], 0, oneGameCap),
-    	Actions:            make([]Ac, 0, oneGameCap),
-		Agents:             make([]Ag, 0, oneGameCap),
+    	IntermediateStates: make([]S, 0, n),
+    	Policies:           make([]Policy[Ac], 0, n),
+    	Actions:            make([]Ac, 0, n),
+		Agents:             make([]Ag, 0, n),
 	}
 	return h
+}
+
+func (h History[S, Ac, Ag]) Filter(f func(History[S, Ac, Ag], int) bool) History[S, Ac, Ag] {
+	n := len(h.Agents)
+	newHistory := NewHistory[S, Ac, Ag](n)
+	newHistory.FinalState = h.FinalState
+	for i := 0; i < n; i++ {
+		if f(h, i) {
+			newHistory.IntermediateStates = append(newHistory.IntermediateStates, h.IntermediateStates[i])
+			newHistory.Policies = append(newHistory.Policies, h.Policies[i])
+			newHistory.Actions = append(newHistory.Actions, h.Actions[i])
+			newHistory.Agents = append(newHistory.Agents, h.Agents[i])
+		}
+	}
+	return newHistory
+}
+
+func (h History[S, Ac, Ag]) FilterByAgent(agent Ag) History[S, Ac, Ag] {
+	return h.Filter(func(h History[S, Ac, Ag], i int) bool {
+		return agent == h.Agents[i]
+	})
 }
 
 func (h History[S, Ac, Ag]) ToExperiences(logic Logic[S, Ac, Ag]) (Experiences[S, Ac, Ag], error) {
