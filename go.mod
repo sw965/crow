@@ -4,7 +4,7 @@ go 1.24.2
 
 require (
 	github.com/chewxy/math32 v1.11.1
-	github.com/sw965/omw v0.0.0-20250614084158-c4169f16367a
+	github.com/sw965/omw v0.0.0-20250623222927-cf5e0c35a751
 )
 
 require (

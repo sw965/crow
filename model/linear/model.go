@@ -93,30 +93,20 @@ func (m *Model) Accuracy(inputs Inputs, ts [][]float32, p int) (float32, error) 
 	if n != len(ts) {
 		return 0.0, fmt.Errorf("バッチサイズが一致しません。")
 	}
-
 	correctByWorker := make([]int, p)
-	errCh := make(chan error, p)
 
-	worker := func(workerIdx int, dataIdxs []int) {
-		for _, idx := range dataIdxs {
-			input := inputs[idx]
-			t := ts[idx]
-			y := m.Predict(input)
-			if oslices.MaxIndices(y)[0] == oslices.MaxIndices(t)[0] {
-				correctByWorker[workerIdx] += 1
-			}
+	err := parallel.For(p, n, func(workerId, idx int) error {
+		input := inputs[idx]
+		t := ts[idx]
+		y := m.Predict(input)
+		if oslices.MaxIndices(y)[0] == oslices.MaxIndices(t)[0] {
+			correctByWorker[workerId] += 1
 		}
-		errCh <- nil
-	}
+		return nil
+	})
 
-	for workerIdx, dataIdxs := range parallel.DistributeIndicesEvenly(n, p) {
-		go worker(workerIdx, dataIdxs)
-	}
-
-	for i := 0; i < p; i++ {
-		if err := <-errCh; err != nil {
-			return 0.0, err
-		}
+	if err != nil {
+		return 0.0, err
 	}
 
 	totalCorrect := omath.Sum(correctByWorker...)
@@ -134,25 +124,16 @@ func (m Model) ComputeGrad(inputs Inputs, ts [][]float32, lossLayer PredictLossL
 		gradByWorker[i] = m.Parameter.NewGradBufferZerosLike()
 	}
 
-	errCh := make(chan error, p)
-	worker := func(workerIdx int, dataIdxs []int) {
-		for _, idx := range dataIdxs {
-			input := inputs[idx]
-			t := ts[idx]
-			grad := m.BackPropagate(input, t, lossLayer)
-			gradByWorker[workerIdx].Axpy(1.0, grad)
-		}
-		errCh <- nil
-	}
+	err := parallel.For(p, n, func(workerId, idx int) error {
+		input := inputs[idx]
+		t := ts[idx]
+		grad := m.BackPropagate(input, t, lossLayer)
+		gradByWorker[workerId].Axpy(1.0, grad)
+		return nil
+	})
 
-	for workerIdx, dataIdxs := range parallel.DistributeIndicesEvenly(n, p) {
-		go worker(workerIdx, dataIdxs)
-	}
-
-	for i := 0; i < p; i++ {
-		if err := <-errCh; err != nil {
-			return GradBuffer{}, err
-		}
+	if err != nil {
+		return GradBuffer{}, err
 	}
 
 	total := gradByWorker.Total()
@@ -160,17 +141,16 @@ func (m Model) ComputeGrad(inputs Inputs, ts [][]float32, lossLayer PredictLossL
 	return total, nil
 }
 
-func (m Model) EstimateGradBySPSA(c float32, lossFunc func(Model, int) (float32, error), rngs []*rand.Rand) (GradBuffer, error) {
-	p := len(rngs)
+func (m Model) EstimateGradBySPSA(c float32, lossFunc func(Model, int) (float32, error), rngByWorker []*rand.Rand) (GradBuffer, error) {
+	p := len(rngByWorker)
 	gradByWorker := make(GradBuffers, p)
 	for i := 0; i < p; i++ {
 		gradByWorker[i] = m.Parameter.NewGradBufferZerosLike()
 	}
+	n := p
 
-	errCh := make(chan error, p)
-	worker := func(workerIdx int) {
-		rng := rngs[workerIdx]
-
+	err := parallel.For(p, n, func(workerId, _ int) error {
+		rng := rngByWorker[workerId]
 		deltaW := make([]float32, len(m.Parameter.Weight))
 		for i := range deltaW {
 			deltaW[i] = crand.Rademacher(rng)
@@ -192,19 +172,17 @@ func (m Model) EstimateGradBySPSA(c float32, lossFunc func(Model, int) (float32,
 		minusModel := m.Clone()
 		minusModel.Parameter.Axpy(-1.0, perturbation)
 
-		plusLoss, err := lossFunc(plusModel, workerIdx)
+		plusLoss, err := lossFunc(plusModel, workerId)
 		if err != nil {
-			errCh <- err
-			return
+			return err
 		}
 
-		minusLoss, err := lossFunc(minusModel, workerIdx)
+		minusLoss, err := lossFunc(minusModel, workerId)
 		if err != nil {
-			errCh <- err
-			return
+			return err
 		}
 
-		grad := gradByWorker[workerIdx]
+		grad := gradByWorker[workerId]
 		for i := range grad.Weight {
 			grad.Weight[i] += cmath.CentralDifference(plusLoss, minusLoss, perturbation.Weight[i])
 		}
@@ -212,17 +190,11 @@ func (m Model) EstimateGradBySPSA(c float32, lossFunc func(Model, int) (float32,
 		for i := range grad.Bias {
 			grad.Bias[i] += cmath.CentralDifference(plusLoss, minusLoss, perturbation.Bias[i])
 		}
-		errCh <- nil
-	}
+		return nil
+	})
 
-	for i := 0; i < p; i++ {
-		go worker(i)
-	}
-
-	for i := 0; i < p; i++ {
-		if err := <-errCh; err != nil {
-			return GradBuffer{}, err
-		}
+	if err != nil {
+		return GradBuffer{}, err
 	}
 
 	total := gradByWorker.Total()
@@ -236,9 +208,9 @@ func (m Model) PartialDifferentiation(lossFunc func(Model, int) (float32, error)
 	for i := 0; i < p; i++ {
 		gradByWorker[i] = m.Parameter.NewGradBufferZerosLike()
 	}
-	errCh := make(chan error, p)
+	n := p
 
-	worker := func(workerIdx int) {
+	err := parallel.For(p, n, func(workerId, _ int) error {
 		cm := m.Clone()
 		param := cm.Parameter
 
@@ -248,24 +220,22 @@ func (m Model) PartialDifferentiation(lossFunc func(Model, int) (float32, error)
 
 			// プラス方向への微小変化
 			param.Weight[i] = tmp + h
-			plusLoss, err := lossFunc(cm, workerIdx)
+			plusLoss, err := lossFunc(cm, workerId)
 			if err != nil {
-				errCh <- err
-				return
+				return err
 			}
 
 			// マイナス方向への微小変化
 			param.Weight[i] = tmp - h
-			minusLoss, err := lossFunc(cm, workerIdx)
+			minusLoss, err := lossFunc(cm, workerId)
 			if err != nil {
-				errCh <- err
-				return
+				return err
 			}
 
 			// 微分
-			gradByWorker[workerIdx].Weight[i] = cmath.CentralDifference(plusLoss, minusLoss, h)
+			gradByWorker[workerId].Weight[i] = cmath.CentralDifference(plusLoss, minusLoss, h)
 
-			// 微小変化前に戻す
+			// 元に戻す
 			param.Weight[i] = tmp
 		}
 
@@ -275,98 +245,32 @@ func (m Model) PartialDifferentiation(lossFunc func(Model, int) (float32, error)
 
 			// プラス方向への微小変化
 			param.Bias[i] = tmp + h
-			plusLoss, err := lossFunc(cm, workerIdx)
+			plusLoss, err := lossFunc(cm, workerId)
 			if err != nil {
-				errCh <- err
-				return
+				return err
 			}
 
 			// マイナス方向への微小変化
 			param.Bias[i] = tmp - h
-			minusLoss, err := lossFunc(cm, workerIdx)
+			minusLoss, err := lossFunc(cm, workerId)
 			if err != nil {
-				errCh <- err
-				return
+				return err
 			}
 
-			// 微分値を設定
-			gradByWorker[workerIdx].Bias[i] = cmath.CentralDifference(plusLoss, minusLoss, h)
+			// 微分
+			gradByWorker[workerId].Bias[i] = cmath.CentralDifference(plusLoss, minusLoss, h)
 
 			// 元に戻す
-			param.Bias[i] = tmp
+			param.Bias[i] = tmp	
 		}
-		errCh <- nil
-	}
+		return nil
+	})
 
-	for i := 0; i < p; i++ {
-		go worker(i)
-	}
-
-	for i := 0; i < p; i++ {
-		if err := <-errCh; err != nil {
-			return GradBuffer{}, err
-		}
+	if err != nil {
+		return GradBuffer{}, err
 	}
 
 	total := gradByWorker.Total()
 	total.Scal(1.0 / float32(p))
-	return total, nil
-}
-
-func (m Model) EstimateGradByReinforce(inputs Inputs, actionIdxs []int, rewards []float32, p int) (GradBuffer, error) {
-	n := len(inputs)
-	if n != len(actionIdxs) || n != len(rewards) {
-		return GradBuffer{}, fmt.Errorf("バッチサイズが一致しません。")
-	}
-
-	gradByWorker := make(GradBuffers, p)
-	for i := 0; i < p; i++ {
-		gradByWorker[i] = m.Parameter.NewGradBufferZerosLike()
-	}
-
-	errCh := make(chan error, p)
-	worker := func(workerIdx int, dataIdxs []int) {
-		grad := gradByWorker[workerIdx]
-		for _, idx := range dataIdxs {
-			input := inputs[idx]
-			actionIdx := actionIdxs[idx]
-			reward := rewards[idx]
-
-			u := m.U(input)
-			y := m.OutputLayer.Func(u)
-
-			dLdu := make([]float32, len(u))
-			for i := range dLdu {
-				if i == actionIdx {
-					dLdu[i] = -reward * (1.0 - y[i])
-				} else {
-					dLdu[i] = -reward * (-y[i])
-				}
-			}
-
-			for row, entries := range input {
-				for _, entry := range entries {
-					grad.Weight[entry.WeightIndex] += dLdu[row] * entry.X
-				}
-			}
-			for i, idx := range m.BiasIndices {
-				grad.Bias[idx] += dLdu[i]
-			}
-		}
-		errCh <- nil
-	}
-
-	for workerIdx, dataIdxs := range parallel.DistributeIndicesEvenly(n, p) {
-		go worker(workerIdx, dataIdxs)
-	}
-
-	for i := 0; i < p; i++ {
-		if err := <-errCh; err != nil {
-			return GradBuffer{}, err
-		}
-	}
-
-	total := gradByWorker.Total()
-	total.Scal(1.0 / float32(n))
 	return total, nil
 }

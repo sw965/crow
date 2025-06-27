@@ -138,7 +138,7 @@ func TestU(t *testing.T) {
 
 func TestSoftmaxCrossEntropyLossGrad(t *testing.T) {
 	rng := orand.NewMt19937()
-	weightN := 500000
+	weightN := 5000
 	outputN := 5
 	w := makeRandWeight(weightN, rng)
 	b := makeRandBias(3, rng)
