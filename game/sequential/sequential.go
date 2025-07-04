@@ -5,8 +5,8 @@ import (
 	"sort"
 	"github.com/sw965/omw/parallel"
 	"math/rand"
-	orand "github.com/sw965/omw/math/rand"
-	oslices "github.com/sw965/omw/slices"
+	omwrand "github.com/sw965/omw/math/rand"
+	omwslices "github.com/sw965/omw/slices"
 )
 
 type LegalActionsProvider[S any, Ac comparable] func(S) []Ac
@@ -152,14 +152,16 @@ func (l Logic[S, Ac, Ag]) Playouts(inits []S, actor Actor[S, Ac, Ag], rngByWorke
 
 			legalActions := l.LegalActionsProvider(state)
 			policy := actor.PolicyProvider(state, legalActions)
-
 			legalPolicy := Policy[Ac]{}
-			for _, a := range legalActions {
+
+			ok := omwslices.AllFunc(legalActions, func(a Ac) bool {
 				p, ok := policy[a]
-				if !ok {
-					return fmt.Errorf("Policyは、全ての合法行動を含む必要があります。")
-				}
 				legalPolicy[a] = p
+				return ok
+			})
+
+			if !ok {
+				return fmt.Errorf("policyには全ての合法行動を含む必要があります。")
 			}
 
 			agent := l.CurrentAgentGetter(state)
@@ -185,15 +187,16 @@ func (l Logic[S, Ac, Ag]) CrossPlayouts(inits []S, actors []Actor[S, Ac, Ag], rn
 		return nil, fmt.Errorf("len(actors) != len(Logic.Agents)")
 	}
 
-	actorPerms := oslices.Permutations[[]Actor[S, Ac, Ag]](actors, agentsN)
+	actorPerms := omwslices.Permutations[[]Actor[S, Ac, Ag]](actors, agentsN)
 	permsN := len(actorPerms)
 	finalsByAgPerm := make([][]S, permsN)
 
-	for i, actorPerm := range actorPerms {
+	for permsI, actorPerm := range actorPerms {
 		ppByAgent := map[Ag]PolicyProvider[S, Ac]{}
 		selectorByAgent := map[Ag]Selector[Ac, Ag]{}
-		for j, actor := range actorPerm {
-			agent := l.Agents[j]
+
+		for agentsI, agent := range l.Agents {
+			actor := actorPerm[agentsI]
 			ppByAgent[agent] = actor.PolicyProvider
 			selectorByAgent[agent] = actor.Selector
 		}
@@ -216,7 +219,7 @@ func (l Logic[S, Ac, Ag]) CrossPlayouts(inits []S, actors []Actor[S, Ac, Ag], rn
 		if err != nil {
 			return nil, err
 		}
-		finalsByAgPerm[i] = finals
+		finalsByAgPerm[permsI] = finals
 	}
 	return finalsByAgPerm, nil
 }
@@ -244,7 +247,7 @@ func WeightedRandomSelector[Ac, Ag comparable](policy Policy[Ac], agent Ag, rng 
 		actions = append(actions, a)
 		percents = append(percents, p)
 	}
-	idx, err := orand.IntByWeight(percents, rng)
+	idx, err := omwrand.IntByWeight(percents, rng)
 	if err != nil {
 		var a Ac
 		return a, err
