@@ -2,11 +2,11 @@ package linear
 
 import (
 	"fmt"
-	cmath "github.com/sw965/crow/math"
-	crand "github.com/sw965/crow/math/rand"
-	omath "github.com/sw965/omw/math"
+	cmath "github.com/sw965/crow/mathx"
+	"github.com/sw965/crow/mathx/randx"
+	omath "github.com/sw965/omw/mathx"
 	"github.com/sw965/omw/parallel"
-	oslices "github.com/sw965/omw/slices"
+	"github.com/sw965/omw/slicesx"
 	"math/rand"
 )
 
@@ -95,10 +95,13 @@ func (m *Model) Accuracy(inputs Inputs, ts [][]float32, p int) (float32, error) 
 	}
 	correctByWorker := make([]int, p)
 
-	err := parallel.For(p, n, func(workerId, idx int) error {
+	err := parallel.For(n, p, func(workerId, idx int) error {
 		input := inputs[idx]
 		t := ts[idx]
 		y := m.Predict(input)
+		for i := range y {
+			t[i]
+		}
 		if oslices.MaxIndices(y)[0] == oslices.MaxIndices(t)[0] {
 			correctByWorker[workerId] += 1
 		}
@@ -109,7 +112,10 @@ func (m *Model) Accuracy(inputs Inputs, ts [][]float32, p int) (float32, error) 
 		return 0.0, err
 	}
 
-	totalCorrect := omath.Sum(correctByWorker...)
+	totalCorrect := 0.0
+	for _, v := range correctByWorker {
+		totalCorrect += v
+	}
 	return float32(totalCorrect) / float32(n), nil
 }
 
@@ -124,7 +130,7 @@ func (m Model) ComputeGrad(inputs Inputs, ts [][]float32, lossLayer PredictLossL
 		gradByWorker[i] = m.Parameter.NewGradBufferZerosLike()
 	}
 
-	err := parallel.For(p, n, func(workerId, idx int) error {
+	err := parallel.For(n, p, func(workerId, idx int) error {
 		input := inputs[idx]
 		t := ts[idx]
 		grad := m.BackPropagate(input, t, lossLayer)

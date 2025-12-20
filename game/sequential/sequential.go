@@ -1,51 +1,107 @@
+// Package sequential provides utilities to run game playouts in a sequential-game setting.
+// Policy consistency validation is centralized in Engine.Playouts.
+//
+// Package sequential は逐次（ターン制）ゲームのプレイアウト実行ユーティリティを提供します。
+// Policy の整合性チェックは Engine.Playouts に集約されています。
 package sequential
 
 import (
+	"errors"
 	"fmt"
-	"sort"
+	"github.com/sw965/omw/mathx/randx"
 	"github.com/sw965/omw/parallel"
-	"math/rand"
-	omwrand "github.com/sw965/omw/math/rand"
-	omwslices "github.com/sw965/omw/slices"
+	"github.com/sw965/omw/slicesx"
+	"maps"
+	"math"
+	"math/rand/v2"
+	"slices"
+	"sort"
 )
 
-type LegalActionsProvider[S any, Ac comparable] func(S) []Ac
-type Transitioner[S any, Ac comparable] func(S, Ac) (S, error)
-type Comparator[S any] func(S, S) bool
-type CurrentAgentGetter[S any, Ag comparable] func(S) Ag
+var (
+	ErrEmptySlice     = errors.New("空スライスエラー")
+
+    ErrNilLogicFunc = errors.New("Logicエラー: フィールドの関数がnilです")
+    ErrNilEngineFunc = errors.New("Engineエラー: フィールドの関数がnilです")
+
+	ErrDuplicateAgent = errors.New("エージェント重複エラー")
+	ErrAgentNotFound = errors.New("Agentエラー: Agentsに存在しません")
+
+	ErrInvalidRankValue  = errors.New("順位エラー: 1以上の正の整数である必要があります")
+	ErrMinRankNotOne     = errors.New("最小順位エラー: 1から始まる必要があります")
+	ErrRankNotContiguous = errors.New("順位不連続エラー: 順位が連続していません")
+
+	ErrEmptyLegalMoves     = errors.New("legalMovesエラー: 要素数が0です")
+	ErrNotUniqueLegalMoves = errors.New("legalMovesエラー: 重複した要素があります")
+
+	ErrPolicySizeMismatch     = errors.New("Policyエラー: legalMoves と同じ要素数である必要があります")
+	ErrPolicyMissingLegalMove = errors.New("Policyエラー: 全ての合法手を含む必要があります")
+	ErrPolicyBadValue         = errors.New("Policyエラー: 値が不正です（負数/NaN/Inf）")
+	ErrPolicyZeroSum          = errors.New("Policyエラー: 合計値が0です")
+
+	ErrNilActorFunc = errors.New("Actorエラー: フィールドの関数がnilです")
+)
+
+type LegalMovesFunc[S any, M comparable] func(S) []M
+type MoveFunc[S any, M comparable] func(S, M) (S, error)
+type EqualFunc[S any] func(S, S) bool
+type CurrentAgentFunc[S any, A comparable] func(S) A
+
+type Logic[S any, M, A comparable] struct {
+	LegalMovesFunc   LegalMovesFunc[S, M]
+	MoveFunc         MoveFunc[S, M]
+	EqualFunc        EqualFunc[S]
+	CurrentAgentFunc CurrentAgentFunc[S, A]
+}
+
+func (l Logic[S, M, A]) Validate() error {
+    if l.LegalMovesFunc == nil {
+        return fmt.Errorf("%w: LegalMovesFunc", ErrNilLogicFunc)
+    }
+    if l.MoveFunc == nil {
+        return fmt.Errorf("%w: MoveFunc", ErrNilLogicFunc)
+    }
+    if l.EqualFunc == nil {
+        return fmt.Errorf("%w: EqualFunc", ErrNilLogicFunc)
+    }
+    if l.CurrentAgentFunc == nil {
+        return fmt.Errorf("%w: CurrentAgentFunc", ErrNilLogicFunc)
+    }
+    return nil
+}
 
 // ゲームが終了していない場合は、戻り値は空あるいはnilである事を想定。
-type PlacementByAgent[Ag comparable] map[Ag]int
+type RankByAgent[A comparable] map[A]int
 
-func NewPlacementByAgent[Ag comparable](agentsByPlacement [][]Ag) (PlacementByAgent[Ag], error) {
-	placements := PlacementByAgent[Ag]{}
+func NewRankByAgent[A comparable](agentsPerRank [][]A) (RankByAgent[A], error) {
+	ranks := RankByAgent[A]{}
 	rank := 1
-	for _, agents := range agentsByPlacement {
+	for _, agents := range agentsPerRank {
 		if len(agents) == 0 {
-			return nil, fmt.Errorf("順位 %d に対応するエージェントが存在しません", rank)
+			return nil, fmt.Errorf("順位 %d に対応するエージェントが存在しません: %w", rank, ErrEmptySlice)
 		}
 
 		for _, agent := range agents {
-			if _, ok := placements[agent]; ok {
-				return nil, fmt.Errorf("エージェント %v が複数回出現しています", agent)
+			if _, ok := ranks[agent]; ok {
+				return nil, fmt.Errorf("エージェント %v が複数回出現しています: %w", agent, ErrDuplicateAgent)
 			}
-			placements[agent] = rank
+			ranks[agent] = rank
 		}
 		rank += len(agents)
 	}
-	return placements, nil
+	return ranks, nil
 }
 
-func (ps PlacementByAgent[Ag]) Validate() error {
-	n := len(ps)
+func (r RankByAgent[A]) Validate() error {
+	n := len(r)
 	if n == 0 {
 		return nil
 	}
 
 	ranks := make([]int, 0, n)
-	for _, rank := range ps {
+	for _, rank := range r {
 		if rank < 1 {
-			return fmt.Errorf("順位は1以上の正の整数でなければなりません")
+			return fmt.Errorf("%w", ErrInvalidRankValue)
 		}
 		ranks = append(ranks, rank)
 	}
@@ -53,7 +109,7 @@ func (ps PlacementByAgent[Ag]) Validate() error {
 
 	current := ranks[0]
 	if current != 1 {
-		return fmt.Errorf("最小順位が1ではありません: 最小順位 = %d", current)
+		return fmt.Errorf("%w: 入力された最小順位: %d", ErrMinRankNotOne, current)
 	}
 	expected := current + 1
 
@@ -61,87 +117,114 @@ func (ps PlacementByAgent[Ag]) Validate() error {
 		// 同順の場合
 		if rank == current {
 			expected += 1
-		// 順位が切り替わった場合
+			// 順位が切り替わった場合
 		} else if rank == expected {
 			current = rank
 			expected = rank + 1
 		} else {
-			return fmt.Errorf("順位が連続していません")
+			return fmt.Errorf("%w", ErrRankNotContiguous)
 		}
 	}
 	return nil
 }
 
-type PlacementsJudger[S any, Ag comparable] func(S) (PlacementByAgent[Ag], error)
-type ResultScoreByAgent[Ag comparable] map[Ag]float32
+type RankByAgentFunc[S any, A comparable] func(S) (RankByAgent[A], error)
+type ResultScoreByAgent[A comparable] map[A]float32
+type ResultScoreByAgentFunc[A comparable] func(RankByAgent[A]) (ResultScoreByAgent[A], error)
 
-type ResultScoresEvaluator[Ag comparable] func(PlacementByAgent[Ag]) (ResultScoreByAgent[Ag], error)
-
-type Logic[S any, Ac, Ag comparable] struct {
-	LegalActionsProvider  LegalActionsProvider[S, Ac]
-	Transitioner          Transitioner[S, Ac]
-	Comparator            Comparator[S]
-	CurrentAgentGetter    CurrentAgentGetter[S, Ag]
-	PlacementsJudger      PlacementsJudger[S, Ag]
-	ResultScoresEvaluator ResultScoresEvaluator[Ag]
-	Agents                []Ag
+type Engine[S any, M, A comparable] struct {
+	Logic                  Logic[S, M, A]
+	RankByAgentFunc        RankByAgentFunc[S, A]
+	ResultScoreByAgentFunc ResultScoreByAgentFunc[A]
+	Agents                 []A
 }
 
-func (l Logic[S, Ac, Ag]) IsEnd(state S) (bool, error) {
-	placements, err := l.PlacementsJudger(state)
-	return len(placements) != 0, err
+func (e Engine[S, M, A]) Validate() error {
+    if err := e.Logic.Validate(); err != nil {
+        return err
+    }
+
+    if e.RankByAgentFunc == nil {
+        return fmt.Errorf("%w: RankByAgentFunc", ErrNilEngineFunc)
+    }
+
+    if e.ResultScoreByAgentFunc == nil {
+        return fmt.Errorf("%w: ResultScoreByAgentFunc", ErrNilEngineFunc)
+    }
+
+    if len(e.Agents) == 0 {
+		return fmt.Errorf("%w: Engine.Agents が空です", ErrEmptySlice)
+	}
+    return nil
 }
 
-func (l *Logic[S, Ac, Ag]) SetStandardResultScoresEvaluator() {
-	l.ResultScoresEvaluator = func(placements PlacementByAgent[Ag]) (ResultScoreByAgent[Ag], error) {
-		if err := placements.Validate(); err != nil {
-			return ResultScoreByAgent[Ag]{} , err
+func (e Engine[S, M, A]) IsEnd(state S) (bool, error) {
+	rankByAgent, err := e.RankByAgentFunc(state)
+	return len(rankByAgent) != 0, err
+}
+
+func (e *Engine[S, M, A]) SetStandardResultScoreByAgentFunc() {
+	e.ResultScoreByAgentFunc = func(ranks RankByAgent[A]) (ResultScoreByAgent[A], error) {
+		if err := ranks.Validate(); err != nil {
+			return nil, err
 		}
 
-		n := len(placements)
-		counts := map[int]int{}
-		for _, rank := range placements {
-			if _, ok := counts[rank]; !ok {
-				counts[rank] = 1
-			} else {
-				counts[rank] += 1
-			}
-		}
+		n := len(ranks)
+		scores := map[A]float32{}
 
-		scores := ResultScoreByAgent[Ag]{}
+		// エージェントが1人だけなら 1.0 固定
 		if n == 1 {
-            for agent := range placements {
-                scores[agent] = 1.0
-            }
-            return scores, nil
-        }
+			for agent := range ranks {
+				scores[agent] = 1.0
+			}
+			return scores, nil
+		}
 
-		for agent, rank := range placements {
-			score := 1.0 - ((float32(rank) - 1.0) / (float32(n) - 1.0))
-			// 同順の人数で割る
-			scores[agent] = score / float32(counts[rank])
+		counts := map[int]int{}
+		for _, rank := range ranks {
+			counts[rank]++
+		}
+
+		den := float32(n - 1)
+
+		tieScore := func(r, k int) float32 {
+			return 1.0 - float32(2*r+k-3)/(2.0*den)
+		}
+
+		for agent, r := range ranks {
+			k := counts[r]
+			scores[agent] = tieScore(r, k)
 		}
 		return scores, nil
 	}
 }
 
-func (l Logic[S, Ac, Ag]) EvaluateResultScoreByAgent(state S) (ResultScoreByAgent[Ag], error) {
-	placements, err := l.PlacementsJudger(state)
+func (e Engine[S, M, A]) EvaluateResultScoreByAgent(state S) (map[A]float32, error) {
+	rankByAgent, err := e.RankByAgentFunc(state)
 	if err != nil {
-		return ResultScoreByAgent[Ag]{}, err
+		return nil, err
 	}
-	return l.ResultScoresEvaluator(placements)
+	return e.ResultScoreByAgentFunc(rankByAgent)
 }
 
-func (l Logic[S, Ac, Ag]) Playouts(inits []S, actor Actor[S, Ac, Ag], rngByWorker []*rand.Rand) ([]S, error) {
+func (e Engine[S, M, A]) Playouts(inits []S, actor Actor[S, M, A], rngs []*rand.Rand) ([]S, error) {
+	if err := e.Validate(); err != nil {
+		return nil, err
+	}
+
+	if err := actor.Validate(); err != nil {
+		return nil, err
+	}
+
 	n := len(inits)
-	p := len(rngByWorker)
+	p := len(rngs)
 	finals := make([]S, n)
-	err := parallel.For(p, n, func(workerId, idx int) error {
-		rng := rngByWorker[workerId]
+
+	err := parallel.For(n, p, func(workerId, idx int) error {
+		rng := rngs[workerId]
 		state := inits[idx]
 		for {
-			isEnd, err := l.IsEnd(state)
+			isEnd, err := e.IsEnd(state)
 			if err != nil {
 				return err
 			}
@@ -150,27 +233,24 @@ func (l Logic[S, Ac, Ag]) Playouts(inits []S, actor Actor[S, Ac, Ag], rngByWorke
 				break
 			}
 
-			legalActions := l.LegalActionsProvider(state)
-			policy := actor.PolicyProvider(state, legalActions)
-			legalPolicy := Policy[Ac]{}
-
-			ok := omwslices.AllFunc(legalActions, func(a Ac) bool {
-				p, ok := policy[a]
-				legalPolicy[a] = p
-				return ok
-			})
-
-			if !ok {
-				return fmt.Errorf("policyには全ての合法行動を含む必要があります。")
+			legalMoves := e.Logic.LegalMovesFunc(state)
+			// policy.ValidateForLegalMovesでもlegalMovesの空チェックをするが、PolicyFuncを安全に呼ぶ為に、ここでもチェックする
+			if len(legalMoves) == 0 {
+				return ErrEmptyLegalMoves
 			}
+			policy := actor.PolicyFunc(state, legalMoves)
 
-			agent := l.CurrentAgentGetter(state)
-			action, err := actor.Selector(legalPolicy, agent, rng)
+			// legalMovesがユニークならば、policyは合法手のみを持つ事が保障される
+			// 一手毎に、legalMovesがユニークであるかをチェックするのは、計算コストの観点から見送る
+			err = policy.ValidateForLegalMoves(legalMoves)
 			if err != nil {
 				return err
 			}
 
-			state, err = l.Transitioner(state, action)
+			agent := e.Logic.CurrentAgentFunc(state)
+			move := actor.SelectFunc(policy, agent, rng)
+
+			state, err = e.Logic.MoveFunc(state, move)
 			if err != nil {
 				return err
 			}
@@ -181,81 +261,161 @@ func (l Logic[S, Ac, Ag]) Playouts(inits []S, actor Actor[S, Ac, Ag], rngByWorke
 	return finals, err
 }
 
-func (l Logic[S, Ac, Ag]) CrossPlayouts(inits []S, actors []Actor[S, Ac, Ag], rngByWorker []*rand.Rand) ([][]S, error) {
-	agentsN := len(l.Agents)
-	if len(actors) != agentsN {
-		return nil, fmt.Errorf("len(actors) != len(Logic.Agents)")
+func (e Engine[S, M, A]) CrossPlayouts(inits []S, actors []Actor[S, M, A], rngs []*rand.Rand) ([]CrossPlayoutResult[S, M, A], error) {
+	agentsN := len(e.Agents)
+	if len(actors) < agentsN {
+		return nil, fmt.Errorf("insufficient actors: have %d, need %d to fill all agent roles", len(actors), agentsN)
 	}
 
-	actorPerms := omwslices.Permutations[[]Actor[S, Ac, Ag]](actors, agentsN)
+	actorPermsSeq := slicesx.Permutations[[]Actor[S, M, A]](actors, agentsN)
+	actorPerms := slices.Collect(actorPermsSeq)
+
 	permsN := len(actorPerms)
-	finalsByAgPerm := make([][]S, permsN)
+	results := make([]CrossPlayoutResult[S, M, A], permsN)
 
-	for permsI, actorPerm := range actorPerms {
-		ppByAgent := map[Ag]PolicyProvider[S, Ac]{}
-		selectorByAgent := map[Ag]Selector[Ac, Ag]{}
+	for pi, actorPerm := range actorPerms {
+		actorByAgent := map[A]Actor[S, M, A]{}
+		policyFuncByAgent := map[A]PolicyFunc[S, M]{}
+		selectFuncByAgent := map[A]SelectFunc[M, A]{}
 
-		for agentsI, agent := range l.Agents {
-			actor := actorPerm[agentsI]
-			ppByAgent[agent] = actor.PolicyProvider
-			selectorByAgent[agent] = actor.Selector
+		for ai, agent := range e.Agents {
+			actor := actorPerm[ai]
+			actorByAgent[agent] = actor
+			policyFuncByAgent[agent] = actor.PolicyFunc
+			selectFuncByAgent[agent] = actor.SelectFunc
 		}
 
-		pp := func(state S, legalActions []Ac) Policy[Ac] {
-			ag := l.CurrentAgentGetter(state)
-			return ppByAgent[ag](state, legalActions)
+		policyFunc := func(state S, legalMoves []M) Policy[M] {
+			agent := e.Logic.CurrentAgentFunc(state)
+			return policyFuncByAgent[agent](state, legalMoves)
 		}
 
-		selector := func(p Policy[Ac], ag Ag, rng *rand.Rand) (Ac, error) {
-			return selectorByAgent[ag](p, ag, rng)
+		selectFunc := func(p Policy[M], agent A, rng *rand.Rand) M {
+			return selectFuncByAgent[agent](p, agent, rng)
 		}
 
-		newActor := Actor[S, Ac, Ag]{
-			PolicyProvider:pp,
-			Selector:selector,
+		newActor := Actor[S, M, A]{
+			PolicyFunc: policyFunc,
+			SelectFunc: selectFunc,
 		}
 
-		finals, err := l.Playouts(inits, newActor, rngByWorker)
+		finals, err := e.Playouts(inits, newActor, rngs)
 		if err != nil {
 			return nil, err
 		}
-		finalsByAgPerm[permsI] = finals
+
+		results[pi] = CrossPlayoutResult[S, M, A]{
+			ActorByAgent: actorByAgent,
+			Finals:       finals,
+		}
 	}
-	return finalsByAgPerm, nil
+	return results, nil
 }
 
-type Policy[Ac comparable] map[Ac]float32
-type PolicyProvider[S any, Ac comparable] func(S, []Ac) Policy[Ac]
+type Policy[M comparable] map[M]float32
 
-func UniformLegalPolicyProvider[S any, Ac comparable](state S, legalActions []Ac) Policy[Ac] {
-	n := len(legalActions)
+func (p Policy[M]) ValidateForLegalMoves(legalMoves []M) error {
+	if len(legalMoves) == 0 {
+		return ErrEmptyLegalMoves
+	}
+	if len(p) != len(legalMoves) {
+		return fmt.Errorf("%w: policy=%d legalMoves=%d", ErrPolicySizeMismatch, len(p), len(legalMoves))
+	}
+
+	var sum float32
+	for i, m := range legalMoves {
+		v, ok := p[m]
+		if !ok {
+			return fmt.Errorf("%w: idx=%d move=%v", ErrPolicyMissingLegalMove, i, m)
+		}
+
+		f64 := float64(v)
+		if v < 0 || math.IsNaN(f64) || math.IsInf(f64, 0) {
+			return fmt.Errorf("%w: idx=%d move=%v value=%v", ErrPolicyBadValue, i, m, v)
+		}
+		sum += v
+	}
+
+	if sum == 0 {
+		return ErrPolicyZeroSum
+	}
+	return nil
+}
+
+type PolicyFunc[S any, M comparable] func(S, []M) Policy[M]
+
+func UniformPolicyFunc[S any, M comparable](state S, legalMoves []M) Policy[M] {
+	n := len(legalMoves)
+	if n == 0 {
+		panic("BUG: len(legalMoves) == 0 である為、UniformPolicyFuncが実行出来ません")
+	}
+
 	p := 1.0 / float32(n)
-	m := Policy[Ac]{}
-	for _, a := range legalActions {
-		m[a] = p
+	policy := Policy[M]{}
+	for _, a := range legalMoves {
+		policy[a] = p
 	}
-	return m
+	return policy
 }
 
-type Selector[Ac, Ag comparable] func(Policy[Ac], Ag, *rand.Rand) (Ac, error)
+type SelectFunc[M, A comparable] func(Policy[M], A, *rand.Rand) M
 
-func WeightedRandomSelector[Ac, Ag comparable](policy Policy[Ac], agent Ag, rng *rand.Rand) (Ac, error) {
-	n := len(policy)
-	actions := make([]Ac, 0, n)
-	percents := make([]float32, 0, n)
-	for a, p := range policy {
-		actions = append(actions, a)
-		percents = append(percents, p)
+func MaxSelectFunc[M, A comparable](policy Policy[M], agent A, rng *rand.Rand) M {
+	keys := slices.Collect(maps.Keys(policy))
+	max := policy[keys[0]]
+	moves := []M{keys[0]}
+
+	for _, k := range keys[1:] {
+		v := policy[k]
+		switch {
+		case v > max:
+			max = v
+			moves = []M{k}
+		case v == max:
+			moves = append(moves, k)
+		}
 	}
-	idx, err := omwrand.IntByWeight(percents, rng)
+
+	move, err := randx.Choice(moves, rng)
 	if err != nil {
-		var a Ac
-		return a, err
+		panic(fmt.Sprintf("BUG: %v", err))
 	}
-	return actions[idx], nil
+	return move
 }
 
-type Actor[S any, Ac, Ag comparable] struct {
-	PolicyProvider PolicyProvider[S, Ac]
-	Selector       Selector[Ac, Ag]
+func WeightedRandomSelectFunc[M, A comparable](policy Policy[M], agent A, rng *rand.Rand) M {
+	n := len(policy)
+	moves := make([]M, 0, n)
+	ws := make([]float32, 0, n)
+	for m, p := range policy {
+		moves = append(moves, m)
+		ws = append(ws, p)
+	}
+
+	idx, err := randx.IntByWeight(ws, rng)
+	if err != nil {
+		panic(fmt.Sprintf("BUG: %v", err))
+	}
+	return moves[idx]
+}
+
+type Actor[S any, M, A comparable] struct {
+	Name       string
+	PolicyFunc PolicyFunc[S, M]
+	SelectFunc SelectFunc[M, A]
+}
+
+func (a Actor[S, M, A]) Validate() error {
+	if a.PolicyFunc == nil {
+		return fmt.Errorf("%w: PolicyFunc", ErrNilActorFunc)
+	}
+	if a.SelectFunc == nil {
+		return fmt.Errorf("%w: SelectFunc", ErrNilActorFunc)
+	}
+	return nil
+}
+
+type CrossPlayoutResult[S any, M, A comparable] struct {
+	ActorByAgent map[A]Actor[S, M, A]
+	Finals       []S
 }

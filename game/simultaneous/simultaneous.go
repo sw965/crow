@@ -4,7 +4,7 @@ import (
     "fmt"
     "sort"
     "math/rand"
-    omwrand "github.com/sw965/omw/math/rand"
+    "github.com/sw965/omw/mathx/randx"
 )
 
 type LegalActionTableProvider[S any, Ass ~[]As, As ~[]A, A comparable] func(*S) Ass
@@ -166,7 +166,8 @@ func (l *Logic[S, Ass, As, A]) NewRandActionPlayer(r *rand.Rand) Player[S, Ass, 
     return func(state *S, legalActionTable Ass) (As, error) {
         jointAction := make(As, len(legalActionTable))
         for i, actions := range legalActionTable {
-            jointAction[i] = omwrand.Choice(actions, r)
+            idx := r.IntN(len(actions))
+            jointAction[i] = actions[idx]
         }
         return jointAction, nil
     }

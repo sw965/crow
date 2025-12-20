@@ -5,7 +5,7 @@ import (
 	game "github.com/sw965/crow/game/simultaneous"
 	"github.com/sw965/crow/pucb"
 	"math/rand"
-	orand "github.com/sw965/omw/math/rand"
+	"github.com/sw965/omw/mathx/randx"
 )
 
 // https://www.terry-u16.net/entry/decoupled-uct
@@ -130,7 +130,11 @@ func (e *Engine[S, Ass, As, A]) SelectExpansionBackward(node *Node[S, Ass, As, A
 		jointAction := make(As, len(node.UCBManagers))
 		for playerI, m := range node.UCBManagers {
 			ks := m.MaxKeys()
-			jointAction[playerI] = orand.Choice(ks, r)
+			k, err := randx.Choice(ks, r)
+			if err != nil {
+				return 0, err
+			}
+			jointAction[playerI] = k
 		}
 
 		selections = append(selections, selectionInfo[S, Ass, As, A]{node: node, jointAction: jointAction})

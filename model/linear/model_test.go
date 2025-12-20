@@ -3,7 +3,7 @@ package linear_test
 import (
 	"fmt"
 	"github.com/sw965/crow/model/linear"
-	orand "github.com/sw965/omw/math/rand"
+	"github.com/sw965/omw/mathx/randx"
 	"math/rand"
 	"runtime"
 	"testing"
@@ -137,7 +137,7 @@ func TestU(t *testing.T) {
 }
 
 func TestSoftmaxCrossEntropyLossGrad(t *testing.T) {
-	rng := orand.NewMt19937()
+	rng := randx.NewPCGFromGlobalSeed()
 	weightN := 5000
 	outputN := 5
 	w := makeRandWeight(weightN, rng)
@@ -184,7 +184,7 @@ func TestSoftmaxCrossEntropyLossGrad(t *testing.T) {
 
 	rngs := make([]*rand.Rand, p)
 	for i := 0; i < p; i++ {
-		rngs[i] = orand.NewMt19937()
+		rngs[i] = randx.NewPCGFromGlobalSeed()
 	}
 
 	spsaTrialNum := 1280

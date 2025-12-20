@@ -5,7 +5,7 @@ import (
 	game "github.com/sw965/crow/game/simultaneous"
 	"github.com/sw965/crow/mcts/dpuct"
 	"github.com/sw965/crow/pucb"
-	omwrand "github.com/sw965/omw/math/rand"
+	"github.com/sw965/omw/mathx/randx"
 	"math"
 	"testing"
 )
@@ -30,7 +30,7 @@ type RockPaperScissors struct {
 }
 
 func TestDUCT(t *testing.T) {
-	r := orand.NewMt19937()
+	r := randx.NewPCGFromGlobalSeed()
 
 	legalActionTableProvider := func(rps *RockPaperScissors) HandTable {
 		return HandTable{HANDS, Hands{ROCK, PAPER, SCISSORS}}

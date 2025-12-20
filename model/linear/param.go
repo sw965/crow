@@ -3,7 +3,7 @@ package linear
 import (
 	"fmt"
 	"slices"
-	ojson "github.com/sw965/omw/encoding/json"
+	"github.com/sw965/omw/encoding/jsonx"
 )
 
 type Parameter struct {
@@ -12,11 +12,11 @@ type Parameter struct {
 }
 
 func LoadParameterJSON(path string) (Parameter, error) {
-	return ojson.Load[Parameter](path)
+	return jsonx.Load[Parameter](path)
 }
 
 func (p Parameter) SaveJSON(path string) error {
-	err := ojson.Save[Parameter](&p, path)
+	err := jsonx.Save[Parameter](&p, path)
 	return err
 }
 

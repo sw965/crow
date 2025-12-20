@@ -2,7 +2,6 @@ package linear
 
 import (
 	"github.com/chewxy/math32"
-	omath "github.com/sw965/omw/math"
 	"slices"
 )
 
@@ -62,8 +61,8 @@ func NewSoftmaxLayer(minProb, maxProb float32) OutputLayer {
     f := func(u []float32) []float32 {
         n := len(u)
 
-        // ---- 1. 通常の softmax 計算（オーバーフロー対策あり） ----
-        maxU := omath.Max(u...)
+        // ---- 通常の softmax 計算（オーバーフロー対策あり） ----
+        maxU := slices.Max(u)
         expU := make([]float32, n)
         sumExpU := float32(0.0)
         for i := range u {
@@ -134,8 +133,6 @@ func NewCrossEntropyLossLayer() PredictLossLayer {
 	f := func(y, t []float32) float32 {
 		loss := float32(0.0)
 		for i := range y {
-			// ye := omath.Max(y[i], 0.0001)
-			// ye = omath.Min(ye, 0.9999)
 			loss += -t[i] * math32.Log(y[i]+eps)
 		}
 		return loss
