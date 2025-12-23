@@ -6,6 +6,7 @@
 package sequential
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"github.com/sw965/omw/mathx/randx"
@@ -14,18 +15,20 @@ import (
 	"maps"
 	"math"
 	"math/rand/v2"
+	"os"
 	"slices"
 	"sort"
+	"strconv"
 )
 
 var (
-	ErrEmptySlice     = errors.New("空スライスエラー")
+	ErrEmptySlice = errors.New("空スライスエラー")
 
-    ErrNilLogicFunc = errors.New("Logicエラー: フィールドの関数がnilです")
-    ErrNilEngineFunc = errors.New("Engineエラー: フィールドの関数がnilです")
+	ErrNilLogicFunc  = errors.New("Logicエラー: フィールドの関数がnilです")
+	ErrNilEngineFunc = errors.New("Engineエラー: フィールドの関数がnilです")
 
 	ErrDuplicateAgent = errors.New("エージェント重複エラー")
-	ErrAgentNotFound = errors.New("Agentエラー: Agentsに存在しません")
+	ErrAgentNotFound  = errors.New("Agentエラー: Agentsに存在しません")
 
 	ErrInvalidRankValue  = errors.New("順位エラー: 1以上の正の整数である必要があります")
 	ErrMinRankNotOne     = errors.New("最小順位エラー: 1から始まる必要があります")
@@ -55,19 +58,19 @@ type Logic[S any, M, A comparable] struct {
 }
 
 func (l Logic[S, M, A]) Validate() error {
-    if l.LegalMovesFunc == nil {
-        return fmt.Errorf("%w: LegalMovesFunc", ErrNilLogicFunc)
-    }
-    if l.MoveFunc == nil {
-        return fmt.Errorf("%w: MoveFunc", ErrNilLogicFunc)
-    }
-    if l.EqualFunc == nil {
-        return fmt.Errorf("%w: EqualFunc", ErrNilLogicFunc)
-    }
-    if l.CurrentAgentFunc == nil {
-        return fmt.Errorf("%w: CurrentAgentFunc", ErrNilLogicFunc)
-    }
-    return nil
+	if l.LegalMovesFunc == nil {
+		return fmt.Errorf("%w: LegalMovesFunc", ErrNilLogicFunc)
+	}
+	if l.MoveFunc == nil {
+		return fmt.Errorf("%w: MoveFunc", ErrNilLogicFunc)
+	}
+	if l.EqualFunc == nil {
+		return fmt.Errorf("%w: EqualFunc", ErrNilLogicFunc)
+	}
+	if l.CurrentAgentFunc == nil {
+		return fmt.Errorf("%w: CurrentAgentFunc", ErrNilLogicFunc)
+	}
+	return nil
 }
 
 // ゲームが終了していない場合は、戻り値は空あるいはnilである事を想定。
@@ -140,22 +143,22 @@ type Engine[S any, M, A comparable] struct {
 }
 
 func (e Engine[S, M, A]) Validate() error {
-    if err := e.Logic.Validate(); err != nil {
-        return err
-    }
+	if err := e.Logic.Validate(); err != nil {
+		return err
+	}
 
-    if e.RankByAgentFunc == nil {
-        return fmt.Errorf("%w: RankByAgentFunc", ErrNilEngineFunc)
-    }
+	if e.RankByAgentFunc == nil {
+		return fmt.Errorf("%w: RankByAgentFunc", ErrNilEngineFunc)
+	}
 
-    if e.ResultScoreByAgentFunc == nil {
-        return fmt.Errorf("%w: ResultScoreByAgentFunc", ErrNilEngineFunc)
-    }
+	if e.ResultScoreByAgentFunc == nil {
+		return fmt.Errorf("%w: ResultScoreByAgentFunc", ErrNilEngineFunc)
+	}
 
-    if len(e.Agents) == 0 {
+	if len(e.Agents) == 0 {
 		return fmt.Errorf("%w: Engine.Agents が空です", ErrEmptySlice)
 	}
-    return nil
+	return nil
 }
 
 func (e Engine[S, M, A]) IsEnd(state S) (bool, error) {
@@ -407,9 +410,9 @@ type Actor[S any, M, A comparable] struct {
 
 func NewRandomActor[S any, M, A comparable](name string) Actor[S, M, A] {
 	return Actor[S, M, A]{
-		Name:name,
-		PolicyFunc:UniformPolicyFunc[S, M],
-		SelectFunc:WeightedRandomSelectFunc[M, A],
+		Name:       name,
+		PolicyFunc: UniformPolicyFunc[S, M],
+		SelectFunc: WeightedRandomSelectFunc[M, A],
 	}
 }
 
@@ -421,6 +424,71 @@ func (a Actor[S, M, A]) Validate() error {
 		return fmt.Errorf("%w: SelectFunc", ErrNilActorFunc)
 	}
 	return nil
+}
+
+type HumanActorConfig[S any, M, A comparable] struct {
+	StateToString func(S) string
+	MoveToString  func(M) string
+}
+
+func (c *HumanActorConfig[S, M, A]) NewActor(name string) Actor[S, M, A] {
+	return Actor[S, M, A]{
+		Name: name,
+		PolicyFunc: func(state S, legalMoves []M) Policy[M] {
+			if c.StateToString != nil {
+				fmt.Println(c.StateToString(state))
+			}
+			return UniformPolicyFunc(state, legalMoves)
+		},
+		SelectFunc: func(policy Policy[M], agent A, rng *rand.Rand) M {
+			moves := make([]M, 0, len(policy))
+			for m := range policy {
+				moves = append(moves, m)
+			}
+
+			sort.Slice(moves, func(i, j int) bool {
+				s1, s2 := fmt.Sprintf("%v", moves[i]), fmt.Sprintf("%v", moves[j])
+				if c.MoveToString != nil {
+					s1, s2 = c.MoveToString(moves[i]), c.MoveToString(moves[j])
+				}
+				return s1 < s2
+			})
+			scanner := bufio.NewScanner(os.Stdin)
+
+			for {
+				fmt.Printf("以下の番号から手を選んでください:\n")
+				for i, m := range moves {
+					label := fmt.Sprintf("%v", m)
+					if c.MoveToString != nil {
+						label = c.MoveToString(m)
+					}
+					fmt.Printf("  %d: %s\n", i+1, label)
+				}
+
+				fmt.Print("\n番号を入力 > ")
+				if !scanner.Scan() {
+					panic("標準入力が読み込めませんでした")
+				}
+
+				text := scanner.Text()
+				idx, err := strconv.Atoi(text)
+				if err != nil {
+					fmt.Println(">> エラー: 半角数字を入力してください。")
+					continue
+				}
+
+				if idx < 1 || idx > len(moves) {
+					fmt.Printf(">> エラー: 1 から %d の範囲で入力してください。\n", len(moves))
+					continue
+				}
+
+				// 選択された手を返す (表示は1始まり、配列は0始まりなので -1)
+				selectedMove := moves[idx-1]
+				fmt.Printf(">> 選択: %d\n\n", idx)
+				return selectedMove
+			}
+		},
+	}
 }
 
 type CrossPlayoutResult[S any, M, A comparable] struct {
