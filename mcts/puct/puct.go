@@ -7,11 +7,11 @@ import (
 	"errors"
 	game "github.com/sw965/crow/game/sequential"
 	"github.com/sw965/crow/pucb"
+	"github.com/sw965/omw/parallel"
 	"github.com/sw965/omw/slicesx"
 	"maps"
 	"slices"
 	"sync"
-	"github.com/sw965/omw/parallel"
 )
 
 var (
@@ -34,44 +34,12 @@ type Node[S any, M, A comparable] struct {
 	State           S
 	Agent           A
 	virtualSelector pucb.VirtualSelector[M]
-	nextNodes       Nodes[S, M, A]
+	nextNodesByMove map[M]Nodes[S, M, A]
 	sync.Mutex
 }
 
-// FindOrAppendNextNode は、state に一致する子ノードがあればそれを返し、なければ newNodeFunc で生成して追加します。
-// 追加したかどうか（appended）も返します。
-// NOTE: 二重生成レースを避けるため、生成前後でダブルチェックします。
-// newNodeFuncが支配的になる為、一回Unlockする。
-func (node *Node[S, M, A]) FindOrAppendNextNode(state S, eq game.EqualFunc[S], newNodeFunc func(S) (*Node[S, M, A], error)) (next *Node[S, M, A], appended bool, err error) {
-	if newNodeFunc == nil {
-		return nil, false, fmt.Errorf("newNodeFunc が nil です")
-	}
-
-	// 1st check (lock)
-	node.Lock()
-	if n, ok := node.nextNodes.FindByState(state, eq); ok {
-		node.Unlock()
-		return n, false, nil
-	}
-	node.Unlock()
-
-	// Create outside lock (expensive work is outside)
-	created, err := newNodeFunc(state)
-	if err != nil {
-		return nil, false, err
-	}
-
-	// 2nd check + append (lock)
-	node.Lock()
-	defer node.Unlock()
-
-	if n, ok := node.nextNodes.FindByState(state, eq); ok {
-		// Someone else appended while we were creating.
-		return n, false, nil
-	}
-
-	node.nextNodes = append(node.nextNodes, created)
-	return created, true, nil
+func (n *Node[S, M, A]) VirtualSelector() pucb.VirtualSelector[M] {
+	return maps.Clone(n.virtualSelector)
 }
 
 type Nodes[S any, M, A comparable] []*Node[S, M, A]
@@ -107,19 +75,19 @@ func (ss selectBuffers[S, M, A]) backward(evals LeafNodeEvalByAgent[A]) {
 
 		node.Lock()
 		// 未観測のカウントを消す
-		node.virtualSelector[move].DecrementPending()
-		node.virtualSelector[move].AddTotalValue(eval)
-		node.virtualSelector[move].IncrementTrial()
+		node.virtualSelector[move].DecrementO()
+		node.virtualSelector[move].AddW(eval)
+		node.virtualSelector[move].IncrementVisits()
 		node.Unlock()
 	}
 }
 
-func (ss selectBuffers[S, M, A]) rollbackPending() {
-    for _, s := range ss {
+func (ss selectBuffers[S, M, A]) rollbackO() {
+	for _, s := range ss {
 		s.node.Lock()
-        s.node.virtualSelector[s.move].DecrementPending()
+		s.node.virtualSelector[s.move].DecrementO()
 		s.node.Unlock()
-    }
+	}
 }
 
 type Engine[S any, M, A comparable] struct {
@@ -128,6 +96,7 @@ type Engine[S any, M, A comparable] struct {
 	PolicyFunc              game.PolicyFunc[S, M]
 	LeafNodeEvalByAgentFunc LeafNodeEvalByAgentFunc[S, A]
 	NextNodesCap            int
+	VirtualValue            float32
 }
 
 func (e Engine[S, M, A]) Validate() error {
@@ -201,7 +170,7 @@ func (e Engine[S, M, A]) NewNode(state S) (*Node[S, M, A], error) {
 	s := pucb.VirtualSelector[M]{}
 	for _, move := range legalMoves {
 		p := policy[move]
-		s[move] = &pucb.Calculator{Func: e.PUCBFunc, P: p}
+		s[move] = &pucb.Calculator{Func: e.PUCBFunc, P: p, VirtualValue: e.VirtualValue}
 	}
 
 	agent := e.Game.Logic.CurrentAgentFunc(state)
@@ -218,12 +187,11 @@ func (e Engine[S, M, A]) NewNode(state S) (*Node[S, M, A], error) {
 		return nil, fmt.Errorf("%w: Engine.Game.Logic.CurrentAgentFunc(state)=%v", game.ErrAgentNotFound, agent)
 	}
 
-	nextNodes := make(Nodes[S, M, A], 0, e.NextNodesCap)
 	return &Node[S, M, A]{
 		State:           state,
 		Agent:           agent,
 		virtualSelector: s,
-		nextNodes:       nextNodes,
+		nextNodesByMove: make(map[M]Nodes[S, M, A], e.NextNodesCap),
 	}, nil
 }
 
@@ -232,30 +200,27 @@ func (e Engine[S, M, A]) SelectExpansionBackward(node *Node[S, M, A], capacity i
 	buffers := make(selectBuffers[S, M, A], 0, capacity)
 	var err error
 	var isEnd bool
-	var move M
-	var nextNode *Node[S, M, A]
-	var expand bool
 
-    // 途中エラーなら pending を元に戻す（成功時は backward が pending--するので不要）
-    defer func() {
-        if err != nil {
-            buffers.rollbackPending()
-        }
-    }()
+	// 途中エラーなら o を元に戻す（成功時は backward が o--するので不要）
+	defer func() {
+		if err != nil {
+			buffers.rollbackO()
+		}
+	}()
 
 	for {
 		node.Lock()
-		// := だと err が内側でシャドウイングされて、 defer func の err != nil が var err error を参照してくれなくなる
-		move, err = node.virtualSelector.Select(rng)
+
+		var move M
+		move, err := node.virtualSelector.Select(rng)
 		if err != nil {
 			node.Unlock()
 			return nil, 0, err
 		}
+		// 選択した行動のノードの未観測の数をインクリメントする
+		node.virtualSelector[move].IncrementO()
 
-        // ノードを選択した直後に、未観測(まだプレイアウトや評価が確定していない)をインクリメントする
-        node.virtualSelector[move].IncrementPending()
 		node.Unlock()
-
 		buffers = append(buffers, selectBuffer[S, M, A]{node: node, move: move})
 
 		state, err = e.Game.Logic.MoveFunc(state, move)
@@ -263,6 +228,7 @@ func (e Engine[S, M, A]) SelectExpansionBackward(node *Node[S, M, A], capacity i
 			return nil, 0, err
 		}
 
+		var isEnd bool
 		isEnd, err = e.Game.IsEnd(state)
 		if err != nil {
 			return nil, 0, err
@@ -272,15 +238,41 @@ func (e Engine[S, M, A]) SelectExpansionBackward(node *Node[S, M, A], capacity i
 			break
 		}
 
-		nextNode, expand, err = node.FindOrAppendNextNode(state, e.Game.Logic.EqualFunc, e.NewNode)
-		if err != nil {
-			return nil, 0, err
+		var expand bool
+
+		// node.NextNodesByMoveはmap型 node.nextNodesByMove[move]はslice型
+		// この処理はデータを読むだけだが、他のワーカーが、書く処理をすると、破綻する為、Lockが必要
+		node.Lock()
+		nextNode, ok := node.nextNodesByMove[move].FindByState(state, e.Game.Logic.EqualFunc)
+		node.Unlock()
+
+		if ok {
+			node = nextNode
+			expand = false
+		} else {
+			var newNode *Node[S, M, A]
+			newNode, err = e.NewNode(state)
+			if err != nil {
+				return nil, 0, err
+			}
+
+			// Unlockして NewNodeを作ってる間に、別のワーカーがノードを追加した可能性がある為、再度Lockして調べる
+			node.Lock()
+			// nextNodesの中に、一致するstateが見つかれば、それを次のノードとする
+			if nn, ok := node.nextNodesByMove[move].FindByState(state, e.Game.Logic.EqualFunc); ok {
+				nextNode = nn
+				expand = false
+				// nextNodesの中に、一致するstateが見つからなければ、newNodeをnextNodesに追加し、selectを終了する
+			} else {
+				node.nextNodesByMove[move] = append(node.nextNodesByMove[move], newNode)
+				expand = true
+			}
+			node.Unlock()
 		}
 
 		if expand {
 			break
 		}
-
 		node = nextNode
 	}
 
@@ -290,7 +282,6 @@ func (e Engine[S, M, A]) SelectExpansionBackward(node *Node[S, M, A], capacity i
 	// ゲームが終了していなかった場合、リーフノードの評価関数を呼び出す
 	if isEnd {
 		var scores game.ResultScoreByAgent[A]
-		// := を使うと、defer func() の err != nil が var err error を参照してくれなくなる
 		scores, err = e.Game.EvaluateResultScoreByAgent(state)
 		if err != nil {
 			return nil, 0, err
@@ -309,7 +300,7 @@ func (e Engine[S, M, A]) SelectExpansionBackward(node *Node[S, M, A], capacity i
 	return evals, len(buffers), err
 }
 
-func (e Engine[S, M, A]) Search(rootNode *Node[S, M, A], n int, rngs []*rand.Rand) (RootNodeEvalByAgent[A], error) {
+func (e Engine[S, M, A]) Search(rootNode *Node[S, M, A], n int, workerRngs []*rand.Rand) (RootNodeEvalByAgent[A], error) {
 	if err := e.Validate(); err != nil {
 		return nil, err
 	}
@@ -322,16 +313,16 @@ func (e Engine[S, M, A]) Search(rootNode *Node[S, M, A], n int, rngs []*rand.Ran
 		return nil, fmt.Errorf("シミュレーション数は0より大きい必要があります。")
 	}
 
-	capacity := 128
-	p := len(rngs)
+	p := len(workerRngs)
 	rootEvalsPerWorker := make([]RootNodeEvalByAgent[A], p)
 	for i := range p {
 		rootEvalsPerWorker[i] = RootNodeEvalByAgent[A]{}
 	}
-
+	
+	workerBuffCaps := make([]int, p)
 	err := parallel.For(n, p, func(workerId, idx int) error {
-		rng := rngs[workerId]
-		leafEvals, _, err := e.SelectExpansionBackward(rootNode, capacity, rng)
+		rng := workerRngs[workerId]
+		leafEvals, depth, err := e.SelectExpansionBackward(rootNode, workerBuffCaps[workerId], rng)
 		if err != nil {
 			return err
 		}
@@ -339,6 +330,8 @@ func (e Engine[S, M, A]) Search(rootNode *Node[S, M, A], n int, rngs []*rand.Ran
 		for k, v := range leafEvals {
 			rootEvalsPerWorker[workerId][k] += v
 		}
+
+		workerBuffCaps[workerId] = depth+1
 		return nil
 	})
 

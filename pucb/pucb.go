@@ -10,168 +10,185 @@
 package pucb
 
 import (
-	"github.com/chewxy/math32"
-	"math/rand/v2"
-	"github.com/sw965/omw/mathx/randx"
 	"fmt"
 	"math"
+	"math/rand/v2"
+
+	"github.com/chewxy/math32"
+	"github.com/sw965/omw/mathx/randx"
 )
 
 type Func func(float32, float32, int, int) float32
 
 func NewAlphaGoFunc(c float32) Func {
-	return func(v, p float32, total, n int) float32 {
-		tf := float32(total)
-		nf := float32(1 + n)
-		exploration := c * p * math32.Sqrt(tf) / nf
-		return v + exploration
+	return func(q, p float32, sumVisits, selfVisits int) float32 {
+		sum := float32(sumVisits)
+		n := float32(1 + selfVisits)
+		exploration := c * p * math32.Sqrt(sum) / n
+		return q + exploration
 	}
 }
+
+func NewAlphaZeroFunc(cinit, cbase float32) Func {
+	if cbase <= 0 {
+		panic(fmt.Sprintf("BUG: cbase=%v は正である必要があります", cbase))
+	}
+	if v := float64(cinit); math.IsNaN(v) || math.IsInf(v, 0) {
+		panic(fmt.Sprintf("BUG: cinit=%v が不正です(NaN/Inf)", cinit))
+	}
+	if v := float64(cbase); math.IsNaN(v) || math.IsInf(v, 0) {
+		panic(fmt.Sprintf("BUG: cbase=%v が不正です(NaN/Inf)", cbase))
+	}
+
+	return func(q, p float32, sumVisits, selfVisits int) float32 {
+		sum := float32(sumVisits)
+		n := float32(1 + selfVisits)
+		c := cinit + math32.Log((sum+cbase+1.0)/cbase)
+		exploration := c * p * math32.Sqrt(sum) / n
+		return q + exploration
+	}
+}
+
 type Calculator struct {
-    Func       Func
-    totalValue float32
-    P          float32
-    trial      int
-    pending    int // 未観測の数
+	Func         Func
+	P            float32
+	w            float32
+	visits       int
+	o            int
+	VirtualValue float32
 }
 
-func (c *Calculator) GetTotalValue() float32 {
-	return c.totalValue
+func (c *Calculator) W() float32 {
+	return c.w
 }
 
-func (c *Calculator) AddTotalValue(v float32) {
-	c.totalValue += v
+func (c *Calculator) AddW(v float32) {
+	c.w += v
 }
 
-func (c *Calculator) GetTrial() int {
-	return c.trial
+func (c *Calculator) IncrementVisits() {
+	c.visits += 1
 }
 
-func (c *Calculator) IncrementTrial() {
-	c.trial += 1
+func (c *Calculator) O() int {
+	return c.o
 }
 
-func (c *Calculator) AverageValue() float32 {
-	if c.trial == 0 {
+func (c *Calculator) IncrementO() {
+	c.o += 1
+}
+
+func (c *Calculator) DecrementO() {
+	c.o -= 1
+	if c.o < 0 {
+		panic(fmt.Sprintf("BUG: o=%d < 0", c.o))
+	}
+}
+
+func (c *Calculator) EffectiveVisits() int {
+	return c.visits + c.o
+}
+
+func (c *Calculator) EffectiveW() float32 {
+	return c.w + (c.VirtualValue * float32(c.o))
+}
+
+func (c *Calculator) EffectiveQ() float32 {
+	visits := c.EffectiveVisits()
+	if visits == 0 {
 		return 0.0
 	}
-	return float32(c.totalValue) / float32(c.trial)
+	w := c.EffectiveW()
+	return w / float32(visits)
 }
 
-func (c *Calculator) GetPending() int {
-    return c.pending
-}
-
-func (c *Calculator) IncrementPending() {
-    c.pending += 1
-}
-
-func (c *Calculator) DecrementPending() {
-    c.pending -= 1
-    if c.pending < 0 {
-        panic(fmt.Sprintf("BUG: pending=%d < 0", c.pending))
-    }
-}
-
-func (c *Calculator) EffectiveTrial() int {
-    return c.trial + c.pending
-}
-
-func (c *Calculator) Calculation(effTotal int) float32 {
+func (c *Calculator) EffectiveU(sumEffVisits int) float32 {
 	if c.Func == nil {
 		panic("BUG: pucb.Calculator.Func が nil です")
 	}
 
-	if effTotal < 0 {
-		panic(fmt.Sprintf("BUG: effTotal=%d < 0 である為、PUCB計算を実行出来ません", effTotal))
+	if sumEffVisits < 0 {
+		panic(fmt.Sprintf("BUG: sumEffVisits=%d < 0 である為、PUCB計算を実行出来ません", sumEffVisits))
 	}
 
-	if c.trial < 0 {
-		panic(fmt.Sprintf("BUG: trial=%d < 0 である為、PUCB計算を実行出来ません", c.trial))
+	if c.visits < 0 {
+		panic(fmt.Sprintf("BUG: visits=%d < 0 である為、PUCB計算を実行出来ません", c.visits))
 	}
 
-    if c.pending < 0 {
-        panic(fmt.Sprintf("BUG: pending=%d < 0", c.pending))
-    }
+	if c.o < 0 {
+		panic(fmt.Sprintf("BUG: o=%d < 0", c.o))
+	}
 
-	if effTotal < c.trial {
-		panic(fmt.Sprintf("BUG: effTotal=%d < trial=%d である為、PUCB計算を実行出来ません", effTotal, c.trial))
+	if sumEffVisits < c.visits {
+		panic(fmt.Sprintf("BUG: sumEffVisits=%d < visits=%d である為、PUCB計算を実行出来ません", sumEffVisits, c.visits))
 	}
 
 	// WU-UCT: N' = N + O
-    effTrial := c.EffectiveTrial()
-    if effTotal < effTrial {
-        panic(fmt.Sprintf("BUG: effTotal=%d < effTrial=%d", effTotal, effTrial))
-    }
+	selfEffVisits := c.EffectiveVisits()
+	if sumEffVisits < selfEffVisits {
+		panic(fmt.Sprintf("BUG: sumEffVisits=%d < selfEffVisits=%d", sumEffVisits, selfEffVisits))
+	}
 
-	if tv := float64(c.totalValue); math.IsNaN(tv) || math.IsInf(tv, 0) {
-		panic(fmt.Sprintf("BUG: totalValue=%v が不正です(NaN/Inf)", c.totalValue))
+	if w := float64(c.w); math.IsNaN(w) || math.IsInf(w, 0) {
+		panic(fmt.Sprintf("BUG: w=%v が不正です(NaN/Inf)", c.w))
 	}
 
 	if p := float64(c.P); math.IsNaN(p) || math.IsInf(p, 0) || c.P < 0 {
 		panic(fmt.Sprintf("BUG: P=%v が不正です（負数/NaN/Inf)", c.P))
 	}
 
-	v := c.AverageValue()
-	if vf := float64(v); math.IsNaN(vf) || math.IsInf(vf, 0) {
-		panic(fmt.Sprintf("BUG: AverageValue=%v が不正です(NaN/Inf)。totalValue=%v, trial=%d", v, c.totalValue, c.trial))
+	q := c.EffectiveQ()
+	if qv := float64(q); math.IsNaN(qv) || math.IsInf(qv, 0) {
+		panic(fmt.Sprintf("BUG: Q=%v が不正です(NaN/Inf)。w=%v, visits=%d", q, c.w, c.visits))
 	}
 
-	out := c.Func(v, c.P, effTotal, effTrial)
-	if ov := float64(out); math.IsNaN(ov) || math.IsInf(ov, 0) {
+	u := c.Func(q, c.P, sumEffVisits, selfEffVisits)
+	if uv := float64(u); math.IsNaN(uv) || math.IsInf(uv, 0) {
 		msg := fmt.Sprintf(
-			"BUG: pucb.Funcが不正な値(NaN/Inf)を出力した為、処理が停止しました。v=%f, p=%f, effTotal=%d, effTrial=%d, out=%f",
-			v, c.P, effTotal, effTrial, out,
+			"BUG: pucb.Funcが不正な値(NaN/Inf)を出力した為、処理が停止しました。q=%f, p=%f, sumEffVisits=%d, selfEffVisits=%d, u=%f",
+			q, c.P, sumEffVisits, selfEffVisits, u,
 		)
 		panic(msg)
 	}
 
-	return out
+	return u
 }
 
 type VirtualSelector[K comparable] map[K]*Calculator
 
-func (s VirtualSelector[K]) TotalTrial() int {
-	total := 0
+func (s VirtualSelector[K]) SumEffectiveVisits() int {
+	sum := 0
 	for _, c := range s {
-		total += c.trial
+		sum += c.EffectiveVisits()
 	}
-	return total
+	return sum
 }
 
-func (s VirtualSelector[K]) TotalEffectiveTrial() int {
-    total := 0
-    for _, c := range s {
-        total += c.EffectiveTrial()
-    }
-    return total
-}
-
-func (s VirtualSelector[K]) TrialPercentByKey() map[K]float32 {
+func (s VirtualSelector[K]) EffectiveVisitPercentByKey() map[K]float32 {
 	n := len(s)
 	if n == 0 {
 		return map[K]float32{}
 	}
 
-	total := s.TotalTrial()
+	sum := s.SumEffectiveVisits()
 	m := map[K]float32{}
 
-	if total == 0 {
+	if sum == 0 {
 		p := 1.0 / float32(n)
-    	for k := range s {
-        	m[k] = p
-    	}
-    	return m
+		for k := range s {
+			m[k] = p
+		}
+		return m
 	}
 
 	for k, c := range s {
-		m[k] = float32(c.trial) / float32(total)
+		m[k] = float32(c.visits) / float32(sum)
 	}
 	return m
 }
 
-func (s VirtualSelector[K]) MaxPUCBKeys() []K {
-	total := s.TotalEffectiveTrial()
+func (s VirtualSelector[K]) EffectiveMaxKeys() []K {
+	sum := s.SumEffectiveVisits()
 	ks := make([]K, 0, len(s))
 
 	const eps float32 = 0.0001
@@ -180,7 +197,7 @@ func (s VirtualSelector[K]) MaxPUCBKeys() []K {
 	first := true
 
 	for k, c := range s {
-		v := c.Calculation(total)
+		v := c.EffectiveU(sum)
 
 		if first {
 			max = v
@@ -207,7 +224,7 @@ func (s VirtualSelector[K]) MaxPUCBKeys() []K {
 }
 
 func (s VirtualSelector[K]) Select(rng *rand.Rand) (K, error) {
-	ks := s.MaxPUCBKeys()
+	ks := s.EffectiveMaxKeys()
 	return randx.Choice(ks, rng)
 }
 
