@@ -405,6 +405,14 @@ type Actor[S any, M, A comparable] struct {
 	SelectFunc SelectFunc[M, A]
 }
 
+func NewRandomActor[S any, M, A comparable](name string) Actor[S, M, A] {
+	return Actor[S, M, A]{
+		Name:name,
+		PolicyFunc:UniformPolicyFunc[S, M],
+		SelectFunc:WeightedRandomSelectFunc[M, A],
+	}
+}
+
 func (a Actor[S, M, A]) Validate() error {
 	if a.PolicyFunc == nil {
 		return fmt.Errorf("%w: PolicyFunc", ErrNilActorFunc)
