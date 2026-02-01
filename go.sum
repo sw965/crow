@@ -1,4 +1,2 @@
-github.com/chewxy/math32 v1.11.1 h1:b7PGHlp8KjylDoU8RrcEsRuGZhJuz8haxnKfuMMRqy8=
-github.com/chewxy/math32 v1.11.1/go.mod h1:dOB2rcuFrCn6UHrze36WSLVPKtzPMRAQvBvUwkSsLqs=
-github.com/sw965/omw v0.0.0-20251220024920-1da4f0424b97 h1:sNuiT4Y/WsXWCfBkk3LhUgbGDHFiHAXPg9Y1tYAdJi0=
-github.com/sw965/omw v0.0.0-20251220024920-1da4f0424b97/go.mod h1:EKL8/ZktcbPtKvT26wyO6DGxpgfe8XTcw1YzA2RRyz0=
+github.com/sw965/omw v0.0.0-20260201083022-ef9a9ad075f9 h1:IRlhQkLlZPwgVDhq02BcIv8sPi7L4Dv2G1hZP69O00o=
+github.com/sw965/omw v0.0.0-20260201083022-ef9a9ad075f9/go.mod h1:6sxDC1FbUj7Am/WJkeefmNhGdhVNoXjSLgdraR67R5U=

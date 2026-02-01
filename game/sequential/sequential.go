@@ -6,40 +6,15 @@
 package sequential
 
 import (
-	"errors"
 	"fmt"
+	"github.com/sw965/omw/mathx"
 	"github.com/sw965/omw/mathx/randx"
 	"github.com/sw965/omw/parallel"
 	"github.com/sw965/omw/slicesx"
 	"maps"
-	"math"
 	"math/rand/v2"
 	"slices"
 	"sort"
-)
-
-var (
-	ErrEmptySlice     = errors.New("空スライスエラー")
-
-    ErrNilLogicFunc = errors.New("Logicエラー: フィールドの関数がnilです")
-    ErrNilEngineFunc = errors.New("Engineエラー: フィールドの関数がnilです")
-
-	ErrDuplicateAgent = errors.New("エージェント重複エラー")
-	ErrAgentNotFound = errors.New("Agentエラー: Agentsに存在しません")
-
-	ErrInvalidRankValue  = errors.New("順位エラー: 1以上の正の整数である必要があります")
-	ErrMinRankNotOne     = errors.New("最小順位エラー: 1から始まる必要があります")
-	ErrRankNotContiguous = errors.New("順位不連続エラー: 順位が連続していません")
-
-	ErrEmptyLegalMoves     = errors.New("legalMovesエラー: 要素数が0です")
-	ErrNotUniqueLegalMoves = errors.New("legalMovesエラー: 重複した要素があります")
-
-	ErrPolicySizeMismatch     = errors.New("Policyエラー: legalMoves と同じ要素数である必要があります")
-	ErrPolicyMissingLegalMove = errors.New("Policyエラー: 全ての合法手を含む必要があります")
-	ErrPolicyBadValue         = errors.New("Policyエラー: 値が不正です（負数/NaN/Inf）")
-	ErrPolicyZeroSum          = errors.New("Policyエラー: 合計値が0です")
-
-	ErrNilActorFunc = errors.New("Actorエラー: フィールドの関数がnilです")
 )
 
 type LegalMovesFunc[S any, M comparable] func(S) []M
@@ -55,22 +30,22 @@ type Logic[S any, M, A comparable] struct {
 }
 
 func (l Logic[S, M, A]) Validate() error {
-    if l.LegalMovesFunc == nil {
-        return fmt.Errorf("%w: LegalMovesFunc", ErrNilLogicFunc)
-    }
-    if l.MoveFunc == nil {
-        return fmt.Errorf("%w: MoveFunc", ErrNilLogicFunc)
-    }
-    if l.EqualFunc == nil {
-        return fmt.Errorf("%w: EqualFunc", ErrNilLogicFunc)
-    }
-    if l.CurrentAgentFunc == nil {
-        return fmt.Errorf("%w: CurrentAgentFunc", ErrNilLogicFunc)
-    }
-    return nil
+	if l.LegalMovesFunc == nil {
+		return fmt.Errorf("LegalMovesFunc must not be nil")
+	}
+	if l.MoveFunc == nil {
+		return fmt.Errorf("MoveFunc must not be nil")
+	}
+	if l.EqualFunc == nil {
+		return fmt.Errorf("EqualFunc must not be nil")
+	}
+	if l.CurrentAgentFunc == nil {
+		return fmt.Errorf("CurrentAgentFunc must not be nil")
+	}
+	return nil
 }
 
-// ゲームが終了していない場合は、戻り値は空あるいはnilである事を想定。
+// ゲームが終了していない場合は、空あるいはnilにする
 type RankByAgent[A comparable] map[A]int
 
 func NewRankByAgent[A comparable](agentsPerRank [][]A) (RankByAgent[A], error) {
@@ -78,12 +53,12 @@ func NewRankByAgent[A comparable](agentsPerRank [][]A) (RankByAgent[A], error) {
 	rank := 1
 	for _, agents := range agentsPerRank {
 		if len(agents) == 0 {
-			return nil, fmt.Errorf("順位 %d に対応するエージェントが存在しません: %w", rank, ErrEmptySlice)
+			return nil, fmt.Errorf("agents list for a rank cannot be empty")
 		}
 
 		for _, agent := range agents {
 			if _, ok := ranks[agent]; ok {
-				return nil, fmt.Errorf("エージェント %v が複数回出現しています: %w", agent, ErrDuplicateAgent)
+				return nil, fmt.Errorf("duplicate agent detected: %v", agent)
 			}
 			ranks[agent] = rank
 		}
@@ -101,7 +76,7 @@ func (r RankByAgent[A]) Validate() error {
 	ranks := make([]int, 0, n)
 	for _, rank := range r {
 		if rank < 1 {
-			return fmt.Errorf("%w", ErrInvalidRankValue)
+			return fmt.Errorf("rank must be >= 1, got %d", rank)
 		}
 		ranks = append(ranks, rank)
 	}
@@ -109,7 +84,7 @@ func (r RankByAgent[A]) Validate() error {
 
 	current := ranks[0]
 	if current != 1 {
-		return fmt.Errorf("%w: 入力された最小順位: %d", ErrMinRankNotOne, current)
+		return fmt.Errorf("ranks must start at 1, got %d", current)
 	}
 	expected := current + 1
 
@@ -122,7 +97,7 @@ func (r RankByAgent[A]) Validate() error {
 			current = rank
 			expected = rank + 1
 		} else {
-			return fmt.Errorf("%w", ErrRankNotContiguous)
+			return fmt.Errorf("invalid rank sequence: expected %d, got %d", expected, rank)
 		}
 	}
 	return nil
@@ -140,22 +115,22 @@ type Engine[S any, M, A comparable] struct {
 }
 
 func (e Engine[S, M, A]) Validate() error {
-    if err := e.Logic.Validate(); err != nil {
-        return err
-    }
-
-    if e.RankByAgentFunc == nil {
-        return fmt.Errorf("%w: RankByAgentFunc", ErrNilEngineFunc)
-    }
-
-    if e.ResultScoreByAgentFunc == nil {
-        return fmt.Errorf("%w: ResultScoreByAgentFunc", ErrNilEngineFunc)
-    }
-
-    if len(e.Agents) == 0 {
-		return fmt.Errorf("%w: Engine.Agents が空です", ErrEmptySlice)
+	if err := e.Logic.Validate(); err != nil {
+		return err
 	}
-    return nil
+
+	if e.RankByAgentFunc == nil {
+		return fmt.Errorf("RankByAgentFunc must not be nil")
+	}
+
+	if e.ResultScoreByAgentFunc == nil {
+		return fmt.Errorf("ResultScoreByAgentFunc must not be nil")
+	}
+
+	if len(e.Agents) == 0 {
+		return fmt.Errorf("agents list must not be empty")
+	}
+	return nil
 }
 
 func (e Engine[S, M, A]) IsEnd(state S) (bool, error) {
@@ -236,13 +211,13 @@ func (e Engine[S, M, A]) Playouts(inits []S, actor Actor[S, M, A], rngs []*rand.
 			legalMoves := e.Logic.LegalMovesFunc(state)
 			// policy.ValidateForLegalMovesでもlegalMovesの空チェックをするが、PolicyFuncを安全に呼ぶ為に、ここでもチェックする
 			if len(legalMoves) == 0 {
-				return ErrEmptyLegalMoves
+				return fmt.Errorf("game is not ended but no legal moves are available")
 			}
 			policy := actor.PolicyFunc(state, legalMoves)
 
 			// legalMovesがユニークならば、policyは合法手のみを持つ事が保障される
-			// 一手毎に、legalMovesがユニークであるかをチェックするのは、計算コストの観点から見送る
-			err = policy.ValidateForLegalMoves(legalMoves)
+			// 第2引数がtrueならば、legalMovesがユニーク性をチェックするが、一手毎にチェックするのは、計算コストの観点から見送る
+			err = policy.ValidateForLegalMoves(legalMoves, false)
 			if err != nil {
 				return err
 			}
@@ -264,7 +239,7 @@ func (e Engine[S, M, A]) Playouts(inits []S, actor Actor[S, M, A], rngs []*rand.
 func (e Engine[S, M, A]) CrossPlayouts(inits []S, actors []Actor[S, M, A], rngs []*rand.Rand) ([]CrossPlayoutResult[S, M, A], error) {
 	agentsN := len(e.Agents)
 	if len(actors) < agentsN {
-		return nil, fmt.Errorf("insufficient actors: have %d, need %d to fill all agent roles", len(actors), agentsN)
+		return nil, fmt.Errorf("insufficient actors: expected at least %d, got %d", agentsN, len(actors))
 	}
 
 	actorPermsSeq := slicesx.Permutations[[]Actor[S, M, A]](actors, agentsN)
@@ -314,30 +289,36 @@ func (e Engine[S, M, A]) CrossPlayouts(inits []S, actors []Actor[S, M, A], rngs 
 
 type Policy[M comparable] map[M]float32
 
-func (p Policy[M]) ValidateForLegalMoves(legalMoves []M) error {
-	if len(legalMoves) == 0 {
-		return ErrEmptyLegalMoves
+func (p Policy[M]) ValidateForLegalMoves(legalMoves []M, checkUnique bool) error {
+	if checkUnique {
+		if !slicesx.IsUnique(legalMoves) {
+			return fmt.Errorf("legalMoves contains duplicates")
+		}
 	}
+
+	if len(legalMoves) == 0 {
+		return fmt.Errorf("legalMoves must not be empty")
+	}
+
 	if len(p) != len(legalMoves) {
-		return fmt.Errorf("%w: policy=%d legalMoves=%d", ErrPolicySizeMismatch, len(p), len(legalMoves))
+		return fmt.Errorf("policy size (%d) does not match legal moves count (%d)", len(p), len(legalMoves))
 	}
 
 	var sum float32
-	for i, m := range legalMoves {
+	for _, m := range legalMoves {
 		v, ok := p[m]
 		if !ok {
-			return fmt.Errorf("%w: idx=%d move=%v", ErrPolicyMissingLegalMove, i, m)
+			return fmt.Errorf("policy is missing probability for move: %v", m)
 		}
 
-		f64 := float64(v)
-		if v < 0 || math.IsNaN(f64) || math.IsInf(f64, 0) {
-			return fmt.Errorf("%w: idx=%d move=%v value=%v", ErrPolicyBadValue, i, m, v)
+		if v < 0 || mathx.IsNaN(v) || mathx.IsInf(v, 0) {
+			return fmt.Errorf("invalid probability value %f for move: %v", v, m)
 		}
 		sum += v
 	}
 
 	if sum == 0 {
-		return ErrPolicyZeroSum
+		return fmt.Errorf("sum of policy probabilities is zero")
 	}
 	return nil
 }
@@ -346,10 +327,6 @@ type PolicyFunc[S any, M comparable] func(S, []M) Policy[M]
 
 func UniformPolicyFunc[S any, M comparable](state S, legalMoves []M) Policy[M] {
 	n := len(legalMoves)
-	if n == 0 {
-		panic("BUG: len(legalMoves) == 0 である為、UniformPolicyFuncが実行出来ません")
-	}
-
 	p := 1.0 / float32(n)
 	policy := Policy[M]{}
 	for _, a := range legalMoves {
@@ -378,7 +355,7 @@ func MaxSelectFunc[M, A comparable](policy Policy[M], agent A, rng *rand.Rand) M
 
 	move, err := randx.Choice(moves, rng)
 	if err != nil {
-		panic(fmt.Sprintf("BUG: %v", err))
+		panic(fmt.Sprintf("bug: %v", err))
 	}
 	return move
 }
@@ -394,7 +371,7 @@ func WeightedRandomSelectFunc[M, A comparable](policy Policy[M], agent A, rng *r
 
 	idx, err := randx.IntByWeight(ws, rng)
 	if err != nil {
-		panic(fmt.Sprintf("BUG: %v", err))
+		panic(fmt.Sprintf("bug: %v", err))
 	}
 	return moves[idx]
 }
@@ -407,18 +384,18 @@ type Actor[S any, M, A comparable] struct {
 
 func NewRandomActor[S any, M, A comparable](name string) Actor[S, M, A] {
 	return Actor[S, M, A]{
-		Name:name,
-		PolicyFunc:UniformPolicyFunc[S, M],
-		SelectFunc:WeightedRandomSelectFunc[M, A],
+		Name:       name,
+		PolicyFunc: UniformPolicyFunc[S, M],
+		SelectFunc: WeightedRandomSelectFunc[M, A],
 	}
 }
 
 func (a Actor[S, M, A]) Validate() error {
 	if a.PolicyFunc == nil {
-		return fmt.Errorf("%w: PolicyFunc", ErrNilActorFunc)
+		return fmt.Errorf("PolicyFunc must not be nil")
 	}
 	if a.SelectFunc == nil {
-		return fmt.Errorf("%w: SelectFunc", ErrNilActorFunc)
+		return fmt.Errorf("SelectFunc must not be nil")
 	}
 	return nil
 }

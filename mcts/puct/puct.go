@@ -201,7 +201,7 @@ func (e Engine[S, M, A]) SelectExpansionBackward(node *Node[S, M, A], capacity i
 	var err error
 	var isEnd bool
 
-	// 途中エラーなら o を元に戻す（成功時は backward が o--するので不要）
+	// 途中でエラーが起きた場合、 o を元に戻す（成功時は backward が o--するので不要）
 	defer func() {
 		if err != nil {
 			buffers.rollbackO()

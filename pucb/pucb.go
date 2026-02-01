@@ -13,8 +13,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand/v2"
-
-	"github.com/chewxy/math32"
+	"github.com/sw965/omw/mathx"
 	"github.com/sw965/omw/mathx/randx"
 )
 
@@ -22,31 +21,27 @@ type Func func(float32, float32, int, int) float32
 
 func NewAlphaGoFunc(c float32) Func {
 	return func(q, p float32, sumVisits, selfVisits int) float32 {
-		sum := float32(sumVisits)
 		n := float32(1 + selfVisits)
-		exploration := c * p * math32.Sqrt(sum) / n
+		exploration := c * p * mathx.Sqrt(float32(sumVisits)) / n
 		return q + exploration
 	}
 }
 
-func NewAlphaZeroFunc(cinit, cbase float32) Func {
-	if cbase <= 0 {
-		panic(fmt.Sprintf("BUG: cbase=%v は正である必要があります", cbase))
+func NewAlphaZeroFunc(cinit, cbase float32) (Func, error) {
+	if mathx.IsNaN(cinit) || mathx.IsInf(cinit, 0) {
+		return nil, fmt.Errorf("cinitが不正(NaN/Inf): cinit=%.6g", cinit)
 	}
-	if v := float64(cinit); math.IsNaN(v) || math.IsInf(v, 0) {
-		panic(fmt.Sprintf("BUG: cinit=%v が不正です(NaN/Inf)", cinit))
-	}
-	if v := float64(cbase); math.IsNaN(v) || math.IsInf(v, 0) {
-		panic(fmt.Sprintf("BUG: cbase=%v が不正です(NaN/Inf)", cbase))
+
+	if cbase <= 0 || mathx.IsNaN(cbase) || mathx.IsInf(cbase, 0) {
+		return nil, fmt.Errorf("cbaseが不正(<=0/NaN/Inf): cbase=%.6g", cbase)
 	}
 
 	return func(q, p float32, sumVisits, selfVisits int) float32 {
-		sum := float32(sumVisits)
 		n := float32(1 + selfVisits)
-		c := cinit + math32.Log((sum+cbase+1.0)/cbase)
-		exploration := c * p * math32.Sqrt(sum) / n
+		c := cinit + mathx.Log((float32(sumVisits)+cbase+1.0)/cbase)
+		exploration := c * p * mathx.Sqrt(float32(sumVisits)) / n
 		return q + exploration
-	}
+	}, nil
 }
 
 type Calculator struct {
@@ -58,12 +53,12 @@ type Calculator struct {
 	VirtualValue float32
 }
 
-func (c *Calculator) W() float32 {
-	return c.w
-}
-
-func (c *Calculator) AddW(v float32) {
+func (c *Calculator) AddW(v float32) error {
+	if mathx.IsNaN(v) || mathx.IsInf(v, 0) {
+		return fmt.Errorf("vが不正(NaN/Inf): v=%.6g", v)
+	}
 	c.w += v
+	return nil
 }
 
 func (c *Calculator) IncrementVisits() {
@@ -78,99 +73,87 @@ func (c *Calculator) IncrementO() {
 	c.o += 1
 }
 
-func (c *Calculator) DecrementO() {
-	c.o -= 1
-	if c.o < 0 {
-		panic(fmt.Sprintf("BUG: o=%d < 0", c.o))
+func (c *Calculator) DecrementO() error {
+	if c.o == 0 {
+		return fmt.Errorf("oが不正(underflow): o=0")
 	}
+	c.o -= 1
+	return nil
 }
 
-func (c *Calculator) EffectiveVisits() int {
+func (c *Calculator) Visits() int {
 	return c.visits + c.o
 }
 
-func (c *Calculator) EffectiveW() float32 {
+func (c *Calculator) W() float32 {
 	return c.w + (c.VirtualValue * float32(c.o))
 }
 
-func (c *Calculator) EffectiveQ() float32 {
-	visits := c.EffectiveVisits()
+func (c *Calculator) Q() float32 {
+	visits := c.Visits()
 	if visits == 0 {
 		return 0.0
 	}
-	w := c.EffectiveW()
+	w := c.W()
 	return w / float32(visits)
 }
 
-func (c *Calculator) EffectiveU(sumEffVisits int) float32 {
+func (c *Calculator) ValidateForSumVisits(sumVisits int) error {
+	if sumVisits < 0 {
+		return fmt.Errorf("sumVisitsが不正(<0): sumVisits=%d", sumVisits)
+	}
+
+	visits := c.Visits()
+	if sumVisits < visits {
+		return fmt.Errorf("sumVisits=%d < visits=%d", sumVisits, visits)
+	}
+
+	if p := float64(c.P); c.P < 0 || math.IsNaN(p) || math.IsInf(p, 0) {
+		return fmt.Errorf("Pが不正(負/NaN/Inf): P=%.6g", c.P)
+	}
+
 	if c.Func == nil {
-		panic("BUG: pucb.Calculator.Func が nil です")
+		return fmt.Errorf("Funcが未初期化(nil)")
+	}
+	return nil
+}
+
+func (c *Calculator) U(sumVisits int) (float32, error) {
+	if err := c.ValidateForSumVisits(sumVisits); err != nil {
+		return 0.0, err
 	}
 
-	if sumEffVisits < 0 {
-		panic(fmt.Sprintf("BUG: sumEffVisits=%d < 0 である為、PUCB計算を実行出来ません", sumEffVisits))
-	}
+	visits := c.Visits()
+	q := c.Q()
+	u := c.Func(q, c.P, sumVisits, visits)
 
-	if c.visits < 0 {
-		panic(fmt.Sprintf("BUG: visits=%d < 0 である為、PUCB計算を実行出来ません", c.visits))
-	}
-
-	if c.o < 0 {
-		panic(fmt.Sprintf("BUG: o=%d < 0", c.o))
-	}
-
-	if sumEffVisits < c.visits {
-		panic(fmt.Sprintf("BUG: sumEffVisits=%d < visits=%d である為、PUCB計算を実行出来ません", sumEffVisits, c.visits))
-	}
-
-	// WU-UCT: N' = N + O
-	selfEffVisits := c.EffectiveVisits()
-	if sumEffVisits < selfEffVisits {
-		panic(fmt.Sprintf("BUG: sumEffVisits=%d < selfEffVisits=%d", sumEffVisits, selfEffVisits))
-	}
-
-	if w := float64(c.w); math.IsNaN(w) || math.IsInf(w, 0) {
-		panic(fmt.Sprintf("BUG: w=%v が不正です(NaN/Inf)", c.w))
-	}
-
-	if p := float64(c.P); math.IsNaN(p) || math.IsInf(p, 0) || c.P < 0 {
-		panic(fmt.Sprintf("BUG: P=%v が不正です（負数/NaN/Inf)", c.P))
-	}
-
-	q := c.EffectiveQ()
-	if qv := float64(q); math.IsNaN(qv) || math.IsInf(qv, 0) {
-		panic(fmt.Sprintf("BUG: Q=%v が不正です(NaN/Inf)。w=%v, visits=%d", q, c.w, c.visits))
-	}
-
-	u := c.Func(q, c.P, sumEffVisits, selfEffVisits)
-	if uv := float64(u); math.IsNaN(uv) || math.IsInf(uv, 0) {
-		msg := fmt.Sprintf(
-			"BUG: pucb.Funcが不正な値(NaN/Inf)を出力した為、処理が停止しました。q=%f, p=%f, sumEffVisits=%d, selfEffVisits=%d, u=%f",
-			q, c.P, sumEffVisits, selfEffVisits, u,
+	if v := float64(u); math.IsNaN(v) || math.IsInf(v, 0) {
+		return 0.0, fmt.Errorf(
+			"Funcの戻り値が不正(NaN/Inf): q=%.6g P=%.6g sumVisits=%d visits=%d u=%.6g",
+			q, c.P, sumVisits, visits, u,
 		)
-		panic(msg)
-	}
 
-	return u
+	}
+	return u, nil
 }
 
 type VirtualSelector[K comparable] map[K]*Calculator
 
-func (s VirtualSelector[K]) SumEffectiveVisits() int {
+func (s VirtualSelector[K]) SumVisits() int {
 	sum := 0
 	for _, c := range s {
-		sum += c.EffectiveVisits()
+		sum += c.Visits()
 	}
 	return sum
 }
 
-func (s VirtualSelector[K]) EffectiveVisitPercentByKey() map[K]float32 {
+func (s VirtualSelector[K]) VisitPercentByKey() map[K]float32 {
 	n := len(s)
 	if n == 0 {
 		return map[K]float32{}
 	}
 
-	sum := s.SumEffectiveVisits()
+	sum := s.SumVisits()
 	m := map[K]float32{}
 
 	if sum == 0 {
@@ -182,49 +165,54 @@ func (s VirtualSelector[K]) EffectiveVisitPercentByKey() map[K]float32 {
 	}
 
 	for k, c := range s {
-		m[k] = float32(c.visits) / float32(sum)
+		m[k] = float32(c.Visits()) / float32(sum)
 	}
 	return m
 }
 
-func (s VirtualSelector[K]) EffectiveMaxKeys() []K {
-	sum := s.SumEffectiveVisits()
+const eps float32 = 0.0001
+
+func (s VirtualSelector[K]) MaxKeys() ([]K, error) {
+	sum := s.SumVisits()
 	ks := make([]K, 0, len(s))
-
-	const eps float32 = 0.0001
-
 	var max float32
 	first := true
 
 	for k, c := range s {
-		v := c.EffectiveU(sum)
+		u, err := c.U(sum)
+		if err != nil {
+			return nil, err
+		}
 
 		if first {
-			max = v
+			max = u
 			ks = append(ks, k)
 			first = false
 			continue
 		}
 
 		// 「明確に」最大更新（eps以上 上なら max 更新して候補を入れ替え）
-		if v > max+eps {
-			max = v
+		if u > max+eps {
+			max = u
 			ks = ks[:0]
 			ks = append(ks, k)
 			continue
 		}
 
 		// 誤差 eps 以内なら同率扱い
-		if math32.Abs(v-max) <= eps {
+		if float32(math.Abs(float64(u-max))) <= eps {
 			ks = append(ks, k)
 		}
 	}
-
-	return ks
+	return ks, nil
 }
 
 func (s VirtualSelector[K]) Select(rng *rand.Rand) (K, error) {
-	ks := s.EffectiveMaxKeys()
+	ks, err := s.MaxKeys()
+	if err != nil {
+		var zero K
+		return zero, err
+	}
 	return randx.Choice(ks, rng)
 }
 

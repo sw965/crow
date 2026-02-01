@@ -1,21 +1,21 @@
 package sequential_test
 
 import (
-	"errors"
 	game "github.com/sw965/crow/game/sequential"
 	ttt "github.com/sw965/crow/game/sequential/tictactoe"
 	"maps"
 	"math"
+	"strings"
 	"testing"
 )
 
 func TestNewRankByAgent(t *testing.T) {
 	tests := []struct {
-		name          string
-		agentsPerRank [][]string
-		want          game.RankByAgent[string]
-		wantErr       bool
-		wantErrIs     error
+		name           string
+		agentsPerRank  [][]string
+		want           game.RankByAgent[string]
+		wantErr        bool
+		wantErrMsgSubs []string
 	}{
 		//正常
 		{
@@ -62,25 +62,32 @@ func TestNewRankByAgent(t *testing.T) {
 		//異常系
 		{
 			name: "異常_エージェント重複",
+			// チームCが重複
 			agentsPerRank: [][]string{
 				[]string{"チームC"},
 				[]string{"チームA", "チームB"},
 				[]string{"チームD", "チームC"},
 			},
 			wantErr:   true,
-			wantErrIs: game.ErrDuplicateAgent,
+			wantErrMsgSubs: []string{
+				"duplicate",
+			},
 		},
 		{
 			name: "異常_空の順位",
 			agentsPerRank: [][]string{
+				// 1位
 				[]string{"チームA"},
+				// 2位
 				[]string{"チームB", "チームC"},
-				//空の順位付け
+				// 4位
 				[]string{},
 				[]string{"チームF"},
 			},
 			wantErr:   true,
-			wantErrIs: game.ErrEmptySlice,
+			wantErrMsgSubs :[]string{
+				"empty",
+			},
 		},
 		//準正常系
 		{
@@ -104,12 +111,15 @@ func TestNewRankByAgent(t *testing.T) {
 					t.Fatalf("エラーを期待したが、nilが返された")
 				}
 
-				if tc.wantErrIs == nil {
-					t.Fatalf("wantErr = true の場合、tc.wantErrIsのエラーを設定する必要があります")
+				if len(tc.wantErrMsgSubs) == 0 {
+					t.Fatalf("len(wantErrMsgSubs) == 0: tc.wantErr = %t", tc.wantErr)
 				}
 
-				if !errors.Is(err, tc.wantErrIs) {
-					t.Errorf("期待されたエラーが埋め込まれていない。want: %v, got: %v", tc.wantErrIs, errors.Unwrap(err))
+				errMsg := err.Error()
+				for _, sub := range tc.wantErrMsgSubs {
+					if !strings.Contains(errMsg, sub) {
+						t.Errorf("errMsg = %s, sub = %s", errMsg, sub)
+					}
 				}
 				return
 			}
@@ -127,9 +137,9 @@ func TestNewRankByAgent(t *testing.T) {
 
 func TestRankByAgentValidate(t *testing.T) {
 	tests := []struct {
-		name        string
-		rankByAgent game.RankByAgent[string]
-		wantErrIs   error
+		name           string
+		rankByAgent    game.RankByAgent[string]
+		wantErrMsgSubs []string
 	}{
 		{
 			name: "正常_一人用ゲーム",
@@ -160,7 +170,11 @@ func TestRankByAgentValidate(t *testing.T) {
 			rankByAgent: game.RankByAgent[string]{
 				"プレイヤー": 0,
 			},
-			wantErrIs: game.ErrInvalidRankValue,
+			wantErrMsgSubs: []string{
+				"0",
+				"must be",
+				">= 1",
+			},
 		},
 		{
 			name: "異常_0以下の順位_複数人ゲーム",
@@ -170,14 +184,22 @@ func TestRankByAgentValidate(t *testing.T) {
 				"チームC": 2,
 				"チームD": 3,
 			},
-			wantErrIs: game.ErrInvalidRankValue,
+			wantErrMsgSubs: []string{
+				"0",
+				"must be",
+				">= 1",
+			},
 		},
 		{
 			name: "異常_最小順位が1ではない_一人用ゲーム",
 			rankByAgent: game.RankByAgent[string]{
 				"プレイヤー": 2,
 			},
-			wantErrIs: game.ErrMinRankNotOne,
+			wantErrMsgSubs: []string{
+				"must start",
+				"at 1",
+				"got 2",
+			},
 		},
 		{
 			name: "異常_最小順位が1ではない_複数人ゲーム",
@@ -186,7 +208,11 @@ func TestRankByAgentValidate(t *testing.T) {
 				"チームB": 3,
 				"チームC": 4,
 			},
-			wantErrIs: game.ErrMinRankNotOne,
+			wantErrMsgSubs: []string{
+				"must start",
+				"at 1",
+				"got 2",
+			},
 		},
 		{
 			name:        "準正常_nil入力",
@@ -202,15 +228,18 @@ func TestRankByAgentValidate(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Helper()
 			err := tc.rankByAgent.Validate()
-			if tc.wantErrIs == nil {
+			if len(tc.wantErrMsgSubs) == 0 {
 				if err != nil {
-					t.Errorf("予期せぬエラーが発生した。%v", err)
+					t.Errorf("予期せぬエラーが発生: %v", err)
 				}
 				return
 			}
 
-			if !errors.Is(err, tc.wantErrIs) {
-				t.Fatalf("期待されるエラー型が埋め込まれていません。want: %v, got: %v", tc.wantErrIs, errors.Unwrap(err))
+			errMsg := err.Error()
+			for _, sub := range tc.wantErrMsgSubs {
+				if !strings.Contains(errMsg, sub) {
+					t.Errorf("errMsg = %s, sub = %s", errMsg, sub)
+				}
 			}
 		})
 	}
@@ -251,7 +280,11 @@ func TestEngineIsEnd(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Helper()
-			got, _ := engine.IsEnd(tc.state)
+			got, err := engine.IsEnd(tc.state)
+			if err != nil {
+				t.Fatalf("予期せぬエラー")
+			}
+
 			if tc.want != got {
 				t.Errorf("want: %t, got: %t", tc.want, got)
 			}

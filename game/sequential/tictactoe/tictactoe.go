@@ -1,16 +1,8 @@
 package tictactoe
 
 import (
-	"errors"
 	"fmt"
 	game "github.com/sw965/crow/game/sequential"
-)
-
-var (
-	ErrOutOfBounds  = errors.New("範囲外エラー")
-	ErrCellOccupied = errors.New("占領済みエラー")
-	ErrNotYourTurn  = errors.New("手番エラー")
-	ErrNoActiveTurn = errors.New("手番なしエラー")
 )
 
 type Mark int
@@ -101,19 +93,19 @@ func LegalMoves(state State) []Move {
 // MoveFuncは、現在の状態に行動を適用し、次の状態を返します。
 func MoveFunc(state State, move Move) (State, error) {
 	if state.Turn == EmptyMark {
-		return State{}, fmt.Errorf("%w: state.Turn = EmptyMark", ErrNoActiveTurn)
+		return State{}, fmt.Errorf("")
 	}
 
 	if state.Turn != move.Mark {
-		return State{}, fmt.Errorf("%w: 現在の手番: %d, 入力されたマーク: %d", ErrNotYourTurn, state.Turn, move.Mark)
+		return State{}, fmt.Errorf("")
 	}
 
 	if move.Row < 0 || move.Row >= Rows || move.Col < 0 || move.Col >= Cols {
-		return State{}, fmt.Errorf("%w: (move.Row, move.Col) = (%d, %d)", ErrOutOfBounds, move.Row, move.Col)
+		return State{}, fmt.Errorf("")
 	}
 
 	if state.Board[move.Row][move.Col] != EmptyMark {
-		return State{}, fmt.Errorf("%w: 既にマークが入力されている場所に、再度入力しようとした。", ErrCellOccupied)
+		return State{}, fmt.Errorf("")
 	}
 
 	next := state
@@ -172,10 +164,9 @@ func RankByAgentFunc(state State) (game.RankByAgent[Mark], error) {
 		// m1 == m2 && m2 == m3 ならば、ライン上に並んだ全てのマークが同じであるという事
 		// それに加えて、 m1 != EmptyMarkであれば、〇か×かのいずれかが揃ったことを意味する
 		if m1 != EmptyMark && m1 == m2 && m2 == m3 {
-			// 勝者が決まった場合
 			winner := m1
 			loser := winner.Opposite()
-			// 勝者が1位、敗者が2位となります。
+			// 勝者が1位、敗者が2位
 			return game.RankByAgent[Mark]{
 				winner: 1,
 				loser:  2,
@@ -191,7 +182,7 @@ func RankByAgentFunc(state State) (game.RankByAgent[Mark], error) {
 		}, nil
 	}
 
-	// ゲームは終了していない
+	// ゲームが終了していない場合
 	return game.RankByAgent[Mark]{}, nil
 }
 

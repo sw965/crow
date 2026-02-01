@@ -1,9 +1,9 @@
 package linear
 
 import (
-	"fmt"
-	"slices"
 	"github.com/sw965/omw/encoding/jsonx"
+	"slices"
+	"fmt"
 )
 
 type Parameter struct {
@@ -16,7 +16,7 @@ func LoadParameterJSON(path string) (Parameter, error) {
 }
 
 func (p Parameter) SaveJSON(path string) error {
-	err := jsonx.Save[Parameter](&p, path)
+	err := jsonx.Save[Parameter](p, path)
 	return err
 }
 
@@ -34,7 +34,11 @@ func (p Parameter) NewGradBufferZerosLike() GradBuffer {
 	}
 }
 
-func (p *Parameter) Axpy(alpha float32, x Parameter) {
+func (p *Parameter) Axpy(alpha float32, x Parameter) error {
+	if len(p.Weight) != len(x.Weight) || len(p.Bias) != len(x.Bias) {
+		return fmt.Errorf("Parameter sizes do not match in Axpy")
+	}
+
 	for i := range p.Weight {
 		p.Weight[i] += (alpha * x.Weight[i])
 	}
@@ -42,6 +46,7 @@ func (p *Parameter) Axpy(alpha float32, x Parameter) {
 	for i := range p.Bias {
 		p.Bias[i] += (alpha * x.Bias[i])
 	}
+	return nil
 }
 
 func (p *Parameter) Scal(alpha float32) {
@@ -54,30 +59,7 @@ func (p *Parameter) Scal(alpha float32) {
 	}
 }
 
-func (p *Parameter) AxpyGrad(alpha float32, grad GradBuffer) {
-	p.Axpy(alpha, Parameter(grad))
-}
-
-type Parameters []Parameter
-
-func (ps Parameters) Sum() (Parameter, error) {
-    if len(ps) == 0 {
-        return Parameter{}, fmt.Errorf("Parameters is empty")
-    }
-    wn, bn := len(ps[0].Weight), len(ps[0].Bias)
-    sumW := make([]float32, wn)
-    sumB := make([]float32, bn)
-
-    for _, p := range ps {
-        if len(p.Weight) != wn || len(p.Bias) != bn {
-            return Parameter{}, fmt.Errorf("shape mismatch")
-        }
-        for i := 0; i < wn; i++ {
-            sumW[i] += p.Weight[i]
-        }
-        for i := 0; i < bn; i++ {
-            sumB[i] += p.Bias[i]
-        }
-    }
-    return Parameter{Weight: sumW, Bias: sumB}, nil
+func (p *Parameter) AxpyGrad(alpha float32, grad GradBuffer) error {
+	err := p.Axpy(alpha, Parameter(grad))
+	return err
 }

@@ -1,7 +1,7 @@
 package linear
 
 import (
-	"github.com/chewxy/math32"
+	"fmt"
 )
 
 type GradBuffer struct {
@@ -16,7 +16,11 @@ func (g *GradBuffer) NewZerosLike() GradBuffer {
 	}
 }
 
-func (g *GradBuffer) Axpy(alpha float32, x GradBuffer) {
+func (g *GradBuffer) Axpy(alpha float32, x GradBuffer) error {
+	if len(g.Weight) != len(x.Weight) || len(g.Bias) != len(x.Bias) {
+		return fmt.Errorf("GradBuffer sizes do not match in Axpy")
+	}
+
 	for i := range g.Weight {
 		g.Weight[i] += (alpha * x.Weight[i])
 	}
@@ -24,6 +28,7 @@ func (g *GradBuffer) Axpy(alpha float32, x GradBuffer) {
 	for i := range g.Bias {
 		g.Bias[i] += (alpha * x.Bias[i])
 	}
+	return nil
 }
 
 func (g *GradBuffer) Scal(alpha float32) {
@@ -36,40 +41,19 @@ func (g *GradBuffer) Scal(alpha float32) {
 	}
 }
 
-func (g *GradBuffer) MaxAbs() (float32, float32) {
-	wMax := float32(0.0)
-	for i := range g.Weight {
-		wi := math32.Abs(g.Weight[i])
-		if wi > wMax {
-			wMax = wi
-		}
-	}
-
-	bMax := float32(0.0)
-	for i := range g.Bias {
-		bi := math32.Abs(g.Bias[i])
-		if bi > bMax {
-			bMax = bi
-		}
-	}
-	return wMax, bMax
-}
-
 type GradBuffers []GradBuffer
 
-func (gs GradBuffers) Total() GradBuffer {
-	total := gs[0].NewZerosLike()
-	for _, g := range gs {
-		total.Axpy(1.0, g)
+func (gs GradBuffers) ReduceSum() (GradBuffer, error) {
+	if len(gs) == 0 {
+		return GradBuffer{}, nil
 	}
-	return total
-}
 
-func (gs GradBuffers) Average() GradBuffer {
-	avg := gs[0].NewZerosLike()
+	sum := gs[0].NewZerosLike()
 	for _, g := range gs {
-		avg.Axpy(1.0, g)
+		err := sum.Axpy(1.0, g)
+		if err != nil {
+			return GradBuffer{}, err
+		}
 	}
-	avg.Scal(1.0 / float32(len(gs)))
-	return avg
+	return sum, nil
 }

@@ -1,7 +1,7 @@
 package linear
 
 import (
-	"github.com/chewxy/math32"
+	"math"
 	"slices"
 )
 
@@ -33,7 +33,7 @@ func NewSigmoidLayer() OutputLayer {
 	f := func(u []float32) []float32 {
 		y := make([]float32, len(u))
 		for i := range y {
-			y[i] = 1.0 / (1.0 + math32.Exp(-u[i]))
+			y[i] = 1.0 / (1.0 + float32(math.Exp(float64(-u[i]))))
 		}
 		return y
 	}
@@ -53,51 +53,27 @@ func NewSigmoidLayer() OutputLayer {
 	}
 }
 
-func NewSoftmaxLayer(minProb, maxProb float32) OutputLayer {
-    if minProb <= 0 || maxProb >= 1 || minProb >= maxProb {
-        panic("invalid minProb / maxProb")
-    }
+func NewSoftmaxLayerForCrossEntropy() OutputLayer {
+	f := func(u []float32) []float32 {
+		n := len(u)
+		maxU := slices.Max(u)
+		expU := make([]float32, n)
+		sumExpU := float32(0.0)
+		for i := range u {
+			expU[i] = float32(math.Exp(float64(u[i] - maxU)))
+			sumExpU += expU[i]
+		}
+		y := make([]float32, n)
+		for i := range expU {
+			y[i] = expU[i] / sumExpU
+		}
+		return y
+	}
 
-    f := func(u []float32) []float32 {
-        n := len(u)
-
-        // ---- 通常の softmax 計算（オーバーフロー対策あり） ----
-        maxU := slices.Max(u)
-        expU := make([]float32, n)
-        sumExpU := float32(0.0)
-        for i := range u {
-            expU[i] = math32.Exp(u[i] - maxU)
-            sumExpU += expU[i]
-        }
-        y := make([]float32, n)
-        for i := range expU {
-            y[i] = expU[i] / sumExpU
-        }
-
-        // ---- 2. クリッピング → 3. 再正規化 ----
-        sumY := float32(0.0)
-        for i := range y {
-            if y[i] < minProb {
-                y[i] = minProb
-            } else if y[i] > maxProb {
-                y[i] = maxProb
-            }
-            sumY += y[i]
-        }
-
-        // 合計が 1 になるよう再スケーリング
-        invSum := 1.0 / sumY
-        for i := range y {
-            y[i] *= invSum
-        }
-
-        return y
-    }
-
-    return OutputLayer{
-        Func:       f,
-        Derivative: nil, // CrossEntropyLoss 前提なので不要
-    }
+	return OutputLayer{
+		Func:       f,
+		Derivative: nil, // CrossEntropyが前提であれば、連鎖律をそのまま通せばいい
+	}
 }
 
 type PredictLossLayer struct {
@@ -105,7 +81,7 @@ type PredictLossLayer struct {
 	Derivative func([]float32, []float32) []float32
 }
 
-func NewMSELoss() PredictLossLayer {
+func NewMSELossLayer() PredictLossLayer {
 	f := func(y, t []float32) float32 {
 		sqSum := float32(0.0)
 		for i := range y {
@@ -128,12 +104,18 @@ func NewMSELoss() PredictLossLayer {
 	}
 }
 
-func NewCrossEntropyLossLayer() PredictLossLayer {
-	const eps float32 = 0.0001
+// 100万分の1
+const minProb float32 = 1.0 / 1000000.0
+
+func NewCrossEntropyLossLayerForSoftmax() PredictLossLayer {
 	f := func(y, t []float32) float32 {
 		loss := float32(0.0)
 		for i := range y {
-			loss += -t[i] * math32.Log(y[i]+eps)
+			yi := y[i]
+			if yi < minProb {
+				yi = minProb
+			}
+			loss += -t[i] * float32(math.Log(float64(yi)))
 		}
 		return loss
 	}
@@ -146,8 +128,5 @@ func NewCrossEntropyLossLayer() PredictLossLayer {
 		return grad
 	}
 
-	return PredictLossLayer{
-		Func:       f,
-		Derivative: d,
-	}
+	return PredictLossLayer{Func: f, Derivative: d}
 }
