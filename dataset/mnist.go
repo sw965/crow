@@ -1,60 +1,82 @@
 package dataset
 
 import (
-	"embed"
-	"encoding/gob"
 	"fmt"
+	"github.com/sw965/omw/encoding/gobx"
+	"github.com/sw965/omw/mathx/bitsx"
+	"io"
+	"net/http"
+	"os"
+	"path/filepath"
 )
 
-//go:embed mnist.gob
-var mnistFile embed.FS
+const (
+	mnistBaseURL           = "https://github.com/sw965/crow/releases/download/v0.1.0-test/"
+	mnistBinaryImgFileName = "mnist_flat_binary_imgs.gob"
+	mnistIntLabelFileName  = "mnist_int_labels.gob"
+)
 
-type Mnist struct {
-	TrainImages [][]float32 // 60,000 x 784
-	TrainLabels []float32   // 60,000
-	TestImages  [][]float32 // 10,000 x 784
-	TestLabels  []float32   // 10,000
+type BinaryMNIST struct {
+	FlatImgs bitsx.Matrices
+	Labels   []int
 }
 
-func LoadMnist() (Mnist, error) {
-	f, err := mnistFile.Open("mnist.gob")
+func LoadBinaryMNIST() (BinaryMNIST, error) {
+	home, err := os.UserHomeDir()
 	if err != nil {
-		// 後でエラーメッセージを日本語にする
-		return Mnist{}, fmt.Errorf("failed to open embedded mnist.gob: %w", err)
+		return BinaryMNIST{}, fmt.Errorf("ホームディレクトリの取得に失敗: %w", err)
 	}
-	defer f.Close()
 
-	var data Mnist
-	if err := gob.NewDecoder(f).Decode(&data); err != nil {
-		// 後でエラーメッセージを日本語にする
-		return Mnist{}, fmt.Errorf("failed to decode mnist data: %w", err)
+	dataDir := filepath.Join(home, ".crow_dataset")
+	if err := os.MkdirAll(dataDir, 0755); err != nil {
+		return BinaryMNIST{}, err
 	}
-	return data, nil
-}
 
-//go:embed fashion_mnist.gob
-var fashionMnistFile embed.FS
+	imgPath := filepath.Join(dataDir, mnistBinaryImgFileName)
+	labelPath := filepath.Join(dataDir, mnistIntLabelFileName)
 
-// FashionMnist は Fashion-MNISTデータセットの構造体です。
-// フォーマットはMNISTと同一です。
-type FashionMnist struct {
-	TrainImages [][]float32 // 60,000 x 784
-	TrainLabels []float32   // 60,000
-	TestImages  [][]float32 // 10,000 x 784
-	TestLabels  []float32   // 10,000
-}
+	if err := ensureFile(imgPath, mnistBaseURL+mnistBinaryImgFileName); err != nil {
+		return BinaryMNIST{}, err
+	}
+	if err := ensureFile(labelPath, mnistBaseURL+mnistIntLabelFileName); err != nil {
+		return BinaryMNIST{}, err
+	}
 
-// LoadFashionMnist は埋め込まれたgobファイルからデータを読み込みます。
-func LoadFashionMnist() (FashionMnist, error) {
-	f, err := fashionMnistFile.Open("fashion_mnist.gob")
+	imgs, err := gobx.Load[bitsx.Matrices](imgPath)
 	if err != nil {
-		return FashionMnist{}, fmt.Errorf("failed to open embedded fashion_mnist.gob: %w", err)
+		return BinaryMNIST{}, err
 	}
-	defer f.Close()
 
-	var data FashionMnist
-	if err := gob.NewDecoder(f).Decode(&data); err != nil {
-		return FashionMnist{}, fmt.Errorf("failed to decode fashion_mnist data: %w", err)
+	labels, err := gobx.Load[[]int](labelPath)
+	if err != nil {
+		return BinaryMNIST{}, err
 	}
-	return data, nil
+
+	return BinaryMNIST{FlatImgs: imgs, Labels: labels}, nil
+}
+
+func ensureFile(path, url string) error {
+	if _, err := os.Stat(path); err == nil {
+		return nil // 既に存在するので何もしない
+	}
+
+	fmt.Printf("Downloading %s...\n", url)
+	resp, err := http.Get(url)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("bad status: %s", resp.Status)
+	}
+
+	out, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	_, err = io.Copy(out, resp.Body)
+	return err
 }

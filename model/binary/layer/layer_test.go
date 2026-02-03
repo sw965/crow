@@ -49,6 +49,7 @@ type LayerModel struct {
 }
 
 func TestLayerMNIST(t *testing.T) {
+	// return
 	// --- ハイパーパラメータ (mlp_test.go と完全に一致) ---
 	a := float32(0.001)
 	epochs := 50
@@ -143,7 +144,7 @@ func TestLayerMNIST(t *testing.T) {
 		// マスター用のSignDot (これは学習ループでは使わず、更新の同期用)
 		sd, _ := NewSignDot(w, wt)
 		masterLayers[i] = &LayerState{
-			SD: &sd,
+			SD: sd,
 			H:  h,
 		}
 	}
@@ -166,11 +167,11 @@ func TestLayerMNIST(t *testing.T) {
 			sd.Rng = rngs[p] // ワーカー固有のRNG
 
 			state := &LayerState{
-				SD: &sd,
+				SD: sd,
 				H:  master.H, // Hも参照共有 (更新は同期時に行うのでOK)
 			}
 			workerLayers[i] = state
-			workerSeq[i] = &sd // Interfaceへのポインタ
+			workerSeq[i] = sd // Interfaceへのポインタ
 		}
 
 		workerModels[p] = LayerModel{

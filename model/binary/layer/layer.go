@@ -227,7 +227,7 @@ func (sd *SignDot) Backward(target bitsx.Matrix) (bitsx.Matrix, error) {
 		return bitsx.Matrix{}, err
 	}
 
-	wRows := sd.W.Rows
+	// wRows := sd.W.Rows
 	err = target.ScanRowsWord(nil, func(tCtx bitsx.MatrixWordContext) error {
 		// 64ビット毎に操作するための宣言
 		zsWord := sd.zs[tCtx.GlobalStart:tCtx.GlobalEnd]
@@ -255,7 +255,7 @@ func (sd *SignDot) Backward(target bitsx.Matrix) (bitsx.Matrix, error) {
 			}
 
 			outputCol := tCtx.ColStart + i
-			deltaRow := sd.delta[outputCol*wRows : (outputCol+1)*wRows]
+			deltaRow := sd.delta[outputCol*wCols : (outputCol+1)*wCols]
 
 			// 64ビット毎にxを見て重みの勾配を求める
 			sd.x.ScanRowsWord([]int{tCtx.Row}, func(xCtx bitsx.MatrixWordContext) error {
