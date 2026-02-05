@@ -11,53 +11,89 @@ import (
 )
 
 const (
-	mnistBaseURL           = "https://github.com/sw965/crow/releases/download/v0.1.0-test/"
-	mnistBinaryImgFileName = "mnist_flat_binary_imgs.gob"
-	mnistIntLabelFileName  = "mnist_int_labels.gob"
+	baseURL = "https://github.com/sw965/crow/releases/download/v0.1.0-test/"
+
+	// MNIST
+	mnistTrainImg   = "mnist_flat_binary_imgs.gob"
+	mnistTrainLabel = "mnist_int_labels.gob"
+	mnistTestImg    = "mnist_test_flat_binary_imgs.gob"
+	mnistTestLabel  = "mnist_test_int_labels.gob"
+
+	// Fashion-MNIST
+	fashionTrainImg   = "fashion_mnist_train_flat_binary_imgs.gob"
+	fashionTrainLabel = "fashion_mnist_train_int_labels.gob"
+	fashionTestImg    = "fashion_mnist_test_flat_binary_imgs.gob"
+	fashionTestLabel  = "fashion_mnist_test_int_labels.gob"
 )
 
-type BinaryMNIST struct {
-	FlatImgs bitsx.Matrices
-	Labels   []int
+// BinaryDataset は訓練用とテスト用の画像・ラベルを保持します
+type BinaryDataset struct {
+	TrainImages bitsx.Matrices
+	TrainLabels []int
+	TestImages  bitsx.Matrices
+	TestLabels  []int
 }
 
-func LoadBinaryMNIST() (BinaryMNIST, error) {
+// LoadMNIST は通常のMNISTデータを読み込みます
+func LoadMNIST() (BinaryDataset, error) {
+	return loadDataset(mnistTrainImg, mnistTrainLabel, mnistTestImg, mnistTestLabel)
+}
+
+// LoadFashionMNIST はFashion-MNISTデータを読み込みます
+func LoadFashionMNIST() (BinaryDataset, error) {
+	return loadDataset(fashionTrainImg, fashionTrainLabel, fashionTestImg, fashionTestLabel)
+}
+
+// 内部共有用の読み込み関数
+func loadDataset(trImg, trLbl, teImg, teLbl string) (BinaryDataset, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return BinaryMNIST{}, fmt.Errorf("ホームディレクトリの取得に失敗: %w", err)
+		return BinaryDataset{}, fmt.Errorf("ホームディレクトリの取得に失敗: %w", err)
 	}
 
 	dataDir := filepath.Join(home, ".crow_dataset")
 	if err := os.MkdirAll(dataDir, 0755); err != nil {
-		return BinaryMNIST{}, err
+		return BinaryDataset{}, err
 	}
 
-	imgPath := filepath.Join(dataDir, mnistBinaryImgFileName)
-	labelPath := filepath.Join(dataDir, mnistIntLabelFileName)
-
-	if err := ensureFile(imgPath, mnistBaseURL+mnistBinaryImgFileName); err != nil {
-		return BinaryMNIST{}, err
+	// 4つのファイルすべてに対してダウンロードとロードを実行
+	targetFiles := []string{trImg, trLbl, teImg, teLbl}
+	for _, name := range targetFiles {
+		path := filepath.Join(dataDir, name)
+		if err := ensureFile(path, baseURL+name); err != nil {
+			return BinaryDataset{}, err
+		}
 	}
-	if err := ensureFile(labelPath, mnistBaseURL+mnistIntLabelFileName); err != nil {
-		return BinaryMNIST{}, err
-	}
 
-	imgs, err := gobx.Load[bitsx.Matrices](imgPath)
+	// 各ファイルをGOBとしてデコード
+	trImgs, err := gobx.Load[bitsx.Matrices](filepath.Join(dataDir, trImg))
 	if err != nil {
-		return BinaryMNIST{}, err
+		return BinaryDataset{}, err
 	}
-
-	labels, err := gobx.Load[[]int](labelPath)
+	trLbls, err := gobx.Load[[]int](filepath.Join(dataDir, trLbl))
 	if err != nil {
-		return BinaryMNIST{}, err
+		return BinaryDataset{}, err
+	}
+	teImgs, err := gobx.Load[bitsx.Matrices](filepath.Join(dataDir, teImg))
+	if err != nil {
+		return BinaryDataset{}, err
+	}
+	teLbls, err := gobx.Load[[]int](filepath.Join(dataDir, teLbl))
+	if err != nil {
+		return BinaryDataset{}, err
 	}
 
-	return BinaryMNIST{FlatImgs: imgs, Labels: labels}, nil
+	return BinaryDataset{
+		TrainImages: trImgs,
+		TrainLabels: trLbls,
+		TestImages:  teImgs,
+		TestLabels:  teLbls,
+	}, nil
 }
 
 func ensureFile(path, url string) error {
 	if _, err := os.Stat(path); err == nil {
-		return nil // 既に存在するので何もしない
+		return nil
 	}
 
 	fmt.Printf("Downloading %s...\n", url)

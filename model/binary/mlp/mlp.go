@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"github.com/sw965/crow/model/binary/layer"
 	"github.com/sw965/omw/mathx/bitsx"
+	"github.com/sw965/omw/mathx/randx"
 	"math/rand/v2"
 	"math"
+	"github.com/sw965/omw/slicesx"
 )
 
 type H struct {
@@ -32,14 +34,24 @@ type Model struct {
 	Ws              bitsx.Matrices
 	wTs             bitsx.Matrices
 	Hs              []H
+	Prototypes      bitsx.Matrices
+
 	layersPerWorker layer.Sequences
+	rngs            []*rand.Rand
 	inputDim        int
+
+	TrainingContext *layer.TrainingContext
 }
 
-func NewModel(numLayers, p int) Model {
+func NewModel(inputDim, numLayers, p int) Model {
 	layersPerWorker := make(layer.Sequences, p)
 	for workerI := range p {
 		layersPerWorker[workerI] = make(layer.Sequence, 0, numLayers)
+	}
+
+	rngs := make([]*rand.Rand, p)
+	for i := range p {
+		rngs[i] = randx.NewPCGFromGlobalSeed()
 	}
 
 	return Model{
@@ -47,11 +59,15 @@ func NewModel(numLayers, p int) Model {
 		wTs:make(bitsx.Matrices, 0, numLayers),
 		Hs:make([]H, 0, numLayers),
 		layersPerWorker:layersPerWorker,
+		rngs:rngs,
+		inputDim:inputDim,
 	}
 }
 
-func (m *Model) AppendSignDotLayer(dim int, rng *rand.Rand) error {
-	w, err := bitsx.NewRandMatrix(m.inputDim, dim, 0, rng)
+func (m *Model) AppendDenseLayer(dim int) error {
+	// rngs と layersPerWorkerの長さチェックを入れる？
+	rng := m.rngs[0]
+	w, err := bitsx.NewRandMatrix(dim, m.inputDim, 0, rng)
 	if err != nil {
 		return err
 	}
@@ -85,11 +101,12 @@ func (m *Model) AppendSignDotLayer(dim int, rng *rand.Rand) error {
 	m.Hs = append(m.Hs, h)
 
 	for workerI := range m.layersPerWorker {
-		signDotLayer, err := layer.NewSignDot(w, wt)
+		denseLayer, err := layer.NewDense(w, wt, m.TrainingContext)
 		if err != nil {
 			return err
 		}
-		m.layersPerWorker[workerI] = append(m.layersPerWorker[workerI], signDotLayer)
+		denseLayer.Rng = m.rngs[workerI]
+		m.layersPerWorker[workerI] = append(m.layersPerWorker[workerI], denseLayer)
 	}
 	m.inputDim = dim
 	return nil
@@ -102,36 +119,29 @@ func (m *Model) Predict(x bitsx.Matrix) (bitsx.Matrix, error) {
 	return m.layersPerWorker[0].Predict(x)
 }
 
-func (m *Model) PredictLogits(x bitsx.Matrix, prototypes bitsx.Matrices) ([]int, error) {
+func (m *Model) PredictLogits(x bitsx.Matrix) ([]int, error) {
 	if len(m.layersPerWorker) == 0 {
 		return nil, fmt.Errorf("model has no workers")
 	}
-	return m.layersPerWorker[0].PredictLogits(x, prototypes)
+	return m.layersPerWorker[0].PredictLogits(x, m.Prototypes)
 }
 
-func (m *Model) Accuracy(xs []bitsx.Matrix, labels []int, prototypes bitsx.Matrices, p int) (float32, error) {
+func (m *Model) Accuracy(xs []bitsx.Matrix, labels []int, p int) (float32, error) {
 	if len(m.layersPerWorker) == 0 {
 		return 0.0, fmt.Errorf("model has no workers")
 	}
-	return m.layersPerWorker[0].Accuracy(xs, labels, prototypes, p)
-}
-
-func (m *Model) ComputeSignDeltas(xs, ts bitsx.Matrices) ([]layer.Delta, error) {
-	return m.layersPerWorker.ComputeSignDeltas(xs, ts)
+	return m.layersPerWorker[0].Accuracy(xs, labels, m.Prototypes, p)
 }
 
 func (m *Model) UpdateWeight(deltas []layer.Delta, lr float32, rng *rand.Rand) error {
-	if len(deltas) != len(m.Ws) {
-		return fmt.Errorf("layer count mismatch")
-	}
-
 	if lr < 0.0 || lr > 1.0 {
 		return fmt.Errorf("後でエラーメッセージを書く")
 	}
 
 	for layerI, w := range m.Ws {
-		h := m.Hs[layerI]
 		delta := deltas[layerI]
+		wt := m.wTs[layerI]
+		h := m.Hs[layerI]
 		err := w.ScanRowsWord(nil, func(ctx bitsx.MatrixWordContext) error {
 			hWord := h.Data[ctx.GlobalStart:ctx.GlobalEnd]
 			deltaWord := delta[ctx.GlobalStart:ctx.GlobalEnd]
@@ -151,6 +161,10 @@ func (m *Model) UpdateWeight(deltas []layer.Delta, lr float32, rng *rand.Rand) e
 				isNewPlus := clipped >= 0
 				if isOldPlus != isNewPlus {
 					flip |= (1 << uint64(i))
+					err := wt.Toggle(col, ctx.Row)
+					if err != nil {
+						panic(err)
+					}
 				}
 			})
 			w.Data[ctx.WordIndex] ^= flip
@@ -162,4 +176,52 @@ func (m *Model) UpdateWeight(deltas []layer.Delta, lr float32, rng *rand.Rand) e
 		}
 	}
 	return nil
+}
+
+func (m *Model) TrainForClassification(xs bitsx.Matrices, labels []int, miniBatchSize int, lr float32, rng *rand.Rand) error {
+	n := len(xs)
+	if miniBatchSize <= 0 {
+		return fmt.Errorf("後でエラーメッセージを書く")
+	}
+
+	if n < miniBatchSize {
+		miniBatchSize = n
+	}
+
+	batchIdxs := rng.Perm(n)
+	for i := 0; i < n; i += miniBatchSize {
+		end := i + miniBatchSize
+		if end > n {
+			end = n
+		}
+
+		miniIdxs := batchIdxs[i:end]
+		miniXs, err := slicesx.ElementsByIndices(xs, miniIdxs...)
+		if err != nil {
+			return err
+		}
+
+		miniLabels, err := slicesx.ElementsByIndices(labels, miniIdxs...)
+		if err != nil {
+			return err
+		}
+
+		signDeltas, err := m.layersPerWorker.ComputeSignDeltasForClassification(miniXs, miniLabels, m.Prototypes, m.TrainingContext)
+		if err != nil {
+			return err
+		}
+
+		err = m.UpdateWeight(signDeltas, lr, rng)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+type TrainingConfig struct {
+    Epochs        int
+	MiniBatchSize int
+    LearningRate  float32
+    Rng           *rand.Rand
 }
