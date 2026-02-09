@@ -86,9 +86,9 @@ func (m *Model) AppendDenseLayer(dim int) error {
 		ctx.ScanBits(func(i, col, colT int) {
 			wBit := wWord >> uint64(i) & 1
 			if wBit == 1 {
-				hWord[i] = 31 
+				hWord[i] = math.MaxInt8 / 4
 			} else {
-				hWord[i] = -31
+				hWord[i] = math.MinInt8 / 4
 			}
 		})
 		return nil
@@ -101,7 +101,7 @@ func (m *Model) AppendDenseLayer(dim int) error {
 	m.Hs = append(m.Hs, h)
 
 	for workerI := range m.layersPerWorker {
-		denseLayer, err := layer.NewDense(w, wt, m.TrainingContext)
+		denseLayer, err := layer.NewDense(w, wt, m.inputDim, m.TrainingContext)
 		if err != nil {
 			return err
 		}
@@ -126,13 +126,21 @@ func (m *Model) PredictLogits(x bitsx.Matrix) ([]int, error) {
 	return m.layersPerWorker[0].PredictLogits(x, m.Prototypes)
 }
 
-func (m *Model) Accuracy(xs []bitsx.Matrix, labels []int, p int) (float32, error) {
+func (m *Model) PredictSoftmax(x bitsx.Matrix) ([]float32, error) {
+	if len(m.layersPerWorker) == 0 {
+		return nil, fmt.Errorf("model has no workers")
+	}
+	return m.layersPerWorker[0].PredictSoftmax(x, m.Prototypes)
+}
+
+func (m *Model) Accuracy(xs bitsx.Matrices, labels []int, p int) (float32, error) {
 	if len(m.layersPerWorker) == 0 {
 		return 0.0, fmt.Errorf("model has no workers")
 	}
 	return m.layersPerWorker[0].Accuracy(xs, labels, m.Prototypes, p)
 }
 
+// 後で並列化にする
 func (m *Model) UpdateWeight(deltas []layer.Delta, lr float32, rng *rand.Rand) error {
 	if lr < 0.0 || lr > 1.0 {
 		return fmt.Errorf("後でエラーメッセージを書く")
@@ -178,17 +186,23 @@ func (m *Model) UpdateWeight(deltas []layer.Delta, lr float32, rng *rand.Rand) e
 	return nil
 }
 
-func (m *Model) TrainForClassification(xs bitsx.Matrices, labels []int, miniBatchSize int, lr float32, rng *rand.Rand) error {
+// Trainメソッドにエラーを集約させる？
+func (m *Model) Train(xs bitsx.Matrices, labels []int, config *TrainingConfig) error {
+	if err := config.Validate(); err != nil {
+		return err
+	}
+
 	n := len(xs)
-	if miniBatchSize <= 0 {
+	if config.MiniBatchSize <= 0 {
 		return fmt.Errorf("後でエラーメッセージを書く")
 	}
 
+	miniBatchSize := config.MiniBatchSize
 	if n < miniBatchSize {
 		miniBatchSize = n
 	}
 
-	batchIdxs := rng.Perm(n)
+	batchIdxs := config.Rng.Perm(n)
 	for i := 0; i < n; i += miniBatchSize {
 		end := i + miniBatchSize
 		if end > n {
@@ -206,12 +220,12 @@ func (m *Model) TrainForClassification(xs bitsx.Matrices, labels []int, miniBatc
 			return err
 		}
 
-		signDeltas, err := m.layersPerWorker.ComputeSignDeltasForClassification(miniXs, miniLabels, m.Prototypes, m.TrainingContext)
+		signDeltas, err := m.layersPerWorker.ComputeSignDeltas(miniXs, miniLabels, m.Prototypes, config.Margin)
 		if err != nil {
 			return err
 		}
 
-		err = m.UpdateWeight(signDeltas, lr, rng)
+		err = m.UpdateWeight(signDeltas, config.LearningRate, config.Rng)
 		if err != nil {
 			return err
 		}
@@ -220,8 +234,23 @@ func (m *Model) TrainForClassification(xs bitsx.Matrices, labels []int, miniBatc
 }
 
 type TrainingConfig struct {
-    Epochs        int
 	MiniBatchSize int
     LearningRate  float32
-    Rng           *rand.Rand
+	Margin        float32
+	Rng           *rand.Rand
+}
+
+func (tc *TrainingConfig) Validate() error {
+	if tc.MiniBatchSize <= 0 {
+		return fmt.Errorf("後でエラーメッセージを書く")
+	}
+
+	if tc.LearningRate <= 0.0 {
+		return fmt.Errorf("後でエラーメッセージを書く")
+	}
+
+	if tc.Rng == nil {
+		return fmt.Errorf("後でエラーメッセージを書く")
+	}
+	return nil
 }

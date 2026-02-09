@@ -11,15 +11,15 @@ import (
 	"github.com/sw965/omw/mathx/randx"
 	"github.com/sw965/omw/parallel"
 	"github.com/sw965/omw/slicesx"
+	"slices"
 )
 
 type Delta []int16
 
 type TrainingContext struct {
-	GateThresholdScale     float32
-    NoiseStdScale          float64
-    GroupSize              int
-    TriggerCount           int64
+	GateThresholdScale float32
+	NoiseStdScale      float64
+	GroupSize          int
 }
 
 type Interface interface {
@@ -34,18 +34,17 @@ type Dense struct {
 	W   bitsx.Matrix
 	WT  bitsx.Matrix
 	Rng *rand.Rand
-
 	TrainingContext *TrainingContext
 
-	x     bitsx.Matrix
-	zs    []int
-	delta Delta
+	x      bitsx.Matrix
+	z      []int
+	delta  Delta
 
 	gateThresholdBase int
 	noiseStdBase      float64
 }
 
-func NewDense(w, wt bitsx.Matrix, ctx *TrainingContext) (*Dense, error) {
+func NewDense(w, wt bitsx.Matrix, xRows int, ctx *TrainingContext) (*Dense, error) {
 	if w.Rows != wt.Cols {
 		return nil, fmt.Errorf("後でエラーメッセージを書く")
 	}
@@ -54,15 +53,14 @@ func NewDense(w, wt bitsx.Matrix, ctx *TrainingContext) (*Dense, error) {
 		return nil, fmt.Errorf("後でエラーメッセージを書く")
 	}
 
-	n := w.Rows * w.Cols
 	noiseStdBase := math.Sqrt(float64(w.Cols))
 	gateThresholdBase := int(noiseStdBase)
 	return &Dense{
-		W:             w,
-		WT:            wt,
-		TrainingContext: ctx,
-		zs:            make([]int, n),
-		delta:         make([]int16, n),
+		W:                 w,
+		WT:                wt,
+		TrainingContext:   ctx,
+		z:                 make([]int, xRows * w.Rows),
+		delta:             make([]int16, w.Rows * w.Cols),
 		gateThresholdBase: gateThresholdBase,
 		noiseStdBase:      noiseStdBase,
 	}, nil
@@ -82,30 +80,30 @@ func (d *Dense) Forward(x bitsx.Matrix) (bitsx.Matrix, error) {
 		return bitsx.Matrix{}, err
 	}
 
-	maxZ := d.W.Cols
-	minZ := -maxZ
+	maxZi := d.W.Cols
+	minZi := -maxZi
 
 	noiseStd := d.NoiseStd()
 	isNoisy := noiseStd > 0.0
 
 	if isNoisy {
 		for i, count := range u {
-			z := 2*count - maxZ
-			noise, err := randx.NormalInt(minZ, maxZ, 0, noiseStd, d.Rng)
+			zi := 2*count - maxZi
+			noise, err := randx.NormalInt(minZi, maxZi, 0, noiseStd, d.Rng)
 			if err != nil {
 				return bitsx.Matrix{}, err
 			}
-			d.zs[i] = z + noise
+			d.z[i] = zi + noise
 		}
 	} else {
 		for i, count := range u {
-			d.zs[i] = 2*count - maxZ
+			d.z[i] = 2*count - maxZi
 		}
 	}
 
 	yRows := x.Rows
 	yCols := d.W.Rows
-	sign, err := bitsx.NewSignMatrix(yRows, yCols, d.zs)
+	sign, err := bitsx.NewSignMatrix(yRows, yCols, d.z)
 	if err != nil {
 		return bitsx.Matrix{}, err
 	}
@@ -131,32 +129,32 @@ func (d *Dense) Backward(target bitsx.Matrix) (bitsx.Matrix, error) {
 	// wRows := d.W.Rows
 	err = target.ScanRowsWord(nil, func(tCtx bitsx.MatrixWordContext) error {
 		// 64ビット毎に操作するための宣言
-		zsWord := d.zs[tCtx.GlobalStart:tCtx.GlobalEnd]
-		ascIdxs := slicesx.Argsort(zsWord)
-		cutoffZIdx := len(ascIdxs) / d.TrainingContext.GroupSize
-		if cutoffZIdx == 0 {
-			cutoffZIdx = 1
+		zWord := d.z[tCtx.GlobalStart:tCtx.GlobalEnd]
+		ascIdxs := slicesx.Argsort(zWord)
+		cutoffIdx := len(ascIdxs) / d.TrainingContext.GroupSize
+		if cutoffIdx == 0 {
+			cutoffIdx = 1
 		}
-		cutoffZ := zsWord[ascIdxs[cutoffZIdx]]
+		cutoffZi := zWord[ascIdxs[cutoffIdx-1]]
 		tWord := target.Data[tCtx.WordIndex]
 		var keepGateWord uint64
 
 		// ScanBitsで上記の64ビット(Word)に対して操作する
 		// 引数iに代入される値は、100ビットの場合、一週目は0～63、二週目は64～99
 		tCtx.ScanBits(func(i, col, colT int) {
-			z := zsWord[i]
-			if z > cutoffZ {
+			zi := zWord[i]
+			if zi > cutoffZi {
 				return
 			}
 
-			if mathx.Abs(z) > gateThreshold {
+			if mathx.Abs(zi) > gateThreshold {
 				return
 			}
 			keepGateWord |= (1 << uint64(i))
 
 			tBit := (tWord >> uint64(i)) & 1
 			yBit := uint64(0)
-			if z >= 0 {
+			if zi >= 0 {
 				yBit = 1
 			}
 
@@ -221,15 +219,15 @@ func (d *Dense) Predict(x bitsx.Matrix) (bitsx.Matrix, error) {
 		return bitsx.Matrix{}, err
 	}
 
-	maxZ := d.W.Cols
-	zs := make([]int, len(u))
+	maxZi := d.W.Cols
+	z := make([]int, len(u))
 	for i, count := range u {
-		zs[i] = 2*count - maxZ
+		z[i] = 2*count - maxZi
 	}
-
+	
 	yRows := x.Rows
 	yCols := d.W.Rows
-	sign, err := bitsx.NewSignMatrix(yRows, yCols, zs)
+	sign, err := bitsx.NewSignMatrix(yRows, yCols, z)
 	if err != nil {
 		return bitsx.Matrix{}, err
 	}
@@ -303,6 +301,31 @@ func (s Sequence) PredictLogits(x bitsx.Matrix, prototypes bitsx.Matrices) ([]in
 	return logits, nil
 }
 
+func (s Sequence) PredictSoftmax(x bitsx.Matrix, prototypes bitsx.Matrices) ([]float32, error) {
+	logits, err := s.PredictLogits(x, prototypes)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(logits) == 0 {
+		return nil, fmt.Errorf("logits is empty")
+	}
+
+	maxLogit := slices.Max(logits)
+	exps := make([]float64, len(logits))
+	var sumExp float64
+	for i, l := range logits {
+		exps[i] = math.Exp(float64(l - maxLogit))
+		sumExp += exps[i]
+	}
+
+	y := make([]float32, len(logits))
+	for i, exp := range exps {
+		y[i] = float32(exp / sumExp)
+	}
+	return y, nil
+}
+
 func (s Sequence) Accuracy(xs bitsx.Matrices, labels []int, prototypes bitsx.Matrices, p int) (float32, error) {
 	n := len(xs)
 	if n != len(labels) {
@@ -355,7 +378,7 @@ func (ss Sequences) aggregateDeltas() ([]Delta, error) {
 	for layerI := range numLayers {
 		worker0Delta := ss[0][layerI].Delta()
 		worker0DeltaN := len(worker0Delta)
-		sum := make([]int, worker0DeltaN)
+		sum := make([]int16, worker0DeltaN)
 
 		for _, seq := range ss {
 			delta := seq[layerI].Delta()
@@ -364,7 +387,7 @@ func (ss Sequences) aggregateDeltas() ([]Delta, error) {
 			}
 
 			for i, v := range delta {
-				sum[i] += int(v)
+				sum[i] += v
 			}
 		}
 
@@ -377,48 +400,12 @@ func (ss Sequences) aggregateDeltas() ([]Delta, error) {
 	return signDeltas, nil
 }
 
-func (ss Sequences) ComputeSignDeltas(xs, ts bitsx.Matrices) ([]Delta, error) {
+func (ss Sequences) ComputeSignDeltas(xs bitsx.Matrices, labels []int, prototypes bitsx.Matrices, margin float32) ([]Delta, error) {
 	n := len(xs)
-	if n != len(ts) {
-		return nil, fmt.Errorf("後でエラーメッセージを書く")
-	}
-
-	// バッチサイズがmath.MaxInt16より大きいと、オーバーフローが起きる可能性があるため、ガードする
-	// ※ ワーカー毎にDeltaを切り分けるが、合計して集約するステップがある事に注意
 	if n > math.MaxInt16 {
 		return nil, fmt.Errorf("後でエラーメッセージを書く")
 	}
-	
-	for _, seq := range ss {
-		seq.ClearDelta()
-	}
-	p := len(ss)
 
-	err := parallel.For(n, p, func(workerId, idx int) error {
-		x := xs[idx]
-		t := ts[idx]
-		seq := ss[workerId]
-
-		_, err := seq.Forwards(x)
-		if err != nil {
-			return err
-		}
-
-		_, err = seq.Backwards(t)
-		if err != nil {
-			return err
-		}
-		return nil
-	})
-
-	if err != nil {
-		return nil, err
-	}
-	return ss.aggregateDeltas()
-}
-
-func (ss Sequences) ComputeSignDeltasForClassification(xs bitsx.Matrices, labels []int, prototypes bitsx.Matrices, ctx *TrainingContext) ([]Delta, error) {
-	n := len(xs)
 	if n != len(labels) {
 		return nil, fmt.Errorf("length mismatch: xs %d != labels %d", n, len(labels))
 	}
@@ -438,12 +425,12 @@ func (ss Sequences) ComputeSignDeltasForClassification(xs bitsx.Matrices, labels
 			return err
 		}
 
-		needsUpdate, err := NeedsClassificationUpdate(y, label, prototypes)
+		shouldUpdate, err := SatisfiesUpdateCriterion(y, label, prototypes, margin)
 		if err != nil {
 			return err
 		}
 
-		if !needsUpdate {
+		if !shouldUpdate {
 			return nil
 		}
 
@@ -452,25 +439,25 @@ func (ss Sequences) ComputeSignDeltasForClassification(xs bitsx.Matrices, labels
 		if err != nil {
 			return err
 		}
-
-		ctx.TriggerCount += 1
 		return nil
 	})
 
 	if err != nil {
 		return nil, err
 	}
+	//最後にもClearDeltaを呼ぶ？
 	return ss.aggregateDeltas()
 }
 
-func NeedsClassificationUpdate(y bitsx.Matrix, label int, prototypes bitsx.Matrices) (bool, error) {
+func SatisfiesUpdateCriterion(y bitsx.Matrix, label int, prototypes bitsx.Matrices, margin float32) (bool, error) {
 	t := prototypes[label]
 	yMismatch, err := y.HammingDistance(t)
 	if err != nil {
 		return false, err
 	}
 
-	marginBits := (y.Rows*y.Cols) / 4
+	totalBits := y.Rows * y.Cols
+	marginBits := int(float32(totalBits) * margin)
 	for i, proto := range prototypes {
 		if i == label {
 			continue
@@ -481,11 +468,10 @@ func NeedsClassificationUpdate(y bitsx.Matrix, label int, prototypes bitsx.Matri
 			return false, err
 		}
 
+		// 設定したマージンよりも差を付けられなかった場合、学習対象
 		if (mismatch - yMismatch) < marginBits {
-    		return true, nil
+			return true, nil
 		}
 	}
 	return false, nil
 }
-
-// NeedsRegressionUpdate
