@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 )
 
+// このpackage全体的に命名にbinaryを付ける？あるいはdataset/binaryにする？
+
 const (
 	baseURL = "https://github.com/sw965/crow/releases/download/v0.1.0-test/"
 
