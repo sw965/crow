@@ -11,6 +11,11 @@ import (
 )
 
 func Test(t *testing.T) {
+	// err := dataset.Clean()
+	// if err != nil {
+	// 	panic(err)
+	// }
+
 	rng := randx.NewPCGFromGlobalSeed()
 	mnist, err := dataset.LoadFashionMNIST()
 	if err != nil {
@@ -20,7 +25,7 @@ func Test(t *testing.T) {
 	p := 4
 	classNum := 10
 	outputSize := 1024
-	prototypes, err := bitsx.NewBEFMatrices(classNum, 1, outputSize, 10000, rng)
+	prototypes, err := bitsx.NewETFMatrices(classNum, 1, outputSize, 10000, rng)
 	if err != nil {
 		panic(err)
 	}

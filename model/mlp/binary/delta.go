@@ -215,7 +215,7 @@ func (s *SeqSignDeltaComputer) Compute(seq Sequence, xs bitsx.Matrices, labels [
 	return s.aggregatedDelta, nil
 }
 
-func SatisfiesUpdateCriterion(y bitsx.Matrix, label int, prototypes bitsx.Matrices, margin float32) (bool, error) {
+func SatisfiesUpdateCriterion(y *bitsx.Matrix, label int, prototypes bitsx.Matrices, margin float32) (bool, error) {
 	t := prototypes[label]
 	yMismatch, err := y.HammingDistance(t)
 	if err != nil {

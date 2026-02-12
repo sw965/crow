@@ -2,22 +2,24 @@ package dataset
 
 import (
 	"fmt"
-	"github.com/sw965/omw/encoding/gobx"
-	"github.com/sw965/omw/mathx/bitsx"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
+
+	"github.com/sw965/omw/encoding/gobx"
+	"github.com/sw965/omw/mathx/bitsx"
 )
 
-// このpackage全体的に命名にbinaryを付ける？あるいはdataset/binaryにする？
+//dataset/binaryパッケージに変更する。
+//でバックの為の、cui上でmnistの数字とラベルが一致しているかを見る
 
 const (
 	baseURL = "https://github.com/sw965/crow/releases/download/v0.1.0-test/"
 
 	// MNIST
-	mnistTrainImg   = "mnist_flat_binary_imgs.gob"
-	mnistTrainLabel = "mnist_int_labels.gob"
+	mnistTrainImg   = "mnist_train_flat_binary_imgs.gob"
+	mnistTrainLabel = "mnist_train_int_labels.gob"
 	mnistTestImg    = "mnist_test_flat_binary_imgs.gob"
 	mnistTestLabel  = "mnist_test_int_labels.gob"
 
@@ -37,23 +39,45 @@ type BinaryDataset struct {
 }
 
 // LoadMNIST は通常のMNISTデータを読み込みます
+// 初回実行時はGitHubからデータをダウンロードし、ホームディレクトリにキャッシュします。
 func LoadMNIST() (BinaryDataset, error) {
 	return loadDataset(mnistTrainImg, mnistTrainLabel, mnistTestImg, mnistTestLabel)
 }
 
 // LoadFashionMNIST はFashion-MNISTデータを読み込みます
+// 初回実行時はGitHubからデータをダウンロードし、ホームディレクトリにキャッシュします。
 func LoadFashionMNIST() (BinaryDataset, error) {
 	return loadDataset(fashionTrainImg, fashionTrainLabel, fashionTestImg, fashionTestLabel)
 }
 
-// 内部共有用の読み込み関数
-func loadDataset(trImg, trLbl, teImg, teLbl string) (BinaryDataset, error) {
-	home, err := os.UserHomeDir()
+// Clean はキャッシュされたデータセットディレクトリ(.crow_dataset)を完全に削除します。
+// ディスク容量を空けたい場合や、データセットを再ダウンロードしたい場合に使用します。
+func Clean() error {
+	dir, err := getCacheDir()
 	if err != nil {
-		return BinaryDataset{}, fmt.Errorf("ホームディレクトリの取得に失敗: %w", err)
+		return err
 	}
 
-	dataDir := filepath.Join(home, ".crow_dataset")
+	// ディレクトリが存在しない場合は何もしない
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		return nil
+	}
+
+	fmt.Printf("Removing dataset cache: %s\n", dir)
+	return os.RemoveAll(dir)
+}
+
+// ----------------------------------------------------------------------------
+// Internal Helpers
+// ----------------------------------------------------------------------------
+
+// 内部共有用の読み込み関数
+func loadDataset(trImg, trLbl, teImg, teLbl string) (BinaryDataset, error) {
+	dataDir, err := getCacheDir()
+	if err != nil {
+		return BinaryDataset{}, err
+	}
+
 	if err := os.MkdirAll(dataDir, 0755); err != nil {
 		return BinaryDataset{}, err
 	}
@@ -70,19 +94,19 @@ func loadDataset(trImg, trLbl, teImg, teLbl string) (BinaryDataset, error) {
 	// 各ファイルをGOBとしてデコード
 	trImgs, err := gobx.Load[bitsx.Matrices](filepath.Join(dataDir, trImg))
 	if err != nil {
-		return BinaryDataset{}, err
+		return BinaryDataset{}, fmt.Errorf("failed to load %s: %w", trImg, err)
 	}
 	trLbls, err := gobx.Load[[]int](filepath.Join(dataDir, trLbl))
 	if err != nil {
-		return BinaryDataset{}, err
+		return BinaryDataset{}, fmt.Errorf("failed to load %s: %w", trLbl, err)
 	}
 	teImgs, err := gobx.Load[bitsx.Matrices](filepath.Join(dataDir, teImg))
 	if err != nil {
-		return BinaryDataset{}, err
+		return BinaryDataset{}, fmt.Errorf("failed to load %s: %w", teImg, err)
 	}
 	teLbls, err := gobx.Load[[]int](filepath.Join(dataDir, teLbl))
 	if err != nil {
-		return BinaryDataset{}, err
+		return BinaryDataset{}, fmt.Errorf("failed to load %s: %w", teLbl, err)
 	}
 
 	return BinaryDataset{
@@ -93,15 +117,25 @@ func loadDataset(trImg, trLbl, teImg, teLbl string) (BinaryDataset, error) {
 	}, nil
 }
 
+// getCacheDir はOSごとのホームディレクトリ配下のキャッシュパスを返します
+func getCacheDir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to get user home directory: %w", err)
+	}
+	return filepath.Join(home, ".crow_dataset"), nil
+}
+
+// ensureFile はファイルが存在しない場合のみURLからダウンロードします
 func ensureFile(path, url string) error {
 	if _, err := os.Stat(path); err == nil {
-		return nil
+		return nil // 既に存在するのでスキップ
 	}
 
 	fmt.Printf("Downloading %s...\n", url)
 	resp, err := http.Get(url)
 	if err != nil {
-		return err
+		return fmt.Errorf("download failed: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -111,10 +145,13 @@ func ensureFile(path, url string) error {
 
 	out, err := os.Create(path)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create file: %w", err)
 	}
 	defer out.Close()
 
 	_, err = io.Copy(out, resp.Body)
-	return err
+	if err != nil {
+		return fmt.Errorf("failed to write file: %w", err)
+	}
+	return nil
 }

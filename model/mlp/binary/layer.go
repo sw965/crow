@@ -22,30 +22,30 @@ type SharedContext struct {
 }
 
 type Layer interface {
-	Forward(bitsx.Matrix, *rand.Rand) (bitsx.Matrix, Backward, error)
-	Predict(bitsx.Matrix) (bitsx.Matrix, error)
+	Forward(*bitsx.Matrix, *rand.Rand) (*bitsx.Matrix, Backward, error)
+	Predict(*bitsx.Matrix) (*bitsx.Matrix, error)
 	NewZerosDeltas() Deltas
 	Update(Deltas, float32, *rand.Rand) error
 	setSharedContext(*SharedContext) error
 }
 
-type Backward func(bitsx.Matrix, Deltas) (bitsx.Matrix, error)
+type Backward func(*bitsx.Matrix, Deltas) (*bitsx.Matrix, error)
 type Backwards []Backward
 
-func (bs Backwards) Propagate(t bitsx.Matrix, seqDelta SeqDelta) (bitsx.Matrix, error) {
+func (bs Backwards) Propagate(t *bitsx.Matrix, seqDelta SeqDelta) (*bitsx.Matrix, error) {
 	var err error
 	for layerI := len(bs) - 1; layerI >= 0; layerI-- {
 		t, err = bs[layerI](t, seqDelta[layerI])
 		if err != nil {
-			return bitsx.Matrix{}, err
+			return nil, err
 		}
 	}
 	return t, nil
 }
 
 type Dense struct {
-	W             bitsx.Matrix
-	wT            bitsx.Matrix
+	W             *bitsx.Matrix
+	wT            *bitsx.Matrix
 	H             []int8
 	sharedContext *SharedContext
 
@@ -53,15 +53,15 @@ type Dense struct {
 	noiseStdBase      float64
 }
 
-func NewDense(wRows, wCols int, rng *rand.Rand) (Dense, error) {
+func NewDense(wRows, wCols int, rng *rand.Rand) (*Dense, error) {
 	w, err := bitsx.NewRandMatrix(wRows, wCols, 0, rng)
 	if err != nil {
-		return Dense{}, fmt.Errorf("後でエラーメッセージを書く")
+		return nil, fmt.Errorf("後でエラーメッセージを書く")
 	}
 
 	wt, err := w.Transpose()
 	if err != nil {
-		return Dense{}, fmt.Errorf("後でエラーメッセージを書く")
+		return nil, fmt.Errorf("後でエラーメッセージを書く")
 	}
 
 	h := make(H, wRows*wCols)
@@ -83,7 +83,7 @@ func NewDense(wRows, wCols int, rng *rand.Rand) (Dense, error) {
 	noiseStdBase := math.Sqrt(float64(w.Cols))
 	gateThresholdBase := int(noiseStdBase)
 
-	return Dense{
+	return &Dense{
 		W:                 w,
 		wT:                wt,
 		H:                 h,
@@ -100,10 +100,10 @@ func (d *Dense) NoiseStd() float64 {
 	return d.sharedContext.NoiseStdScale * d.noiseStdBase
 }
 
-func (d *Dense) Forward(x bitsx.Matrix, rng *rand.Rand) (bitsx.Matrix, Backward, error) {
+func (d *Dense) Forward(x *bitsx.Matrix, rng *rand.Rand) (*bitsx.Matrix, Backward, error) {
 	u, err := x.Dot(d.W)
 	if err != nil {
-		return bitsx.Matrix{}, nil, err
+		return nil, nil, err
 	}
 
 	maxZi := d.W.Cols
@@ -121,7 +121,7 @@ func (d *Dense) Forward(x bitsx.Matrix, rng *rand.Rand) (bitsx.Matrix, Backward,
 			zi := 2*count - maxZi
 			noise, err := randx.NormalInt(minZi, maxZi, 0, noiseStd, rng)
 			if err != nil {
-				return bitsx.Matrix{}, nil, err
+				return nil, nil, err
 			}
 			z[i] = zi + noise
 		}
@@ -133,18 +133,18 @@ func (d *Dense) Forward(x bitsx.Matrix, rng *rand.Rand) (bitsx.Matrix, Backward,
 
 	y, err := bitsx.NewSignMatrix(yRows, yCols, z)
 	if err != nil {
-		return bitsx.Matrix{}, nil, err
+		return nil, nil, err
 	}
 
 	var backward Backward
-	backward = func(t bitsx.Matrix, deltas Deltas) (bitsx.Matrix, error) {
+	backward = func(t *bitsx.Matrix, deltas Deltas) (*bitsx.Matrix, error) {
 		if t.Rows != y.Rows || t.Cols != y.Cols {
-			return bitsx.Matrix{}, fmt.Errorf("後でエラーメッセージを書く")
+			return nil, fmt.Errorf("後でエラーメッセージを書く")
 		}
 
 		keepGate, err := bitsx.NewZerosMatrix(yRows, yCols)
 		if err != nil {
-			return bitsx.Matrix{}, err
+			return nil, err
 		}
 		// 超えたらゲートを閉じる事を、表す為に、dropを命名に加える？
 		gateThreshold := d.GateThreshold()
@@ -205,17 +205,17 @@ func (d *Dense) Forward(x bitsx.Matrix, rng *rand.Rand) (bitsx.Matrix, Backward,
 		})
 
 		if err != nil {
-			return bitsx.Matrix{}, err
+			return nil, err
 		}
 
 		rawNextTT, err := d.wT.DotTernary(t, keepGate)
 		if err != nil {
-			return bitsx.Matrix{}, err
+			return nil, err
 		}
 
 		nextT, err := bitsx.NewZerosMatrix(yRows, d.W.Cols)
 		if err != nil {
-			return bitsx.Matrix{}, err
+			return nil, err
 		}
 
 		err = nextT.ScanRowsWord(nil, func(ctx bitsx.MatrixWordContext) error {
@@ -231,17 +231,17 @@ func (d *Dense) Forward(x bitsx.Matrix, rng *rand.Rand) (bitsx.Matrix, Backward,
 		})
 
 		if err != nil {
-			return bitsx.Matrix{}, err
+			return nil, err
 		}
 		return nextT, nil
 	}
 	return y, backward, nil
 }
 
-func (d *Dense) Predict(x bitsx.Matrix) (bitsx.Matrix, error) {
+func (d *Dense) Predict(x *bitsx.Matrix) (*bitsx.Matrix, error) {
 	u, err := x.Dot(d.W)
 	if err != nil {
-		return bitsx.Matrix{}, err
+		return nil, err
 	}
 
 	maxZi := d.W.Cols
@@ -254,13 +254,14 @@ func (d *Dense) Predict(x bitsx.Matrix) (bitsx.Matrix, error) {
 	yCols := d.W.Rows
 	y, err := bitsx.NewSignMatrix(yRows, yCols, z)
 	if err != nil {
-		return bitsx.Matrix{}, err
+		return nil, err
 	}
 	return y, nil
 }
 
 func (d *Dense) NewZerosDeltas() Deltas {
-	return Deltas{make(Delta, d.W.Rows*d.W.Cols)}
+	n := d.W.Rows*d.W.Cols
+	return Deltas{make(Delta, n)}
 }
 
 func (d *Dense) Update(deltas Deltas, lr float32, rng *rand.Rand) error {
@@ -322,19 +323,19 @@ func NewDenseLayers(dims []int, rng *rand.Rand) (Sequence, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to create dense layer at index %d: %w", i, err)
 		}
-		seq = append(seq, &denseLayer)
+		seq = append(seq, denseLayer)
 	}
 	return seq, nil
 }
 
-func (s Sequence) Forwards(x bitsx.Matrix, rng *rand.Rand) (bitsx.Matrix, Backwards, error) {
+func (s Sequence) Forwards(x *bitsx.Matrix, rng *rand.Rand) (*bitsx.Matrix, Backwards, error) {
 	var backward Backward
 	var err error
 	backwards := make(Backwards, len(s))
 	for i, layer := range s {
 		x, backward, err = layer.Forward(x, rng)
 		if err != nil {
-			return bitsx.Matrix{}, nil, err
+			return nil, nil, err
 		}
 		backwards[i] = backward
 	}
@@ -342,18 +343,18 @@ func (s Sequence) Forwards(x bitsx.Matrix, rng *rand.Rand) (bitsx.Matrix, Backwa
 	return y, backwards, nil
 }
 
-func (s Sequence) Predict(x bitsx.Matrix) (bitsx.Matrix, error) {
+func (s Sequence) Predict(x *bitsx.Matrix) (*bitsx.Matrix, error) {
 	var err error
 	for _, layer := range s {
 		x, err = layer.Predict(x)
 		if err != nil {
-			return bitsx.Matrix{}, err
+			return nil, err
 		}
 	}
 	return x, nil
 }
 
-func (s Sequence) PredictLogits(x bitsx.Matrix, prototypes bitsx.Matrices) ([]int, error) {
+func (s Sequence) PredictLogits(x *bitsx.Matrix, prototypes bitsx.Matrices) ([]int, error) {
 	y, err := s.Predict(x)
 	if err != nil {
 		return nil, err
@@ -376,7 +377,7 @@ func (s Sequence) PredictLogits(x bitsx.Matrix, prototypes bitsx.Matrices) ([]in
 	return logits, nil
 }
 
-func (s Sequence) PredictSoftmax(x bitsx.Matrix, prototypes bitsx.Matrices) ([]float32, error) {
+func (s Sequence) PredictSoftmax(x *bitsx.Matrix, prototypes bitsx.Matrices) ([]float32, error) {
 	logits, err := s.PredictLogits(x, prototypes)
 	if err != nil {
 		return nil, err
