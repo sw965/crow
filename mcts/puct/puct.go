@@ -4,13 +4,12 @@ import (
 	"fmt"
 	"math/rand/v2"
 
+	"slices"
 	"errors"
 	game "github.com/sw965/crow/game/sequential"
 	"github.com/sw965/crow/pucb"
 	"github.com/sw965/omw/parallel"
-	"github.com/sw965/omw/slicesx"
 	"maps"
-	"slices"
 	"sync"
 )
 
@@ -152,17 +151,15 @@ func (e Engine[S, M, A]) NewNode(state S) (*Node[S, M, A], error) {
 
 	// policy.ValidateForLegalMovesでもlegalMovesの空チェックはするが、PolicyFuncを安全に呼ぶ為に、ここでもチェックする
 	if len(legalMoves) == 0 {
-		return nil, game.ErrEmptyLegalMoves
+		return nil, fmt.Errorf("後でエラーメッセージを書く")
 	}
 
-	// policy.ValidateForLegalMovesは、legalMovesがユニークならば、policyが合法手のみを持つ事が保障される
-	// ノード生成時に、legalMovesのユニーク性をチェックするのは、オーバーヘッドの比率が低いと判断した為、チェックする。
-	if !slicesx.IsUnique(legalMoves) {
-		return nil, game.ErrNotUniqueLegalMoves
+	policy, err := e.PolicyFunc(state, legalMoves)
+	if err != nil {
+		return nil, err
 	}
 
-	policy := e.PolicyFunc(state, legalMoves)
-	err := policy.ValidateForLegalMoves(legalMoves)
+	err = policy.ValidateForLegalMoves(legalMoves, true)
 	if err != nil {
 		return nil, err
 	}
@@ -184,7 +181,7 @@ func (e Engine[S, M, A]) NewNode(state S) (*Node[S, M, A], error) {
 	}
 
 	if !found {
-		return nil, fmt.Errorf("%w: Engine.Game.Logic.CurrentAgentFunc(state)=%v", game.ErrAgentNotFound, agent)
+		return nil, fmt.Errorf("後でエラーメッセージを書く")
 	}
 
 	return &Node[S, M, A]{
@@ -240,8 +237,8 @@ func (e Engine[S, M, A]) SelectExpansionBackward(node *Node[S, M, A], capacity i
 
 		var expand bool
 
-		// node.NextNodesByMoveはmap型 node.nextNodesByMove[move]はslice型
-		// この処理はデータを読むだけだが、他のワーカーが、書く処理をすると、破綻する為、Lockが必要
+		// node.nextNodesByMoveはmap型 node.nextNodesByMove[move]はslice型
+		// この処理はデータを読むだけだが、他のワーカーが、書き込む処理をすると、破綻する為、Lockが必要
 		node.Lock()
 		nextNode, ok := node.nextNodesByMove[move].FindByState(state, e.Game.Logic.EqualFunc)
 		node.Unlock()
@@ -277,7 +274,6 @@ func (e Engine[S, M, A]) SelectExpansionBackward(node *Node[S, M, A], capacity i
 	}
 
 	evals := LeafNodeEvalByAgent[A]{}
-
 	// ゲームが終了した場合、ゲームエンジンの結果スコアを、リーフノードの評価値とする
 	// ゲームが終了していなかった場合、リーフノードの評価関数を呼び出す
 	if isEnd {
@@ -318,7 +314,7 @@ func (e Engine[S, M, A]) Search(rootNode *Node[S, M, A], n int, workerRngs []*ra
 	for i := range p {
 		rootEvalsPerWorker[i] = RootNodeEvalByAgent[A]{}
 	}
-	
+
 	workerBuffCaps := make([]int, p)
 	err := parallel.For(n, p, func(workerId, idx int) error {
 		rng := workerRngs[workerId]
@@ -331,7 +327,7 @@ func (e Engine[S, M, A]) Search(rootNode *Node[S, M, A], n int, workerRngs []*ra
 			rootEvalsPerWorker[workerId][k] += v
 		}
 
-		workerBuffCaps[workerId] = depth+1
+		workerBuffCaps[workerId] = depth + 1
 		return nil
 	})
 
@@ -348,4 +344,26 @@ func (e Engine[S, M, A]) Search(rootNode *Node[S, M, A], n int, workerRngs []*ra
 
 	sum.DivScalar(float32(n))
 	return sum, nil
+}
+
+func (e Engine[S, M, A]) NewPolicy(simulations int, rngs []*rand.Rand) game.PolicyFunc[S, M] {
+	return func(state S, legalMoves []M) (game.Policy[M], error) {
+		rootNode, err := e.NewNode(state)
+		if err != nil {
+			return nil, err
+		}
+
+		_, err = e.Search(rootNode, simulations, rngs)
+		if err != nil {
+			return nil, err
+		}
+
+		visitPercents := rootNode.VirtualSelector().VisitPercentByKey()
+		policy := game.Policy[M]{}
+		for _, move := range legalMoves {
+			// 未訪問の手は0.0になるようにフォールバック
+			policy[move] = visitPercents[move]
+		}
+		return policy, nil
+	}
 }

@@ -68,7 +68,7 @@ func TestNewRankByAgent(t *testing.T) {
 				[]string{"チームA", "チームB"},
 				[]string{"チームD", "チームC"},
 			},
-			wantErr:   true,
+			wantErr: true,
 			wantErrMsgSubs: []string{
 				"duplicate",
 			},
@@ -84,8 +84,8 @@ func TestNewRankByAgent(t *testing.T) {
 				[]string{},
 				[]string{"チームF"},
 			},
-			wantErr:   true,
-			wantErrMsgSubs :[]string{
+			wantErr: true,
+			wantErrMsgSubs: []string{
 				"empty",
 			},
 		},
@@ -409,7 +409,11 @@ func TestEngineSetStandardResultScoreByAgentFunc(t *testing.T) {
 }
 
 func TestUniformPolicyFunc(t *testing.T) {
-	got := game.UniformPolicyFunc[int, string](0, []string{"戦う", "呪文", "アイテム", "逃げる"})
+	got, err := game.UniformPolicyFunc[int, string](0, []string{"戦う", "呪文", "アイテム", "逃げる"})
+	if err != nil {
+		t.Errorf("テスト失敗")
+	}
+
 	want := game.Policy[string]{
 		"戦う":   0.25,
 		"呪文":   0.25,

@@ -213,7 +213,11 @@ func (e Engine[S, M, A]) Playouts(inits []S, actor Actor[S, M, A], rngs []*rand.
 			if len(legalMoves) == 0 {
 				return fmt.Errorf("game is not ended but no legal moves are available")
 			}
-			policy := actor.PolicyFunc(state, legalMoves)
+
+			policy, err := actor.PolicyFunc(state, legalMoves)
+			if err != nil {
+				return err
+			}
 
 			// legalMovesがユニークならば、policyは合法手のみを持つ事が保障される
 			// 第2引数がtrueならば、legalMovesがユニーク性をチェックするが、一手毎にチェックするのは、計算コストの観点から見送る
@@ -223,7 +227,10 @@ func (e Engine[S, M, A]) Playouts(inits []S, actor Actor[S, M, A], rngs []*rand.
 			}
 
 			agent := e.Logic.CurrentAgentFunc(state)
-			move := actor.SelectFunc(policy, agent, rng)
+			move, err := actor.SelectFunc(policy, agent, rng)
+			if err != nil {
+				return err
+			}
 
 			state, err = e.Logic.MoveFunc(state, move)
 			if err != nil {
@@ -234,6 +241,79 @@ func (e Engine[S, M, A]) Playouts(inits []S, actor Actor[S, M, A], rngs []*rand.
 		return nil
 	})
 	return finals, err
+}
+
+func (e Engine[S, M, A]) RecordPlayouts(inits []S, actor ActorCritic[S, M, A], oneGameCap int, rngs []*rand.Rand) ([]Record[S, M, A], error) {
+	if err := e.Validate(); err != nil {
+		return nil, err
+	}
+
+	n := len(inits)
+	p := len(rngs)
+	records := make([]Record[S, M, A], n)
+
+	err := parallel.For(n, p, func(workerId, idx int) error {
+		rng := rngs[workerId]
+		state := inits[idx]
+		steps := make([]Step[S, M, A], 0, oneGameCap)
+
+		for {
+			isEnd, err := e.IsEnd(state)
+			if err != nil {
+				return err
+			}
+			if isEnd {
+				break
+			}
+
+			legalMoves := e.Logic.LegalMovesFunc(state)
+			if len(legalMoves) == 0 {
+				return fmt.Errorf("game is not ended but no legal moves are available")
+			}
+
+			policy, value, err := actor.PolicyValueFunc(state, legalMoves)
+			if err != nil {
+				return err
+			}
+
+			if err := policy.ValidateForLegalMoves(legalMoves, false); err != nil {
+				return err
+			}
+
+			agent := e.Logic.CurrentAgentFunc(state)
+			move, err := actor.SelectFunc(policy, agent, rng)
+			if err != nil {
+				return err
+			}
+
+			steps = append(steps, Step[S, M, A]{
+				State:  state,
+				Agent:  agent,
+				Move:   move,
+				Policy: policy,
+				Value:  value,
+			})
+
+			state, err = e.Logic.MoveFunc(state, move)
+			if err != nil {
+				return err
+			}
+		}
+
+		scores, err := e.EvaluateResultScoreByAgent(state)
+		if err != nil {
+			return err
+		}
+
+		records[idx] = Record[S, M, A]{
+			Steps:              steps,
+			FinalState:         state,
+			ResultScoreByAgent: scores,
+		}
+		return nil
+	})
+
+	return records, err
 }
 
 func (e Engine[S, M, A]) CrossPlayouts(inits []S, actors []Actor[S, M, A], rngs []*rand.Rand) ([]CrossPlayoutResult[S, M, A], error) {
@@ -260,12 +340,12 @@ func (e Engine[S, M, A]) CrossPlayouts(inits []S, actors []Actor[S, M, A], rngs 
 			selectFuncByAgent[agent] = actor.SelectFunc
 		}
 
-		policyFunc := func(state S, legalMoves []M) Policy[M] {
+		policyFunc := func(state S, legalMoves []M) (Policy[M], error) {
 			agent := e.Logic.CurrentAgentFunc(state)
 			return policyFuncByAgent[agent](state, legalMoves)
 		}
 
-		selectFunc := func(p Policy[M], agent A, rng *rand.Rand) M {
+		selectFunc := func(p Policy[M], agent A, rng *rand.Rand) (M, error) {
 			return selectFuncByAgent[agent](p, agent, rng)
 		}
 
@@ -282,6 +362,57 @@ func (e Engine[S, M, A]) CrossPlayouts(inits []S, actors []Actor[S, M, A], rngs 
 		results[pi] = CrossPlayoutResult[S, M, A]{
 			ActorByAgent: actorByAgent,
 			Finals:       finals,
+		}
+	}
+	return results, nil
+}
+
+func (e Engine[S, M, A]) RecordCrossPlayouts(inits []S, actors []ActorCritic[S, M, A], oneGameCap int, rngs []*rand.Rand) ([]CrossRecordPlayoutResult[S, M, A], error) {
+	agentsN := len(e.Agents)
+	if len(actors) < agentsN {
+		return nil, fmt.Errorf("insufficient actors: expected at least %d, got %d", agentsN, len(actors))
+	}
+
+	actorPermsSeq := slicesx.Permutations[[]ActorCritic[S, M, A]](actors, agentsN)
+	actorPerms := slices.Collect(actorPermsSeq)
+
+	permsN := len(actorPerms)
+	results := make([]CrossRecordPlayoutResult[S, M, A], permsN)
+
+	for pi, actorPerm := range actorPerms {
+		actorByAgent := map[A]ActorCritic[S, M, A]{}
+		policyValueFuncByAgent := map[A]PolicyValueFunc[S, M]{}
+		selectFuncByAgent := map[A]SelectFunc[M, A]{}
+
+		for ai, agent := range e.Agents {
+			actor := actorPerm[ai]
+			actorByAgent[agent] = actor
+			policyValueFuncByAgent[agent] = actor.PolicyValueFunc
+			selectFuncByAgent[agent] = actor.SelectFunc
+		}
+
+		policyValueFunc := func(state S, legalMoves []M) (Policy[M], float32, error) {
+			agent := e.Logic.CurrentAgentFunc(state)
+			return policyValueFuncByAgent[agent](state, legalMoves)
+		}
+
+		selectFunc := func(p Policy[M], agent A, rng *rand.Rand) (M, error) {
+			return selectFuncByAgent[agent](p, agent, rng)
+		}
+
+		newActor := ActorCritic[S, M, A]{
+			PolicyValueFunc: policyValueFunc,
+			SelectFunc:      selectFunc,
+		}
+
+		records, err := e.RecordPlayouts(inits, newActor, oneGameCap, rngs)
+		if err != nil {
+			return nil, err
+		}
+
+		results[pi] = CrossRecordPlayoutResult[S, M, A]{
+			ActorByAgent: actorByAgent,
+			Records:      records,
 		}
 	}
 	return results, nil
@@ -323,21 +454,27 @@ func (p Policy[M]) ValidateForLegalMoves(legalMoves []M, checkUnique bool) error
 	return nil
 }
 
-type PolicyFunc[S any, M comparable] func(S, []M) Policy[M]
+type PolicyFunc[S any, M comparable] func(S, []M) (Policy[M], error)
 
-func UniformPolicyFunc[S any, M comparable](state S, legalMoves []M) Policy[M] {
+func UniformPolicyFunc[S any, M comparable](state S, legalMoves []M) (Policy[M], error) {
 	n := len(legalMoves)
+	if n == 0 {
+		return nil, fmt.Errorf("後でエラーメッセージを書く")
+	}
+
 	p := 1.0 / float32(n)
 	policy := Policy[M]{}
 	for _, a := range legalMoves {
 		policy[a] = p
 	}
-	return policy
+	return policy, nil
 }
 
-type SelectFunc[M, A comparable] func(Policy[M], A, *rand.Rand) M
+type PolicyValueFunc[S any, M comparable] func(S, []M) (Policy[M], float32, error)
 
-func MaxSelectFunc[M, A comparable](policy Policy[M], agent A, rng *rand.Rand) M {
+type SelectFunc[M, A comparable] func(Policy[M], A, *rand.Rand) (M, error)
+
+func MaxSelectFunc[M, A comparable](policy Policy[M], agent A, rng *rand.Rand) (M, error) {
 	keys := slices.Collect(maps.Keys(policy))
 	max := policy[keys[0]]
 	moves := []M{keys[0]}
@@ -357,10 +494,10 @@ func MaxSelectFunc[M, A comparable](policy Policy[M], agent A, rng *rand.Rand) M
 	if err != nil {
 		panic(fmt.Sprintf("bug: %v", err))
 	}
-	return move
+	return move, nil
 }
 
-func WeightedRandomSelectFunc[M, A comparable](policy Policy[M], agent A, rng *rand.Rand) M {
+func WeightedRandomSelectFunc[M, A comparable](policy Policy[M], agent A, rng *rand.Rand) (M, error) {
 	n := len(policy)
 	moves := make([]M, 0, n)
 	ws := make([]float32, 0, n)
@@ -369,11 +506,11 @@ func WeightedRandomSelectFunc[M, A comparable](policy Policy[M], agent A, rng *r
 		ws = append(ws, p)
 	}
 
-	idx, err := randx.IntByWeight(ws, rng)
+	idx, err := randx.IntByWeights(ws, rng)
 	if err != nil {
 		panic(fmt.Sprintf("bug: %v", err))
 	}
-	return moves[idx]
+	return moves[idx], nil
 }
 
 type Actor[S any, M, A comparable] struct {
@@ -400,7 +537,32 @@ func (a Actor[S, M, A]) Validate() error {
 	return nil
 }
 
+type ActorCritic[S any, M, A comparable] struct {
+	Name            string
+	PolicyValueFunc PolicyValueFunc[S, M]
+	SelectFunc      SelectFunc[M, A]
+}
+
 type CrossPlayoutResult[S any, M, A comparable] struct {
 	ActorByAgent map[A]Actor[S, M, A]
 	Finals       []S
+}
+
+type CrossRecordPlayoutResult[S any, M, A comparable] struct {
+	ActorByAgent map[A]ActorCritic[S, M, A]
+	Records      []Record[S, M, A]
+}
+
+type Step[S any, M, A comparable] struct {
+	State  S
+	Agent  A
+	Move   M
+	Policy Policy[M]
+	Value  float32
+}
+
+type Record[S any, M, A comparable] struct {
+	Steps              []Step[S, M, A]
+	FinalState         S
+	ResultScoreByAgent ResultScoreByAgent[A]
 }
