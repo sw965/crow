@@ -477,6 +477,7 @@ type SelectFunc[M, A comparable] func(Policy[M], A, *rand.Rand) (M, error)
 func MaxSelectFunc[M, A comparable](policy Policy[M], agent A, rng *rand.Rand) (M, error) {
 	keys := slices.Collect(maps.Keys(policy))
 	max := policy[keys[0]]
+	// capの確保をする。
 	moves := []M{keys[0]}
 
 	for _, k := range keys[1:] {
@@ -543,6 +544,7 @@ type ActorCritic[S any, M, A comparable] struct {
 	SelectFunc      SelectFunc[M, A]
 }
 
+// 各エージェントの勝率を求めるメソッドをはやす？
 type CrossPlayoutResult[S any, M, A comparable] struct {
 	ActorByAgent map[A]Actor[S, M, A]
 	Finals       []S

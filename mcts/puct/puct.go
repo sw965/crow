@@ -18,6 +18,8 @@ var (
 	ErrInvalidConfig = errors.New("puct.Engineエラー: 設定値が不正です")
 )
 
+// このモンテカルロ木探索は、ユーザー側のゲーム設定次第では、無限ループするので直しておく。
+
 type RootNodeEvalByAgent[A comparable] map[A]float32
 
 func (es RootNodeEvalByAgent[A]) DivScalar(s float32) {
@@ -346,7 +348,7 @@ func (e Engine[S, M, A]) Search(rootNode *Node[S, M, A], n int, workerRngs []*ra
 	return sum, nil
 }
 
-func (e Engine[S, M, A]) NewPolicy(simulations int, rngs []*rand.Rand) game.PolicyFunc[S, M] {
+func (e Engine[S, M, A]) NewPolicyFunc(simulations int, rngs []*rand.Rand) game.PolicyFunc[S, M] {
 	return func(state S, legalMoves []M) (game.Policy[M], error) {
 		rootNode, err := e.NewNode(state)
 		if err != nil {
