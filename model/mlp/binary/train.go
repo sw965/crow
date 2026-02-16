@@ -1,54 +1,80 @@
 package binary
 
 import (
+	"fmt"
+	"math"
+	"math/rand/v2"
+
 	"github.com/sw965/omw/mathx/bitsx"
 	"github.com/sw965/omw/mathx/randx"
-	"math/rand/v2"
-	"fmt"
+	"github.com/sw965/omw/parallel"
 	"github.com/sw965/omw/slicesx"
 )
 
 type Trainer struct {
-	model        Sequence
-	Prototypes   bitsx.Matrices
-	LR           float32
+	MiniBatchSize int
+	LR     float32
+	Margin float32
 
-	computer *SeqSignDeltaComputer
-	rands    []*rand.Rand
-	rand     *rand.Rand
+	model           Model
+	rands           []*rand.Rand
+	rand            *rand.Rand
+	workerDelta     WorkerDelta
+	aggregatedDelta SeqDelta
 }
 
-func NewTrainer(model Sequence, margin float32, p int) *Trainer {
+func NewTrainer(model Model, p int) *Trainer {
 	rands := make([]*rand.Rand, p)
-	for i := range p {
+	workerDelta := make(WorkerDelta, p)
+	backbone := model.Backbone
+	numLayers := len(backbone)
+
+	// ワーカーごとのバッファと乱数生成器の初期化
+	for i := 0; i < p; i++ {
+		sd := make(SeqDelta, numLayers)
+		for l, layer := range backbone {
+			sd[l] = layer.NewZerosDeltas()
+		}
+		workerDelta[i] = sd
 		rands[i] = randx.NewPCGFromGlobalSeed()
 	}
-	computer := NewSeqSignDeltaComputer(model, margin, p)
+
+	// 集約用バッファの初期化
+	aggregatedDelta := make(SeqDelta, numLayers)
+	for l, layer := range backbone {
+		aggregatedDelta[l] = layer.NewZerosDeltas()
+	}
+
 	return &Trainer{
-		model:    model,
-		computer: computer,
-		rands:    rands,
-		rand:     randx.NewPCGFromGlobalSeed(),
+		MiniBatchSize:   128,
+		LR:              0.1,
+		Margin:          0.0,
+		model:           model,
+		rands:           rands,
+		rand:            randx.NewPCGFromGlobalSeed(),
+		workerDelta:     workerDelta,
+		aggregatedDelta: aggregatedDelta,
 	}
 }
 
-func (t *Trainer) Fit(xs bitsx.Matrices, labels []int, miniBatchSize int) error {
+func (t *Trainer) Train(xs bitsx.Matrices, labels []int) error {
 	if err := t.Validate(); err != nil {
 		return err
 	}
 
-	n := len(xs)
-	if miniBatchSize <= 0 {
+	mbSize := t.MiniBatchSize
+	if mbSize <= 0 {
 		return fmt.Errorf("後でエラーメッセージを書く")
 	}
 
-	if n < miniBatchSize {
-		miniBatchSize = n
+	n := len(xs)
+	if n < mbSize {
+		mbSize = n
 	}
 
 	idxs := t.rand.Perm(n)
-	for i := 0; i < n; i += miniBatchSize {
-		end := i + miniBatchSize
+	for i := 0; i < n; i += mbSize {
+		end := i + mbSize
 		if end > n {
 			end = n
 		}
@@ -64,12 +90,12 @@ func (t *Trainer) Fit(xs bitsx.Matrices, labels []int, miniBatchSize int) error 
 			return err
 		}
 
-		seqDelta, err := t.computer.Compute(t.model, miniXs, miniLabels, t.Prototypes)
+		seqDelta, err := t.ComputeSeqSignDelta(miniXs, miniLabels)
 		if err != nil {
 			return err
 		}
 
-		err = t.model.Update(seqDelta, t.LR, t.rands)
+		err = t.model.Backbone.Update(seqDelta, t.LR, t.rands)
 		if err != nil {
 			return err
 		}
@@ -77,12 +103,67 @@ func (t *Trainer) Fit(xs bitsx.Matrices, labels []int, miniBatchSize int) error 
 	return nil
 }
 
+func (t *Trainer) ComputeSeqSignDelta(xs bitsx.Matrices, labels []int) (SeqDelta, error) {
+	n := len(xs)
+	if n > math.MaxInt16 {
+		return nil, fmt.Errorf("後でエラーメッセージを書く")
+	}
+
+	if n != len(labels) {
+		return nil, fmt.Errorf("length mismatch: xs %d != labels %d", n, len(labels))
+	}
+
+	p := len(t.rands)
+	t.workerDelta.Clear()
+	backbone := t.model.Backbone
+	prototypes := t.model.Prototypes
+
+	err := parallel.For(n, p, func(workerId, idx int) error {
+		rng := t.rands[workerId]
+		x := xs[idx]
+		label := labels[idx]
+
+		y, backwards, err := backbone.Forwards(x, rng)
+		if err != nil {
+			return err
+		}
+
+		shouldUpdate, err := SatisfiesUpdateCriterion(y, label, prototypes, t.Margin)
+		if err != nil {
+			return err
+		}
+
+		if !shouldUpdate {
+			return nil
+		}
+
+		target := prototypes[label]
+		_, err = backwards.Propagate(target, t.workerDelta[workerId])
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	err = t.workerDelta.Aggregate(t.aggregatedDelta)
+	if err != nil {
+		return nil, err
+	}
+
+	t.aggregatedDelta.Sign()
+	return t.aggregatedDelta, nil
+}
+
 func (t *Trainer) Validate() error {
-	if len(t.model) == 0 {
+	if len(t.model.Backbone) == 0 {
 		return fmt.Errorf("後でエラーメッセージを書く")
 	}
 
-	if len(t.Prototypes) == 0 {
+	if len(t.model.Prototypes) == 0 {
 		return fmt.Errorf("後でエラーメッセージを書く")
 	}
 
@@ -90,16 +171,36 @@ func (t *Trainer) Validate() error {
 		return fmt.Errorf("後でエラーメッセージを書く")
 	}
 
-	if t.computer == nil {
-		return fmt.Errorf("後でエラーメッセージを書く")
-	}
-
 	if len(t.rands) == 0 {
 		return fmt.Errorf("後でエラーメッセージを書く")
 	}
 
-	if t.rands == nil {
-		return fmt.Errorf("後でエラーメッセージを書く")
-	}
 	return nil
+}
+
+func SatisfiesUpdateCriterion(y *bitsx.Matrix, label int, prototypes bitsx.Matrices, margin float32) (bool, error) {
+	t := prototypes[label]
+	yMismatch, err := y.HammingDistance(t)
+	if err != nil {
+		return false, err
+	}
+
+	totalBits := y.Rows * y.Cols
+	marginBits := int(float32(totalBits) * margin)
+	for i, proto := range prototypes {
+		if i == label {
+			continue
+		}
+
+		mismatch, err := y.HammingDistance(proto)
+		if err != nil {
+			return false, err
+		}
+
+		// 設定したマージンよりも差を付けられなかった場合、学習対象
+		if (mismatch - yMismatch) < marginBits {
+			return true, nil
+		}
+	}
+	return false, nil
 }

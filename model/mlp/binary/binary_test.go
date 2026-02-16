@@ -1,12 +1,11 @@
 package binary_test
 
 import (
-	"github.com/sw965/crow/model/mlp/binary"
+	"fmt"
 	"github.com/sw965/crow/dataset"
-	"github.com/sw965/omw/mathx/bitsx"
-	"testing"
+	"github.com/sw965/crow/model/mlp/binary"
 	"github.com/sw965/omw/mathx/randx"
-	// "fmt"
+	"testing"
 	"time"
 )
 
@@ -16,47 +15,63 @@ func Test(t *testing.T) {
 	// 	panic(err)
 	// }
 
-	rng := randx.NewPCGFromGlobalSeed()
 	mnist, err := dataset.LoadFashionMNIST()
 	if err != nil {
 		panic(err)
 	}
 
 	p := 4
-	classNum := 10
+	numClasses := 10
 	outputSize := 1024
-	prototypes, err := bitsx.NewETFMatrices(classNum, 1, outputSize, 10000, rng)
+	rng := randx.NewPCGFromGlobalSeed()
+
+	model := binary.Model{XRows:1, XCols:784}
+	err = model.AppendDenseLayer(512, rng)
 	if err != nil {
 		panic(err)
 	}
 
-	model, err := binary.NewDenseLayers([]int{784, 512, outputSize}, rng)
+	err = model.AppendDenseLayer(outputSize, rng)
+	if err != nil {
+		panic(err)
+	}
+
+	err = model.SetClassPrototypes(numClasses, rng)
 	if err != nil {
 		panic(err)
 	}
 
 	sharedContext := binary.SharedContext{
-		GateThresholdScale:1.0,
-		NoiseStdScale:0.5,
-		GroupSize:4,
+		GateDropThresholdScale: 1.0,
+		NoiseStdScale:          0.5,
+		GroupSize:              4,
 	}
-	model.SetSharedContext(&sharedContext)
+	model.Backbone.SetSharedContext(&sharedContext)
 
-	trainer := binary.NewTrainer(model, 0.25, p)
-	trainer.Prototypes = prototypes
-	trainer.LR = 0.1
+	trainer := binary.NewTrainer(model, p)
+	trainer.Margin = 0.25
+	// 確認用
+	fmt.Printf("Prototype Checksum: %d\n", model.Prototypes[0].Data[0])
 
-	epochs := 100
+	acc1, _ := model.Accuracy(mnist.TestImages, mnist.TestLabels, p)
+	t.Logf("Initial Accuracy (Loaded): %.4f", acc1)
+
+	epochs := 25
 	for i := range epochs {
-		err := trainer.Fit(mnist.TrainImages, mnist.TrainLabels, 128)
+		err := trainer.Train(mnist.TrainImages, mnist.TrainLabels)
 		if err != nil {
 			panic(err)
 		}
 
-		acc, err := model.Accuracy(mnist.TestImages, mnist.TestLabels, prototypes, p)
+		acc, err := model.Accuracy(mnist.TestImages, mnist.TestLabels, p)
 		if err != nil {
 			panic(err)
 		}
 		t.Logf("[%s] Epoch %d: Acc %.4f", time.Now().Format("15:04:05"), i, acc)
+	}
+
+	err = model.Save("test.gob")
+	if err != nil {
+		panic(err)
 	}
 }

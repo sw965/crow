@@ -363,9 +363,42 @@ func (e Engine[S, M, A]) NewPolicyFunc(simulations int, rngs []*rand.Rand) game.
 		visitPercents := rootNode.VirtualSelector().VisitPercentByKey()
 		policy := game.Policy[M]{}
 		for _, move := range legalMoves {
-			// 未訪問の手は0.0になるようにフォールバック
-			policy[move] = visitPercents[move]
+			if p, ok := visitPercents[move]; !ok {
+				return nil, fmt.Errorf("後でエラーメッセージを書く")
+			} else {
+				policy[move] = p
+			}
 		}
 		return policy, nil
+	}
+}
+
+func (e Engine[S, M, A]) NewPolicyValueFunc(simulations int, rngs []*rand.Rand) game.PolicyValueFunc[S, M] {
+	return func(state S, legalMoves []M) (game.Policy[M], float32, error) {
+		rootNode, err := e.NewNode(state)
+		if err != nil {
+			return nil, 0.0, err
+		}
+
+		evals, err := e.Search(rootNode, simulations, rngs)
+		if err != nil {
+			return nil, 0.0, err
+		}
+
+		visitPercents := rootNode.VirtualSelector().VisitPercentByKey()
+		policy := game.Policy[M]{}
+		for _, move := range legalMoves {
+			if p, ok := visitPercents[move]; !ok {
+				return nil, 0.0, fmt.Errorf("後でエラーメッセージを書く")
+			} else {
+				policy[move] = p
+			}
+		}
+
+		eval, ok := evals[rootNode.Agent]
+		if !ok {
+			return nil, 0.0, fmt.Errorf("テスト失敗")
+		}
+		return policy, eval, nil
 	}
 }

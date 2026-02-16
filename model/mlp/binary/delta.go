@@ -3,11 +3,6 @@ package binary
 import (
 	"cmp"
 	"fmt"
-	"github.com/sw965/omw/mathx/bitsx"
-	"github.com/sw965/omw/mathx/randx"
-	"github.com/sw965/omw/parallel"
-	"math"
-	"math/rand/v2"
 	"slices"
 )
 
@@ -118,126 +113,12 @@ func (wd WorkerDelta) Aggregate(dst SeqDelta) error {
 	if len(wd) == 0 {
 		return fmt.Errorf("worker delta is empty")
 	}
-
 	dst.Clear()
+
 	for _, sd := range wd {
 		if err := dst.Add(sd); err != nil {
 			return err
 		}
 	}
 	return nil
-}
-
-type SeqSignDeltaComputer struct {
-	margin          float32
-	rands           []*rand.Rand
-	workerDelta     WorkerDelta
-	aggregatedDelta SeqDelta
-}
-
-func NewSeqSignDeltaComputer(s Sequence, margin float32, p int) *SeqSignDeltaComputer {
-	rands := make([]*rand.Rand, p)
-	workerDelta := make(WorkerDelta, p)
-
-	for i := 0; i < p; i++ {
-		rands[i] = randx.NewPCGFromGlobalSeed()
-		sd := make(SeqDelta, len(s))
-		for l, layer := range s {
-			sd[l] = layer.NewZerosDeltas()
-		}
-		workerDelta[i] = sd
-	}
-
-	aggregatedDelta := make(SeqDelta, len(s))
-	for l, layer := range s {
-		aggregatedDelta[l] = layer.NewZerosDeltas()
-	}
-
-	return &SeqSignDeltaComputer{
-		margin:      margin,
-		rands:       rands,
-		workerDelta: workerDelta,
-		aggregatedDelta:aggregatedDelta,
-	}
-}
-
-func (s *SeqSignDeltaComputer) Compute(seq Sequence, xs bitsx.Matrices, labels []int, prototypes bitsx.Matrices) (SeqDelta, error) {
-	n := len(xs)
-	if n > math.MaxInt16 {
-		return nil, fmt.Errorf("後でエラーメッセージを書く")
-	}
-
-	if n != len(labels) {
-		return nil, fmt.Errorf("length mismatch: xs %d != labels %d", n, len(labels))
-	}
-
-	s.workerDelta.Clear()
-	p := len(s.rands)
-
-	// workerIdをworkerIに変える
-	err := parallel.For(n, p, func(workerId, idx int) error {
-		rng := s.rands[workerId]
-		x := xs[idx]
-		label := labels[idx]
-
-		y, backwards, err := seq.Forwards(x, rng)
-		if err != nil {
-			return err
-		}
-
-		shouldUpdate, err := SatisfiesUpdateCriterion(y, label, prototypes, s.margin)
-		if err != nil {
-			return err
-		}
-
-		if !shouldUpdate {
-			return nil
-		}
-
-		t := prototypes[label]
-		_, err = backwards.Propagate(t, s.workerDelta[workerId])
-		if err != nil {
-			return err
-		}
-		return nil
-	})
-
-	if err != nil {
-		return nil, err
-	}
-
-	err = s.workerDelta.Aggregate(s.aggregatedDelta)
-	if err != nil {
-		return nil, err
-	}
-
-	s.aggregatedDelta.Sign()
-	return s.aggregatedDelta, nil
-}
-
-func SatisfiesUpdateCriterion(y *bitsx.Matrix, label int, prototypes bitsx.Matrices, margin float32) (bool, error) {
-	t := prototypes[label]
-	yMismatch, err := y.HammingDistance(t)
-	if err != nil {
-		return false, err
-	}
-
-	totalBits := y.Rows * y.Cols
-	marginBits := int(float32(totalBits) * margin)
-	for i, proto := range prototypes {
-		if i == label {
-			continue
-		}
-
-		mismatch, err := y.HammingDistance(proto)
-		if err != nil {
-			return false, err
-		}
-
-		// 設定したマージンよりも差を付けられなかった場合、学習対象
-		if (mismatch - yMismatch) < marginBits {
-			return true, nil
-		}
-	}
-	return false, nil
 }

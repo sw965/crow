@@ -1,30 +1,31 @@
 package binary
 
 import (
+	"encoding/gob"
 	"fmt"
-	"math"
-	"math/rand/v2"
-
+	"github.com/sw965/omw/encoding/gobx"
 	"github.com/sw965/omw/mathx"
 	"github.com/sw965/omw/mathx/bitsx"
 	"github.com/sw965/omw/mathx/randx"
 	"github.com/sw965/omw/parallel"
 	"github.com/sw965/omw/slicesx"
-	"slices"
+	"math"
+	"math/rand/v2"
 )
 
 type H []int8
 
 type SharedContext struct {
-	GateThresholdScale float32
-	NoiseStdScale      float64
-	GroupSize          int
+	GateDropThresholdScale float32
+	NoiseStdScale          float32
+	GroupSize              int
 }
 
 type Layer interface {
 	Forward(*bitsx.Matrix, *rand.Rand) (*bitsx.Matrix, Backward, error)
 	Predict(*bitsx.Matrix) (*bitsx.Matrix, error)
 	NewZerosDeltas() Deltas
+	OutputShape(xRows, xCols int) (int, int, error)
 	Update(Deltas, float32, *rand.Rand) error
 	setSharedContext(*SharedContext) error
 }
@@ -44,13 +45,13 @@ func (bs Backwards) Propagate(t *bitsx.Matrix, seqDelta SeqDelta) (*bitsx.Matrix
 }
 
 type Dense struct {
-	W             *bitsx.Matrix
-	wT            *bitsx.Matrix
-	H             []int8
-	sharedContext *SharedContext
+	W  *bitsx.Matrix
+	WT *bitsx.Matrix
+	H  []int8
 
-	gateThresholdBase int
-	noiseStdBase      float64
+	GateDropThresholdBase int
+	NoiseStdBase          float32
+	sharedContext         *SharedContext
 }
 
 func NewDense(wRows, wCols int, rng *rand.Rand) (*Dense, error) {
@@ -80,24 +81,25 @@ func NewDense(wRows, wCols int, rng *rand.Rand) (*Dense, error) {
 		return nil
 	})
 
-	noiseStdBase := math.Sqrt(float64(w.Cols))
-	gateThresholdBase := int(noiseStdBase)
+	// mathx.Sqrtにする？
+	noiseStdBase := float32(math.Sqrt(float64(w.Cols)))
+	gateDropThresholdBase := int(noiseStdBase)
 
 	return &Dense{
-		W:                 w,
-		wT:                wt,
-		H:                 h,
-		gateThresholdBase: gateThresholdBase,
-		noiseStdBase:      noiseStdBase,
+		W:                     w,
+		WT:                    wt,
+		H:                     h,
+		GateDropThresholdBase: gateDropThresholdBase,
+		NoiseStdBase:          noiseStdBase,
 	}, nil
 }
 
-func (d *Dense) GateThreshold() int {
-	return int(d.sharedContext.GateThresholdScale * float32(d.gateThresholdBase))
+func (d *Dense) GateDropThreshold() int {
+	return int(d.sharedContext.GateDropThresholdScale * float32(d.GateDropThresholdBase))
 }
 
-func (d *Dense) NoiseStd() float64 {
-	return d.sharedContext.NoiseStdScale * d.noiseStdBase
+func (d *Dense) NoiseStd() float32 {
+	return d.sharedContext.NoiseStdScale * d.NoiseStdBase
 }
 
 func (d *Dense) Forward(x *bitsx.Matrix, rng *rand.Rand) (*bitsx.Matrix, Backward, error) {
@@ -138,25 +140,25 @@ func (d *Dense) Forward(x *bitsx.Matrix, rng *rand.Rand) (*bitsx.Matrix, Backwar
 
 	var backward Backward
 	backward = func(t *bitsx.Matrix, deltas Deltas) (*bitsx.Matrix, error) {
-		if t.Rows != y.Rows || t.Cols != y.Cols {
-			return nil, fmt.Errorf("後でエラーメッセージを書く")
+		if err := t.ValidateSameShape(y); err != nil {
+			return nil, err
 		}
 
 		keepGate, err := bitsx.NewZerosMatrix(yRows, yCols)
 		if err != nil {
 			return nil, err
 		}
-		// 超えたらゲートを閉じる事を、表す為に、dropを命名に加える？
-		gateThreshold := d.GateThreshold()
+		gateDropThreshold := d.GateDropThreshold()
+
 		err = t.ScanRowsWord(nil, func(tCtx bitsx.MatrixWordContext) error {
 			// 64ビット毎に操作するための宣言
 			zWord := z[tCtx.GlobalStart:tCtx.GlobalEnd]
-			ascIdxs := slicesx.Argsort(zWord)
-			cutoffIdx := len(ascIdxs) / d.sharedContext.GroupSize
-			if cutoffIdx == 0 {
-				cutoffIdx = 1
+			zWordAscIdxs := slicesx.Argsort(zWord)
+			updateK := len(zWordAscIdxs) / d.sharedContext.GroupSize
+			if updateK == 0 {
+				updateK = 1
 			}
-			cutoffZi := zWord[ascIdxs[cutoffIdx-1]]
+			updateUpperLimit := zWord[zWordAscIdxs[updateK-1]]
 			tWord := t.Data[tCtx.WordIndex]
 			var keepGateWord uint64
 
@@ -164,11 +166,11 @@ func (d *Dense) Forward(x *bitsx.Matrix, rng *rand.Rand) (*bitsx.Matrix, Backwar
 			// 引数iに代入される値は、100ビットの場合、一週目は0～63、二週目は64～99
 			tCtx.ScanBits(func(i, col, colT int) error {
 				zi := zWord[i]
-				if zi > cutoffZi {
+				if zi > updateUpperLimit {
 					return nil
 				}
 
-				if mathx.Abs(zi) > gateThreshold {
+				if mathx.Abs(zi) > gateDropThreshold {
 					return nil
 				}
 				keepGateWord |= (1 << uint64(i))
@@ -208,7 +210,7 @@ func (d *Dense) Forward(x *bitsx.Matrix, rng *rand.Rand) (*bitsx.Matrix, Backwar
 			return nil, err
 		}
 
-		rawNextTT, err := d.wT.DotTernary(t, keepGate)
+		rawNextTT, err := d.WT.DotTernary(t, keepGate)
 		if err != nil {
 			return nil, err
 		}
@@ -260,8 +262,15 @@ func (d *Dense) Predict(x *bitsx.Matrix) (*bitsx.Matrix, error) {
 }
 
 func (d *Dense) NewZerosDeltas() Deltas {
-	n := d.W.Rows*d.W.Cols
+	n := d.W.Rows * d.W.Cols
 	return Deltas{make(Delta, n)}
+}
+
+func (d *Dense) OutputShape(xRows, xCols int) (int, int, error) {
+	if xCols != d.W.Cols {
+		return 0, 0, fmt.Errorf("input cols %d does not match layer input dim %d", xCols, d.W.Cols)
+	}
+	return xRows, d.W.Rows, nil
 }
 
 func (d *Dense) Update(deltas Deltas, lr float32, rng *rand.Rand) error {
@@ -273,7 +282,7 @@ func (d *Dense) Update(deltas Deltas, lr float32, rng *rand.Rand) error {
 	err := d.W.ScanRowsWord(nil, func(ctx bitsx.MatrixWordContext) error {
 		hWord := d.H[ctx.GlobalStart:ctx.GlobalEnd]
 		deltaWord := delta[ctx.GlobalStart:ctx.GlobalEnd]
-		var flip uint64
+		var flips uint64
 		ctx.ScanBits(func(i, col, colT int) error {
 			if rng.Float32() > lr {
 				return nil
@@ -288,15 +297,15 @@ func (d *Dense) Update(deltas Deltas, lr float32, rng *rand.Rand) error {
 			isOldPlus := old >= 0
 			isNewPlus := clipped >= 0
 			if isOldPlus != isNewPlus {
-				flip |= (1 << uint64(i))
-				err := d.wT.Toggle(col, ctx.Row)
+				flips |= (1 << uint64(i))
+				err := d.WT.Toggle(col, ctx.Row)
 				if err != nil {
 					return err
 				}
 			}
 			return nil
 		})
-		d.W.Data[ctx.WordIndex] ^= flip
+		d.W.Data[ctx.WordIndex] ^= flips
 		return nil
 	})
 	return err
@@ -309,23 +318,8 @@ func (d *Dense) setSharedContext(ctx *SharedContext) error {
 
 type Sequence []Layer
 
-func NewDenseLayers(dims []int, rng *rand.Rand) (Sequence, error) {
-	numLayers := len(dims)-1
-	if numLayers < 1 {
-		return nil, fmt.Errorf("layerSizes must have at least 2 elements (input and output dimensions)")
-	}
-	seq := make(Sequence, 0, numLayers)
-	for i := range numLayers {
-		wRows := dims[i+1]
-		wCols := dims[i]
-
-		denseLayer, err := NewDense(wRows, wCols, rng)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create dense layer at index %d: %w", i, err)
-		}
-		seq = append(seq, denseLayer)
-	}
-	return seq, nil
+func LoadSequence(path string) (Sequence, error) {
+	return gobx.Load[Sequence](path)
 }
 
 func (s Sequence) Forwards(x *bitsx.Matrix, rng *rand.Rand) (*bitsx.Matrix, Backwards, error) {
@@ -354,90 +348,19 @@ func (s Sequence) Predict(x *bitsx.Matrix) (*bitsx.Matrix, error) {
 	return x, nil
 }
 
-func (s Sequence) PredictLogits(x *bitsx.Matrix, prototypes bitsx.Matrices) ([]int, error) {
-	y, err := s.Predict(x)
-	if err != nil {
-		return nil, err
-	}
-
-	n := len(prototypes)
-	logits := make([]int, n)
-	maxMatch := y.Rows * y.Cols
-
-	for i, proto := range prototypes {
-		if y.Rows != proto.Rows || y.Cols != proto.Cols {
-			return nil, fmt.Errorf("後でエラーメッセージを書く")
-		}
-		mismatch, err := y.HammingDistance(proto)
+func (s Sequence) OutputShape(xRows, xCols int) (int, int, error) {
+	var err error
+	for i, layer := range s {
+		xRows, xCols, err = layer.OutputShape(xRows, xCols)
 		if err != nil {
-			return nil, err
+			return 0, 0, fmt.Errorf("layer %d: %w", i, err)
 		}
-		logits[i] = maxMatch - mismatch
-	}
-	return logits, nil
-}
-
-func (s Sequence) PredictSoftmax(x *bitsx.Matrix, prototypes bitsx.Matrices) ([]float32, error) {
-	logits, err := s.PredictLogits(x, prototypes)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(logits) == 0 {
-		return nil, fmt.Errorf("logits is empty")
-	}
-
-	maxLogit := slices.Max(logits)
-	exps := make([]float64, len(logits))
-	var sumExp float64
-	for i, l := range logits {
-		exps[i] = math.Exp(float64(l - maxLogit))
-		sumExp += exps[i]
-	}
-
-	y := make([]float32, len(logits))
-	for i, exp := range exps {
-		y[i] = float32(exp / sumExp)
-	}
-	return y, nil
-}
-
-func (s Sequence) Accuracy(xs bitsx.Matrices, labels []int, prototypes bitsx.Matrices, p int) (float32, error) {
-	n := len(xs)
-	if n != len(labels) {
-		return 0.0, fmt.Errorf("length mismatch: xs %d != labels %d", n, len(labels))
-	}
-	correctCounts := make([]int, p)
-
-	err := parallel.For(n, p, func(workerId, idx int) error {
-		x := xs[idx]
-		label := labels[idx]
-
-		logits, err := s.PredictLogits(x, prototypes)
-		if err != nil {
-			return err
+		if xRows <= 0 || xCols <= 0 {
+			return 0, 0, fmt.Errorf("後でエラーメッセージを書く")
 		}
-
-		if len(logits) == 0 {
-			return fmt.Errorf("logits is empty")
-		}
-
-		yMaxIdx := slicesx.Argsort(logits)[len(logits)-1]
-		if yMaxIdx == label {
-			correctCounts[workerId]++
-		}
-		return nil
-	})
-
-	if err != nil {
-		return 0.0, err
 	}
-
-	totalCorrect := 0
-	for _, c := range correctCounts {
-		totalCorrect += c
-	}
-	return float32(totalCorrect) / float32(n), nil
+	yRows, yCols := xRows, xCols
+	return yRows, yCols, nil
 }
 
 func (s Sequence) Update(seqDelta SeqDelta, lr float32, rngs []*rand.Rand) error {
@@ -468,4 +391,8 @@ func (s Sequence) SetSharedContext(ctx *SharedContext) error {
 		}
 	}
 	return nil
+}
+
+func init() {
+	gob.Register(&Dense{})
 }
