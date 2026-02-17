@@ -227,7 +227,6 @@ func (e Engine[S, M, A]) SelectExpansionBackward(node *Node[S, M, A], capacity i
 			return nil, 0, err
 		}
 
-		var isEnd bool
 		isEnd, err = e.Game.IsEnd(state)
 		if err != nil {
 			return nil, 0, err

@@ -261,3 +261,36 @@ type Record[S any, M, A comparable] struct {
 	FinalState         S
 	ResultScoreByAgent ResultScoreByAgent[A]
 }
+
+func (r Record[S, M, A]) ElmoSteps(alpha float32) []Step[S, M, A] {
+	// alpha が範囲外の場合はクリッピングするか、呼び出し側の責任とする
+	if alpha < 0.0 {
+		alpha = 0.0
+	} else if alpha > 1.0 {
+		alpha = 1.0
+	}
+
+	elmoSteps := make([]Step[S, M, A], len(r.Steps))
+	
+	for i, step := range r.Steps {
+		// 1. そのステップの手番エージェントの、実際のゲーム結果(Z)を取得
+		z := r.ResultScoreByAgent[step.Agent]
+		
+		// 2. そのステップでの探索評価値(V_search)を取得
+		v := step.Value
+		
+		// 3. ブレンドして新しいターゲット価値を計算
+		newValue := alpha*z + (1.0-alpha)*v
+
+		// 4. 新しい Step を作成 (Policy は元のマップの参照をそのまま使い、メモリを節約)
+		elmoSteps[i] = Step[S, M, A]{
+			State:  step.State,
+			Agent:  step.Agent,
+			Move:   step.Move,
+			Policy: step.Policy,
+			Value:  newValue,
+		}
+	}
+
+	return elmoSteps
+}
