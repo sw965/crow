@@ -2,18 +2,19 @@ package sequential
 
 import (
 	"fmt"
+	"github.com/sw965/omw/mathx/randx"
 	"github.com/sw965/omw/parallel"
 	"github.com/sw965/omw/slicesx"
 	"math/rand/v2"
 	"slices"
 )
 
-func (e *Engine[S, M, A]) Playouts(inits []S, actor Actor[S, M, A], rngs []*rand.Rand) ([]S, error) {
+func (e *Engine[S, M, A]) Playouts(inits []S, ac ActorCritic[S, M, A], rngs []*rand.Rand) ([]S, error) {
 	if err := e.Validate(); err != nil {
 		return nil, err
 	}
 
-	if err := actor.Validate(); err != nil {
+	if err := ac.Validate(); err != nil {
 		return nil, err
 	}
 
@@ -40,7 +41,7 @@ func (e *Engine[S, M, A]) Playouts(inits []S, actor Actor[S, M, A], rngs []*rand
 				return fmt.Errorf("game is not ended but no legal moves are available")
 			}
 
-			policy, err := actor.PolicyFunc(state, legalMoves)
+			policy, _, err := ac.PolicyValueFunc(state, legalMoves)
 			if err != nil {
 				return err
 			}
@@ -53,7 +54,7 @@ func (e *Engine[S, M, A]) Playouts(inits []S, actor Actor[S, M, A], rngs []*rand
 			}
 
 			agent := e.Logic.CurrentAgentFunc(state)
-			move, err := actor.SelectFunc(policy, agent, rng)
+			move, err := ac.SelectFunc(policy, agent, rng)
 			if err != nil {
 				return err
 			}
@@ -69,7 +70,7 @@ func (e *Engine[S, M, A]) Playouts(inits []S, actor Actor[S, M, A], rngs []*rand
 	return finals, err
 }
 
-func (e Engine[S, M, A]) RecordPlayouts(inits []S, actor ActorCritic[S, M, A], oneGameCap int, rngs []*rand.Rand) ([]Record[S, M, A], error) {
+func (e *Engine[S, M, A]) RecordPlayouts(inits []S, ac ActorCritic[S, M, A], rngs []*rand.Rand, stepCap int) ([]Record[S, M, A], error) {
 	if err := e.Validate(); err != nil {
 		return nil, err
 	}
@@ -81,7 +82,7 @@ func (e Engine[S, M, A]) RecordPlayouts(inits []S, actor ActorCritic[S, M, A], o
 	err := parallel.For(n, p, func(workerId, idx int) error {
 		rng := rngs[workerId]
 		state := inits[idx]
-		steps := make([]Step[S, M, A], 0, oneGameCap)
+		steps := make([]Step[S, M, A], 0, stepCap)
 
 		for {
 			isEnd, err := e.IsEnd(state)
@@ -97,7 +98,7 @@ func (e Engine[S, M, A]) RecordPlayouts(inits []S, actor ActorCritic[S, M, A], o
 				return fmt.Errorf("game is not ended but no legal moves are available")
 			}
 
-			policy, value, err := actor.PolicyValueFunc(state, legalMoves)
+			policy, value, err := ac.PolicyValueFunc(state, legalMoves)
 			if err != nil {
 				return err
 			}
@@ -107,7 +108,7 @@ func (e Engine[S, M, A]) RecordPlayouts(inits []S, actor ActorCritic[S, M, A], o
 			}
 
 			agent := e.Logic.CurrentAgentFunc(state)
-			move, err := actor.SelectFunc(policy, agent, rng)
+			move, err := ac.SelectFunc(policy, agent, rng)
 			if err != nil {
 				return err
 			}
@@ -142,90 +143,109 @@ func (e Engine[S, M, A]) RecordPlayouts(inits []S, actor ActorCritic[S, M, A], o
 	return records, err
 }
 
-type CrossPlayouter[S any, M, A comparable] struct {
-	engine     *Engine[S, M, A]
-	inits      []S
-	actors     []Actor[S, M, A]
-	actorPerms [][]Actor[S, M, A]
+type CrossPlayoutRecorder[S any, M, A comparable] struct {
+	engine  *Engine[S, M, A]
+	inits   []S
+	acPerms [][]ActorCritic[S, M, A]
+	rands   []*rand.Rand
+	stepCap int
 
-	currentIdx       int
-	ScoreByActorName map[ActorName]float32
-	rngs             []*rand.Rand
+	currentIdx         int
+	numGames           int
+	totalScoreByAcName map[ActorCriticName]float32
 }
 
-func (e *Engine[S, M, A]) NewCrossPlayouter(inits []S, actors []Actor[S, M, A], rngs []*rand.Rand) (*CrossPlayouter[S, M, A], error) {
+func (e *Engine[S, M, A]) NewCrossPlayoutRecorder(inits []S, acs []ActorCritic[S, M, A], p int) (*CrossPlayoutRecorder[S, M, A], error) {
 	agentsN := len(e.Agents)
-	if len(actors) < agentsN {
-		return nil, fmt.Errorf("insufficient actors: expected at least %d, got %d", agentsN, len(actors))
+	if len(acs) < agentsN {
+		return nil, fmt.Errorf("insufficient actors: expected at least %d, got %d", agentsN, len(acs))
 	}
 
-	perms := slices.Collect(slicesx.Permutations(actors, agentsN))
-	return &CrossPlayouter[S, M, A]{
-		engine:           e,
-		inits:            inits,
-		actors:           actors,
-		actorPerms:       perms,
-		ScoreByActorName: make(map[ActorName]float32),
-		rngs:             rngs,
+	acPerms := slices.Collect(slicesx.Permutations(acs, agentsN))
+	rands := randx.NewPCGs(p)
+	return &CrossPlayoutRecorder[S, M, A]{
+		engine:             e,
+		inits:              inits,
+		acPerms:            acPerms,
+		rands:              rands,
+		stepCap:            256,
+		totalScoreByAcName: make(map[ActorCriticName]float32),
 	}, nil
 }
 
-func (cp *CrossPlayouter[S, M, A]) Next() ([]S, map[A]ActorName, bool, error) {
-	if cp.currentIdx >= len(cp.actorPerms) {
+func (cp *CrossPlayoutRecorder[S, M, A]) NumGames() int {
+	return cp.numGames
+}
+
+func (cp *CrossPlayoutRecorder[S, M, A]) SetStepCap(c int) {
+	cp.stepCap = c
+}
+
+func (cp *CrossPlayoutRecorder[S, M, A]) TotalScoreByActorCriticName() map[ActorCriticName]float32 {
+	return cp.totalScoreByAcName
+}
+
+func (cp *CrossPlayoutRecorder[S, M, A]) Next() ([]Record[S, M, A], map[A]ActorCriticName, bool, error) {
+	if cp.currentIdx >= len(cp.acPerms) {
 		return nil, nil, false, nil
 	}
 
-	actorPerm := cp.actorPerms[cp.currentIdx]
+	acPerm := cp.acPerms[cp.currentIdx]
 	cp.currentIdx++
 
-	actorByAgent := map[A]Actor[S, M, A]{}
-	actorNameByAgent := map[A]ActorName{}
-	policyFuncByAgent := map[A]PolicyFunc[S, M]{}
+	acNameByAgent := map[A]ActorCriticName{}
+	pvFuncByAgent := map[A]PolicyValueFunc[S, M]{}
 	selectFuncByAgent := map[A]SelectFunc[M, A]{}
 
 	for i, agent := range cp.engine.Agents {
-		actor := actorPerm[i]
-		actorByAgent[agent] = actor
-		actorNameByAgent[agent] = actor.Name
-		policyFuncByAgent[agent] = actor.PolicyFunc
-		selectFuncByAgent[agent] = actor.SelectFunc
+		ac := acPerm[i]
+		acNameByAgent[agent] = ac.Name
+		pvFuncByAgent[agent] = ac.PolicyValueFunc
+		selectFuncByAgent[agent] = ac.SelectFunc
 	}
 
-	policyFunc := func(state S, legalMoves []M) (Policy[M], error) {
+	// 現在の手番の Agent に応じて ActorCritic の振る舞いを切り替えるラッパー
+	pvFunc := func(state S, legalMoves []M) (Policy[M], float32, error) {
 		agent := cp.engine.Logic.CurrentAgentFunc(state)
-		return policyFuncByAgent[agent](state, legalMoves)
+		return pvFuncByAgent[agent](state, legalMoves)
 	}
 
 	selectFunc := func(p Policy[M], agent A, rng *rand.Rand) (M, error) {
 		return selectFuncByAgent[agent](p, agent, rng)
 	}
 
-	newActor := Actor[S, M, A]{
-		PolicyFunc: policyFunc,
-		SelectFunc: selectFunc,
+	wrapperActor := ActorCritic[S, M, A]{
+		PolicyValueFunc: pvFunc,
+		SelectFunc:      selectFunc,
 	}
 
-	finals, err := cp.engine.Playouts(cp.inits, newActor, cp.rngs)
+	// Playouts ではなく RecordPlayouts を実行
+	records, err := cp.engine.RecordPlayouts(cp.inits, wrapperActor, cp.rands, cp.stepCap)
 	if err != nil {
 		return nil, nil, false, err
 	}
 
-	for _, final := range finals {
-		scores, err := cp.engine.EvaluateResultScoreByAgent(final)
-		if err != nil {
-			return nil, nil, false, err
-		}
-		for agent, score := range scores {
-			actorName := actorNameByAgent[agent]
-			cp.ScoreByActorName[actorName] += score
+	// スコアの集計
+	for _, record := range records {
+		for agent, score := range record.ResultScoreByAgent {
+			acName := acNameByAgent[agent]
+			cp.totalScoreByAcName[acName] += score
 		}
 	}
-	return finals, actorNameByAgent, true, nil
+
+	cp.numGames += len(records)
+	return records, acNameByAgent, true, nil
 }
 
-type CrossRecordPlayoutResult[S any, M, A comparable] struct {
-	ActorByAgent map[A]ActorCritic[S, M, A]
-	Records      []Record[S, M, A]
+func (cp *CrossPlayoutRecorder[S, M, A]) AverageScoreByActorCriticName() (map[ActorCriticName]float32, error) {
+	if cp.numGames <= 0 {
+		return nil, fmt.Errorf("ゲームがまだ行われていないので、平均スコアを計算出来ません。")
+	}
+	avg := map[ActorCriticName]float32{}
+	for k, v := range cp.totalScoreByAcName {
+		avg[k] = v / float32(cp.numGames)
+	}
+	return avg, nil
 }
 
 type Step[S any, M, A comparable] struct {

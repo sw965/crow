@@ -64,6 +64,14 @@ func UniformPolicyFunc[S any, M comparable](state S, legalMoves []M) (Policy[M],
 
 type PolicyValueFunc[S any, M comparable] func(S, []M) (Policy[M], float32, error)
 
+func UniformPolicyNoValueFunc[S any, M comparable](state S, legalMoves []M) (Policy[M], float32, error) {
+	policy, err := UniformPolicyFunc(state, legalMoves)
+	if err != nil {
+		return nil, 0.0, err
+	}
+	return policy, 0.0, err
+}
+
 type SelectFunc[M, A comparable] func(Policy[M], A, *rand.Rand) (M, error)
 
 func MaxSelectFunc[M, A comparable](policy Policy[M], agent A, rng *rand.Rand) (M, error) {
@@ -85,7 +93,8 @@ func MaxSelectFunc[M, A comparable](policy Policy[M], agent A, rng *rand.Rand) (
 
 	move, err := randx.Choice(moves, rng)
 	if err != nil {
-		panic(fmt.Sprintf("bug: %v", err))
+		var zero M
+		return zero, err
 	}
 	return move, nil
 }
@@ -101,35 +110,10 @@ func WeightedRandomSelectFunc[M, A comparable](policy Policy[M], agent A, rng *r
 
 	idx, err := randx.IntByWeights(ws, rng)
 	if err != nil {
-		panic(fmt.Sprintf("bug: %v", err))
+		var zero M
+		return zero, err
 	}
 	return moves[idx], nil
-}
-
-type ActorName string
-
-type Actor[S any, M, A comparable] struct {
-	Name       ActorName
-	PolicyFunc PolicyFunc[S, M]
-	SelectFunc SelectFunc[M, A]
-}
-
-func NewRandomActor[S any, M, A comparable]() Actor[S, M, A] {
-	return Actor[S, M, A]{
-		Name:       "rand",
-		PolicyFunc: UniformPolicyFunc[S, M],
-		SelectFunc: WeightedRandomSelectFunc[M, A],
-	}
-}
-
-func (a Actor[S, M, A]) Validate() error {
-	if a.PolicyFunc == nil {
-		return fmt.Errorf("PolicyFunc must not be nil")
-	}
-	if a.SelectFunc == nil {
-		return fmt.Errorf("SelectFunc must not be nil")
-	}
-	return nil
 }
 
 type ActorCriticName string
@@ -138,4 +122,22 @@ type ActorCritic[S any, M, A comparable] struct {
 	Name            ActorCriticName
 	PolicyValueFunc PolicyValueFunc[S, M]
 	SelectFunc      SelectFunc[M, A]
+}
+
+func NewRandomActorCritic[S any, M, A comparable]() ActorCritic[S, M, A] {
+	return ActorCritic[S, M, A]{
+		Name:            "rand",
+		PolicyValueFunc: UniformPolicyNoValueFunc[S, M],
+		SelectFunc:      WeightedRandomSelectFunc[M, A],
+	}
+}
+
+func (a ActorCritic[S, M, A]) Validate() error {
+	if a.PolicyValueFunc == nil {
+		return fmt.Errorf("PolicyValueFunc must not be nil")
+	}
+	if a.SelectFunc == nil {
+		return fmt.Errorf("SelectFunc must not be nil")
+	}
+	return nil
 }
