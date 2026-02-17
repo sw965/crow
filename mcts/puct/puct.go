@@ -127,9 +127,9 @@ func (e *Engine[S, M, A]) SetUniformPolicyFunc() {
 	e.PolicyFunc = game.UniformPolicyFunc[S, M]
 }
 
-func (e *Engine[S, M, A]) SetPlayout(actor game.Actor[S, M, A], rng *rand.Rand) {
+func (e *Engine[S, M, A]) SetPlayout(ac game.ActorCritic[S, M, A], rng *rand.Rand) {
 	e.LeafNodeEvalByAgentFunc = func(state S) (LeafNodeEvalByAgent[A], error) {
-		finals, err := e.Game.Playouts([]S{state}, actor, []*rand.Rand{rng})
+		finals, err := e.Game.Playouts([]S{state}, ac, []*rand.Rand{rng})
 		if err != nil {
 			return nil, err
 		}
@@ -348,28 +348,28 @@ func (e Engine[S, M, A]) Search(rootNode *Node[S, M, A], n int, workerRngs []*ra
 	return sum, nil
 }
 
-func (e Engine[S, M, A]) NewPolicyFunc(simulations int, rngs []*rand.Rand) game.PolicyFunc[S, M] {
-	return func(state S, legalMoves []M) (game.Policy[M], error) {
+func (e Engine[S, M, A]) NewPolicyNoValueFunc(simulations int, rngs []*rand.Rand) game.PolicyValueFunc[S, M] {
+	return func(state S, legalMoves []M) (game.Policy[M], float32, error) {
 		rootNode, err := e.NewNode(state)
 		if err != nil {
-			return nil, err
+			return nil, 0.0, err
 		}
 
 		_, err = e.Search(rootNode, simulations, rngs)
 		if err != nil {
-			return nil, err
+			return nil, 0.0, err
 		}
 
 		visitPercents := rootNode.VirtualSelector().VisitPercentByKey()
 		policy := game.Policy[M]{}
 		for _, move := range legalMoves {
 			if p, ok := visitPercents[move]; !ok {
-				return nil, fmt.Errorf("後でエラーメッセージを書く")
+				return nil, 0.0, fmt.Errorf("後でエラーメッセージを書く")
 			} else {
 				policy[move] = p
 			}
 		}
-		return policy, nil
+		return policy, 0.0, nil
 	}
 }
 
