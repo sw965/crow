@@ -23,7 +23,7 @@ func Test(t *testing.T) {
 	p := 4
 	numClasses := 10
 	outputSize := 1024
-	rng := randx.NewPCGFromGlobalSeed()
+	rng := randx.NewPCG()
 
 	model := binary.Model{XRows:1, XCols:784}
 	err = model.AppendDenseLayer(512, rng)

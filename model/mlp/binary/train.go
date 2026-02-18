@@ -24,19 +24,17 @@ type Trainer struct {
 }
 
 func NewTrainer(model Model, p int) *Trainer {
-	rands := make([]*rand.Rand, p)
 	workerDelta := make(WorkerDelta, p)
 	backbone := model.Backbone
 	numLayers := len(backbone)
 
-	// ワーカーごとのバッファと乱数生成器の初期化
+	// ワーカーごとのバッファの初期化
 	for i := 0; i < p; i++ {
 		sd := make(SeqDelta, numLayers)
 		for l, layer := range backbone {
 			sd[l] = layer.NewZerosDeltas()
 		}
 		workerDelta[i] = sd
-		rands[i] = randx.NewPCGFromGlobalSeed()
 	}
 
 	// 集約用バッファの初期化
@@ -50,8 +48,8 @@ func NewTrainer(model Model, p int) *Trainer {
 		LR:              0.1,
 		Margin:          0.0,
 		model:           model,
-		rands:           rands,
-		rand:            randx.NewPCGFromGlobalSeed(),
+		rands:           randx.NewPCGs(p),
+		rand:            randx.NewPCG(),
 		workerDelta:     workerDelta,
 		aggregatedDelta: aggregatedDelta,
 	}

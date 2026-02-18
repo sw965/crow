@@ -134,6 +134,33 @@ func (m *Model) PredictSoftmax(x *bitsx.Matrix) ([]float32, error) {
 	return y, nil
 }
 
+func (m *Model) PredictValue(x *bitsx.Matrix) (float32, error) {
+	logits, err := m.PredictLogits(x)
+	if err != nil {
+		return 0.0, err
+	}
+
+	if len(logits) == 0 {
+		return 0.0, fmt.Errorf("logits is empty")
+	}
+
+	n := len(m.Prototypes)
+	if n <= 1 {
+		return 0.0, fmt.Errorf("number of prototypes must be at least 2")
+	}
+
+	max := slices.Max(logits)
+	var sum int
+	var c int
+	for i, l := range logits {
+		if l == max {
+			sum += i
+			c++
+		}
+	}
+	return float32(sum) / float32(c), nil
+}
+
 func (m *Model) Accuracy(xs bitsx.Matrices, labels []int, p int) (float32, error) {
 	n := len(xs)
 	if n != len(labels) {
