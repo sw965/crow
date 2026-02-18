@@ -7,6 +7,7 @@ import (
 	"github.com/sw965/omw/slicesx"
 	"math/rand/v2"
 	"slices"
+	"maps"
 )
 
 func (e *Engine[S, M, A]) Playouts(inits []S, ac ActorCritic[S, M, A], rngs []*rand.Rand) ([]S, error) {
@@ -150,9 +151,10 @@ type CrossPlayoutRecorder[S any, M, A comparable] struct {
 	rands   []*rand.Rand
 	stepCap int
 
-	currentIdx         int
-	numGames           int
-	totalScoreByAcName map[ActorCriticName]float32
+	currentIdx          int
+	numGames            int
+	totalScoreByAcName  map[ActorCriticName]float32
+	numGamesByAcName    map[ActorCriticName]int
 }
 
 func (e *Engine[S, M, A]) NewCrossPlayoutRecorder(inits []S, acs []ActorCritic[S, M, A], p int) (*CrossPlayoutRecorder[S, M, A], error) {
@@ -163,13 +165,22 @@ func (e *Engine[S, M, A]) NewCrossPlayoutRecorder(inits []S, acs []ActorCritic[S
 
 	acPerms := slices.Collect(slicesx.Permutations(acs, agentsN))
 	rands := randx.NewPCGs(p)
+
+	totalScoreByAcName := make(map[ActorCriticName]float32)
+	numGamesByAcName := make(map[ActorCriticName]int)
+	for _, ac := range acs {
+		totalScoreByAcName[ac.Name] = 0
+		numGamesByAcName[ac.Name] = 0
+	}
+
 	return &CrossPlayoutRecorder[S, M, A]{
-		engine:             e,
-		inits:              inits,
-		acPerms:            acPerms,
-		rands:              rands,
-		stepCap:            256,
-		totalScoreByAcName: make(map[ActorCriticName]float32),
+		engine:              e,
+		inits:               inits,
+		acPerms:             acPerms,
+		rands:               rands,
+		stepCap:             256,
+		totalScoreByAcName:  totalScoreByAcName,
+		numGamesByAcName:    numGamesByAcName,
 	}, nil
 }
 
@@ -182,20 +193,39 @@ func (cp *CrossPlayoutRecorder[S, M, A]) SetStepCap(c int) {
 }
 
 func (cp *CrossPlayoutRecorder[S, M, A]) TotalScoreByActorCriticName() map[ActorCriticName]float32 {
-	return cp.totalScoreByAcName
+	return maps.Clone(cp.totalScoreByAcName)
 }
 
-func (cp *CrossPlayoutRecorder[S, M, A]) Next() ([]Record[S, M, A], map[A]ActorCriticName, bool, error) {
+func (cp *CrossPlayoutRecorder[S, M, A]) AverageScoreByActorCriticName() (map[ActorCriticName]float32, error) {
+	if cp.numGames <= 0 {
+		return nil, fmt.Errorf("ゲームがまだ行われていないので、平均スコアを計算出来ません。")
+	}
+	avg := make(map[ActorCriticName]float32, len(cp.totalScoreByAcName))
+	for k, v := range cp.totalScoreByAcName {
+		numGames := cp.numGamesByAcName[k]
+		if numGames > 0 {
+			avg[k] = v / float32(numGames)
+		} else {
+			avg[k] = 0
+		}
+	}
+	return avg, nil
+}
+
+func (cp *CrossPlayoutRecorder[S, M, A]) NumGamesByActorCriticName() map[ActorCriticName]int {
+    return maps.Clone(cp.numGamesByAcName)
+}
+
+func (cp *CrossPlayoutRecorder[S, M, A]) Next() ([]Record[S, M, A], bool, error) {
 	if cp.currentIdx >= len(cp.acPerms) {
-		return nil, nil, false, nil
+		return nil, false, nil
 	}
 
+	agentsN := len(cp.engine.Agents)
+	acNameByAgent := make(map[A]ActorCriticName, agentsN)
+	pvFuncByAgent := make(map[A]PolicyValueFunc[S, M], agentsN)
+	selectFuncByAgent := make(map[A]SelectFunc[M, A], agentsN)
 	acPerm := cp.acPerms[cp.currentIdx]
-	cp.currentIdx++
-
-	acNameByAgent := map[A]ActorCriticName{}
-	pvFuncByAgent := map[A]PolicyValueFunc[S, M]{}
-	selectFuncByAgent := map[A]SelectFunc[M, A]{}
 
 	for i, agent := range cp.engine.Agents {
 		ac := acPerm[i]
@@ -204,7 +234,6 @@ func (cp *CrossPlayoutRecorder[S, M, A]) Next() ([]Record[S, M, A], map[A]ActorC
 		selectFuncByAgent[agent] = ac.SelectFunc
 	}
 
-	// 現在の手番の Agent に応じて ActorCritic の振る舞いを切り替えるラッパー
 	pvFunc := func(state S, legalMoves []M) (Policy[M], float32, error) {
 		agent := cp.engine.Logic.CurrentAgentFunc(state)
 		return pvFuncByAgent[agent](state, legalMoves)
@@ -219,10 +248,13 @@ func (cp *CrossPlayoutRecorder[S, M, A]) Next() ([]Record[S, M, A], map[A]ActorC
 		SelectFunc:      selectFunc,
 	}
 
-	// Playouts ではなく RecordPlayouts を実行
 	records, err := cp.engine.RecordPlayouts(cp.inits, wrapperActor, cp.rands, cp.stepCap)
 	if err != nil {
-		return nil, nil, false, err
+		return nil, false, err
+	}
+
+	for i := range records {
+		records[i].ActorCriticNameByAgent = acNameByAgent
 	}
 
 	// スコアの集計
@@ -230,22 +262,34 @@ func (cp *CrossPlayoutRecorder[S, M, A]) Next() ([]Record[S, M, A], map[A]ActorC
 		for agent, score := range record.ResultScoreByAgent {
 			acName := acNameByAgent[agent]
 			cp.totalScoreByAcName[acName] += score
+			cp.numGamesByAcName[acName]++
 		}
 	}
 
+	cp.currentIdx++
 	cp.numGames += len(records)
-	return records, acNameByAgent, true, nil
+	return records, true, nil
 }
 
-func (cp *CrossPlayoutRecorder[S, M, A]) AverageScoreByActorCriticName() (map[ActorCriticName]float32, error) {
-	if cp.numGames <= 0 {
-		return nil, fmt.Errorf("ゲームがまだ行われていないので、平均スコアを計算出来ません。")
+func (cp *CrossPlayoutRecorder[S, M, A]) Collect() ([]Record[S, M, A], error) {
+	remainingPerms := len(cp.acPerms) - cp.currentIdx
+	if remainingPerms <= 0 {
+		return nil, nil
 	}
-	avg := map[ActorCriticName]float32{}
-	for k, v := range cp.totalScoreByAcName {
-		avg[k] = v / float32(cp.numGames)
+
+	c := remainingPerms * len(cp.inits)
+	collected := make([]Record[S, M, A], 0, c)
+	for {
+		records, hasNext, err := cp.Next()
+		if err != nil {
+			return nil, err
+		}
+		if !hasNext {
+			break
+		}
+		collected = append(collected, records...)
 	}
-	return avg, nil
+	return collected, nil
 }
 
 type Step[S any, M, A comparable] struct {
@@ -257,9 +301,10 @@ type Step[S any, M, A comparable] struct {
 }
 
 type Record[S any, M, A comparable] struct {
-	Steps              []Step[S, M, A]
-	FinalState         S
-	ResultScoreByAgent ResultScoreByAgent[A]
+	Steps                  []Step[S, M, A]
+	FinalState             S
+	ResultScoreByAgent     ResultScoreByAgent[A]
+	ActorCriticNameByAgent map[A]ActorCriticName
 }
 
 func (r Record[S, M, A]) ElmoSteps(alpha float32) []Step[S, M, A] {
@@ -271,14 +316,14 @@ func (r Record[S, M, A]) ElmoSteps(alpha float32) []Step[S, M, A] {
 	}
 
 	elmoSteps := make([]Step[S, M, A], len(r.Steps))
-	
+
 	for i, step := range r.Steps {
 		// 1. そのステップの手番エージェントの、実際のゲーム結果(Z)を取得
 		z := r.ResultScoreByAgent[step.Agent]
-		
+
 		// 2. そのステップでの探索評価値(V_search)を取得
 		v := step.Value
-		
+
 		// 3. ブレンドして新しいターゲット価値を計算
 		newValue := alpha*z + (1.0-alpha)*v
 
@@ -291,6 +336,5 @@ func (r Record[S, M, A]) ElmoSteps(alpha float32) []Step[S, M, A] {
 			Value:  newValue,
 		}
 	}
-
 	return elmoSteps
 }
