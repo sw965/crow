@@ -8,9 +8,11 @@ import (
 	"github.com/sw965/omw/mathx/bitsx"
 	"github.com/sw965/omw/mathx/randx"
 	"github.com/sw965/omw/parallel"
-	"github.com/sw965/omw/slicesx"
+	//"github.com/sw965/omw/slicesx"
+	"cmp"
 	"math"
 	"math/rand/v2"
+	"slices"
 )
 
 type H []int8
@@ -150,15 +152,17 @@ func (d *Dense) Forward(x *bitsx.Matrix, rng *rand.Rand) (*bitsx.Matrix, Backwar
 		}
 		gateDropThreshold := d.GateDropThreshold()
 
+		wordSize := 64
 		err = t.ScanRowsWord(nil, func(tCtx bitsx.MatrixWordContext) error {
 			// 64ビット毎に操作するための宣言
 			zWord := z[tCtx.GlobalStart:tCtx.GlobalEnd]
-			zWordAscIdxs := slicesx.Argsort(zWord)
-			updateK := len(zWordAscIdxs) / d.sharedContext.GroupSize
-			if updateK == 0 {
-				updateK = 1
+			type wordMismatch struct {
+				absZi int
+				tBit  uint64
+				col   int
 			}
-			updateUpperLimit := zWord[zWordAscIdxs[updateK-1]]
+			wordMismatches := make([]wordMismatch, 0, wordSize)
+
 			tWord := t.Data[tCtx.WordIndex]
 			var keepGateWord uint64
 
@@ -166,14 +170,11 @@ func (d *Dense) Forward(x *bitsx.Matrix, rng *rand.Rand) (*bitsx.Matrix, Backwar
 			// 引数iに代入される値は、100ビットの場合、一週目は0～63、二週目は64～99
 			tCtx.ScanBits(func(i, col, colT int) error {
 				zi := zWord[i]
-				if zi > updateUpperLimit {
-					return nil
-				}
+				absZi := mathx.Abs(zi)
 
-				if mathx.Abs(zi) > gateDropThreshold {
-					return nil
+				if absZi <= gateDropThreshold {
+					keepGateWord |= (1 << uint64(i))
 				}
-				keepGateWord |= (1 << uint64(i))
 
 				tBit := (tWord >> uint64(i)) & 1
 				yBit := uint64(0)
@@ -181,15 +182,33 @@ func (d *Dense) Forward(x *bitsx.Matrix, rng *rand.Rand) (*bitsx.Matrix, Backwar
 					yBit = 1
 				}
 
-				// 正解なら更新しない
-				if tBit == yBit {
-					return nil
+				// 不正解なら更新対象
+				if tBit != yBit {
+					wordMismatches = append(wordMismatches, wordMismatch{absZi: absZi, tBit: tBit, col:col})
 				}
+				return nil
+			})
 
-				outputCol := tCtx.ColStart + i
-				deltaRow := deltas[0][outputCol*d.W.Cols : (outputCol+1)*d.W.Cols]
+			keepGate.Data[tCtx.WordIndex] = keepGateWord
 
-				// 64ビット毎にxを見て重みの勾配を求める
+			slices.SortFunc(wordMismatches, func(a, b wordMismatch) int {
+				return cmp.Compare(a.absZi, b.absZi)
+			})
+
+			updateK := len(zWord) / d.sharedContext.GroupSize
+			if updateK == 0 {
+				updateK = 1
+			}
+
+			if updateK > len(wordMismatches) {
+				updateK = len(wordMismatches)
+			}
+
+			for _, mismatch := range wordMismatches[:updateK] {
+				tBit := mismatch.tBit
+				col := mismatch.col
+				deltaRow := deltas[0][col*d.W.Cols : (col+1)*d.W.Cols]
+
 				x.ScanRowsWord([]int{tCtx.Row}, func(xCtx bitsx.MatrixWordContext) error {
 					xWord := x.Data[xCtx.WordIndex]
 					deltaWord := deltaRow[xCtx.ColStart:xCtx.ColEnd]
@@ -199,10 +218,7 @@ func (d *Dense) Forward(x *bitsx.Matrix, rng *rand.Rand) (*bitsx.Matrix, Backwar
 					}
 					return nil
 				})
-				return nil
-			})
-
-			keepGate.Data[tCtx.WordIndex] = keepGateWord
+			}
 			return nil
 		})
 

@@ -15,6 +15,7 @@ func Test(t *testing.T) {
 	// 	panic(err)
 	// }
 
+	// return
 	mnist, err := dataset.LoadFashionMNIST()
 	if err != nil {
 		panic(err)
@@ -25,7 +26,7 @@ func Test(t *testing.T) {
 	outputSize := 1024
 	rng := randx.NewPCG()
 
-	model := binary.Model{XRows:1, XCols:784}
+	model := binary.Model{XRows: 1, XCols: 784}
 	err = model.AppendDenseLayer(512, rng)
 	if err != nil {
 		panic(err)

@@ -13,8 +13,8 @@ import (
 
 type Trainer struct {
 	MiniBatchSize int
-	LR     float32
-	Margin float32
+	LR            float32
+	Margin        float32
 
 	model           Model
 	rands           []*rand.Rand

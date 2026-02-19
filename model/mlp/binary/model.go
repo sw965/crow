@@ -14,8 +14,10 @@ import (
 type Model struct {
 	Backbone   Sequence
 	Prototypes bitsx.Matrices
-	XRows int
-	XCols int
+	// 昇順である事を何かしらの形で保証し、それに基づいた高速なアルゴリズムに変更すべし。今はまだ昇順が前提になっていない。
+	Values []float32
+	XRows  int
+	XCols  int
 }
 
 func LoadModel(path string) (Model, error) {
@@ -90,6 +92,52 @@ func (m *Model) SetRegressionLowPrototypes(n int) error {
 	return nil
 }
 
+func (m *Model) SetValues(minVal, maxVal float32) error {
+	n := len(m.Prototypes)
+	if n <= 1 {
+		return fmt.Errorf("model prototypes must be set before defining target values")
+	}
+
+	if minVal >= maxVal {
+		return fmt.Errorf("後でエラーメッセージを書く")
+	}
+
+	m.Values = make([]float32, n)
+	step := (maxVal - minVal) / float32(n-1)
+	for i := range n {
+		m.Values[i] = minVal + float32(i)*step
+	}
+	return nil
+}
+
+func (m *Model) SetSigmoidValues() error {
+	return m.SetValues(0.0, 1.0)
+}
+
+func (m *Model) SetTanhValues() error {
+	return m.SetValues(-1.0, 1.0)
+}
+
+func (m *Model) ValueToLabel(val float32) int {
+	n := len(m.Values)
+	if n == 0 {
+		return 0
+	}
+
+	// 線形探索で最も近い値のインデックスを特定
+	bestIdx := 0
+	minDiff := float32(math.Abs(float64(val - m.Values[0])))
+
+	for i := 1; i < n; i++ {
+		diff := float32(math.Abs(float64(val - m.Values[i])))
+		if diff < minDiff {
+			minDiff = diff
+			bestIdx = i
+		}
+	}
+	return bestIdx
+}
+
 func (m *Model) PredictLogits(x *bitsx.Matrix) ([]int, error) {
 	y, err := m.Backbone.Predict(x)
 	if err != nil {
@@ -144,21 +192,21 @@ func (m *Model) PredictValue(x *bitsx.Matrix) (float32, error) {
 		return 0.0, fmt.Errorf("logits is empty")
 	}
 
-	n := len(m.Prototypes)
-	if n <= 1 {
-		return 0.0, fmt.Errorf("number of prototypes must be at least 2")
+	if len(logits) != len(m.Values) {
+		return 0.0, fmt.Errorf("後でエラーメッセージを書く")
 	}
 
 	max := slices.Max(logits)
-	var sum int
-	var c int
+	var sum float32
+	var count int
+
 	for i, l := range logits {
 		if l == max {
-			sum += i
-			c++
+			sum += m.Values[i]
+			count++
 		}
 	}
-	return float32(sum) / float32(c), nil
+	return sum / float32(count), nil
 }
 
 func (m *Model) Accuracy(xs bitsx.Matrices, labels []int, p int) (float32, error) {
@@ -197,6 +245,47 @@ func (m *Model) Accuracy(xs bitsx.Matrices, labels []int, p int) (float32, error
 		totalCorrect += c
 	}
 	return float32(totalCorrect) / float32(n), nil
+}
+
+func (m *Model) Loss(xs bitsx.Matrices, labels []int, p int) (float32, error) {
+	n := len(xs)
+	if n != len(labels) {
+		return 0.0, fmt.Errorf("length mismatch: xs %d != labels %d", n, len(labels))
+	}
+
+	if len(m.Values) == 0 {
+		return 0.0, fmt.Errorf("model Values must be set to calculate regression loss")
+	}
+
+	losses := make([]float32, p)
+	err := parallel.For(n, p, func(workerId, idx int) error {
+		x := xs[idx]
+		label := labels[idx]
+
+		if label < 0 || label >= len(m.Values) {
+			return fmt.Errorf("label index %d is out of range for model Values", label)
+		}
+
+		t := m.Values[label]
+		y, err := m.PredictValue(x)
+		if err != nil {
+			return err
+		}
+
+		diff := y - t
+		losses[workerId] += diff * diff
+		return nil
+	})
+
+	if err != nil {
+		return 0.0, err
+	}
+
+	var total float32
+	for _, loss := range losses {
+		total += loss
+	}
+	return total / float32(n), nil
 }
 
 func (m *Model) Save(path string) error {
