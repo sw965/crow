@@ -1,24 +1,23 @@
-package sequential
+package simultaneous
 
 import (
 	"fmt"
 	"github.com/sw965/crow/game"
 )
 
-type LegalMovesFunc[S any, M comparable] func(S) []M
-type MoveFunc[S any, M comparable] func(S, M) (S, error)
+type LegalMovesByAgent[M, A comparable] map[A][]M
+type LegalMovesByAgentFunc[S any, M, A comparable] func(S) LegalMovesByAgent[M, A]
+type MoveFunc[S any, M, A comparable] func(S, map[A]M) (S, error)
 type EqualFunc[S any] func(S, S) bool
-type CurrentAgentFunc[S any, A comparable] func(S) A
 
 type Logic[S any, M, A comparable] struct {
-	LegalMovesFunc   LegalMovesFunc[S, M]
-	MoveFunc         MoveFunc[S, M]
-	EqualFunc        EqualFunc[S]
-	CurrentAgentFunc CurrentAgentFunc[S, A]
+	LegalMovesByAgentFunc LegalMovesByAgentFunc[S, M, A]
+	MoveFunc              MoveFunc[S, M, A]
+	EqualFunc             EqualFunc[S]
 }
 
 func (l Logic[S, M, A]) Validate() error {
-	if l.LegalMovesFunc == nil {
+	if l.LegalMovesByAgentFunc == nil {
 		return fmt.Errorf("LegalMovesFunc must not be nil")
 	}
 	if l.MoveFunc == nil {
@@ -26,9 +25,6 @@ func (l Logic[S, M, A]) Validate() error {
 	}
 	if l.EqualFunc == nil {
 		return fmt.Errorf("EqualFunc must not be nil")
-	}
-	if l.CurrentAgentFunc == nil {
-		return fmt.Errorf("CurrentAgentFunc must not be nil")
 	}
 	return nil
 }

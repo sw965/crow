@@ -2,7 +2,8 @@ package tictactoe
 
 import (
 	"fmt"
-	game "github.com/sw965/crow/game/sequential"
+	"github.com/sw965/crow/game"
+	"github.com/sw965/crow/game/sequential"
 )
 
 type Mark int
@@ -125,8 +126,8 @@ func MoveFunc(state State, move Move) (State, error) {
 // NewLogic creates a new Logic instance for the Tic-Tac-Toe game.
 //
 // NewLogicは、三目並べゲームのための新しいLogicインスタンスを作成します。
-func NewLogic() game.Logic[State, Move, Mark] {
-	return game.Logic[State, Move, Mark]{
+func NewLogic() sequential.Logic[State, Move, Mark] {
+	return sequential.Logic[State, Move, Mark]{
 		LegalMovesFunc: LegalMoves,
 		MoveFunc:       MoveFunc,
 		EqualFunc: func(s1, s2 State) bool {
@@ -186,8 +187,8 @@ func RankByAgentFunc(state State) (game.RankByAgent[Mark], error) {
 	return game.RankByAgent[Mark]{}, nil
 }
 
-func NewEngine() game.Engine[State, Move, Mark] {
-	engine := game.Engine[State, Move, Mark]{
+func NewEngine() sequential.Engine[State, Move, Mark] {
+	engine := sequential.Engine[State, Move, Mark]{
 		Logic:           NewLogic(),
 		RankByAgentFunc: RankByAgentFunc,
 		Agents:          []Mark{Nought, Cross},

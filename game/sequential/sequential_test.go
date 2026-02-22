@@ -1,7 +1,8 @@
 package sequential_test
 
 import (
-	game "github.com/sw965/crow/game/sequential"
+	"github.com/sw965/crow/game"
+	"github.com/sw965/crow/game/sequential"
 	ttt "github.com/sw965/crow/game/sequential/tictactoe"
 	"maps"
 	"math"
@@ -293,7 +294,7 @@ func TestEngineIsEnd(t *testing.T) {
 }
 
 func TestEngineSetStandardResultScoreByAgentFunc(t *testing.T) {
-	engine := game.Engine[int, int, string]{}
+	engine := sequential.Engine[int, int, string]{}
 	engine.SetStandardResultScoreByAgentFunc()
 
 	// 現時点で、このテストケースでは異常系は扱わない。
@@ -409,7 +410,7 @@ func TestEngineSetStandardResultScoreByAgentFunc(t *testing.T) {
 }
 
 func TestUniformPolicyFunc(t *testing.T) {
-	got, err := game.UniformPolicyFunc[int, string](0, []string{"戦う", "呪文", "アイテム", "逃げる"})
+	got, err := sequential.UniformPolicyFunc[int, string](0, []string{"戦う", "呪文", "アイテム", "逃げる"})
 	if err != nil {
 		t.Errorf("テスト失敗")
 	}

@@ -1,4 +1,4 @@
-package sequential
+package game
 
 import (
 	"fmt"
@@ -67,46 +67,34 @@ type RankByAgentFunc[S any, A comparable] func(S) (RankByAgent[A], error)
 type ResultScoreByAgent[A comparable] map[A]float32
 type ResultScoreByAgentFunc[A comparable] func(RankByAgent[A]) (ResultScoreByAgent[A], error)
 
-func (e *Engine[S, M, A]) SetStandardResultScoreByAgentFunc() {
-	e.ResultScoreByAgentFunc = func(ranks RankByAgent[A]) (ResultScoreByAgent[A], error) {
-		if err := ranks.Validate(); err != nil {
-			return nil, err
-		}
+func StandardResultScoreByAgentFunc[A comparable](ranks RankByAgent[A]) (ResultScoreByAgent[A], error) {
+	if err := ranks.Validate(); err != nil {
+		return nil, err
+	}
 
-		n := len(ranks)
-		scores := map[A]float32{}
+	n := len(ranks)
+	scores := map[A]float32{}
 
-		// エージェントが1人だけなら 1.0 固定
-		if n == 1 {
-			for agent := range ranks {
-				scores[agent] = 1.0
-			}
-			return scores, nil
-		}
-
-		counts := map[int]int{}
-		for _, rank := range ranks {
-			counts[rank]++
-		}
-
-		den := float32(n - 1)
-
-		tieScore := func(r, k int) float32 {
-			return 1.0 - float32(2*r+k-3)/(2.0*den)
-		}
-
-		for agent, r := range ranks {
-			k := counts[r]
-			scores[agent] = tieScore(r, k)
+	if n == 1 {
+		for agent := range ranks {
+			scores[agent] = 1.0
 		}
 		return scores, nil
 	}
-}
 
-func (e Engine[S, M, A]) EvaluateResultScoreByAgent(state S) (map[A]float32, error) {
-	rankByAgent, err := e.RankByAgentFunc(state)
-	if err != nil {
-		return nil, err
+	counts := map[int]int{}
+	for _, rank := range ranks {
+		counts[rank]++
 	}
-	return e.ResultScoreByAgentFunc(rankByAgent)
+
+	den := float32(n - 1)
+	tieScore := func(r, k int) float32 {
+		return 1.0 - float32(2*r+k-3)/(2.0*den)
+	}
+
+	for agent, r := range ranks {
+		k := counts[r]
+		scores[agent] = tieScore(r, k)
+	}
+	return scores, nil
 }

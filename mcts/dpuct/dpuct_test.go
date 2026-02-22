@@ -2,129 +2,151 @@ package dpuct_test
 
 import (
 	"fmt"
-	game "github.com/sw965/crow/game/simultaneous"
+	"math"
+	"testing"
+
+	"github.com/sw965/crow/game"
+	"github.com/sw965/crow/game/simultaneous"
 	"github.com/sw965/crow/mcts/dpuct"
 	"github.com/sw965/crow/pucb"
 	"github.com/sw965/omw/mathx/randx"
-	"math"
-	"testing"
 )
 
 type Hand string
 
 const (
-	ROCK     = "グー"
-	PAPER    = "パー"
-	SCISSORS = "チョキ"
+	ROCK     Hand = "グー"
+	PAPER    Hand = "パー"
+	SCISSORS Hand = "チョキ"
 )
 
-type Hands []Hand
+var HANDS = []Hand{ROCK, PAPER, SCISSORS}
 
-var HANDS = Hands{ROCK, PAPER, SCISSORS}
-
-type HandTable []Hands
-
+// 状態 S
 type RockPaperScissors struct {
-	Hand1 Hand
-	Hand2 Hand
+	Finished bool
+	Hand1    Hand
+	Hand2    Hand
 }
 
-func TestDUCT(t *testing.T) {
-	r := randx.NewPCGFromGlobalSeed()
+func TestDPUCT(t *testing.T) {
+	// エージェントは int 型 (1 と 2) を使用する
+	agent1 := 1
+	agent2 := 2
 
-	legalActionTableProvider := func(rps *RockPaperScissors) HandTable {
-		return HandTable{HANDS, Hands{ROCK, PAPER, SCISSORS}}
+	legalMovesByAgentFunc := func(rps RockPaperScissors) simultaneous.LegalMovesByAgent[Hand, int] {
+		// ゲーム終了時は合法手なし
+		if rps.Finished {
+			return simultaneous.LegalMovesByAgent[Hand, int]{}
+		}
+		return simultaneous.LegalMovesByAgent[Hand, int]{
+			agent1: HANDS,
+			agent2: HANDS,
+		}
 	}
 
-	transitioner := func(rps RockPaperScissors, hands Hands) (RockPaperScissors, error) {
-		return RockPaperScissors{Hand1: hands[0], Hand2: hands[1]}, nil
+	moveFunc := func(rps RockPaperScissors, moves map[int]Hand) (RockPaperScissors, error) {
+		return RockPaperScissors{
+			Finished: true,
+			Hand1:    moves[agent1],
+			Hand2:    moves[agent2],
+		}, nil
 	}
 
-	comparator := func(rps1, rps2 *RockPaperScissors) bool {
-		return *rps1 == *rps2
+	equalFunc := func(rps1, rps2 RockPaperScissors) bool {
+		return rps1 == rps2
 	}
 
-	placementsJudger := func(rps *RockPaperScissors) (game.Placements, error) {
+	rankByAgentFunc := func(rps RockPaperScissors) (game.RankByAgent[int], error) {
+		if !rps.Finished {
+			return game.RankByAgent[int]{}, nil
+		}
+
 		if rps.Hand1 == rps.Hand2 {
 			// 引き分けの場合は同順位
-			return game.Placements{1, 1}, nil
+			return game.RankByAgent[int]{agent1: 1, agent2: 1}, nil
 		}
-	
-		hand1 := rps.Hand1
-		hand2 := rps.Hand2
-	
-		if hand1 == ROCK {
-			if hand2 == SCISSORS {
-				return game.Placements{1, 2}, nil
-			} else if hand2 == PAPER {
-				return game.Placements{2, 1}, nil
-			}
+
+		h1 := rps.Hand1
+		h2 := rps.Hand2
+
+		// プレイヤー1が勝つ条件
+		if (h1 == ROCK && h2 == SCISSORS) ||
+			(h1 == SCISSORS && h2 == PAPER) ||
+			(h1 == PAPER && h2 == ROCK) {
+			return game.RankByAgent[int]{agent1: 1, agent2: 2}, nil
 		}
-	
-		if hand1 == SCISSORS {
-			if hand2 == ROCK {
-				return game.Placements{2, 1}, nil
-			} else if hand2 == PAPER {
-				return game.Placements{1, 2}, nil
-			}
-		}
-	
-		if hand1 == PAPER {
-			if hand2 == ROCK {
-				return game.Placements{1, 2}, nil
-			} else if hand2 == SCISSORS {
-				return game.Placements{2, 1}, nil
-			}
-		}
-	
-		return game.Placements{}, nil
+
+		// それ以外はプレイヤー2の勝ち
+		return game.RankByAgent[int]{agent1: 2, agent2: 1}, nil
 	}
 
-	gameLogic := game.Logic[RockPaperScissors, HandTable, Hands, Hand]{
-		LegalActionTableProvider: legalActionTableProvider,
-		Transitioner:             transitioner,
-		Comparator:               comparator,
-		PlacementsJudger:         placementsJudger,
-	}
-	gameLogic.SetStandardResultScoresEvaluator()
-
-	mcts := dpuct.Engine[RockPaperScissors, HandTable, Hands, Hand]{
-		NextNodesCap:3,
-		GameLogic:gameLogic,
+	gameLogic := simultaneous.Logic[RockPaperScissors, Hand, int]{
+		LegalMovesByAgentFunc: legalMovesByAgentFunc,
+		MoveFunc:              moveFunc,
+		EqualFunc:             equalFunc,
 	}
 
-	mcts.SetUniformPoliciesProvider()
-	mcts.UCBFunc = pucb.NewAlphaGoFunc(float32(math.Sqrt(2)))
-	randActionPlayers := gameLogic.MakePlayers(2)
-	randActionPlayers[0] = gameLogic.NewRandActionPlayer(r)
-	randActionPlayers[1] = gameLogic.NewRandActionPlayer(r)
-	mcts.SetPlayout(randActionPlayers)
+	gameEngine := simultaneous.Engine[RockPaperScissors, Hand, int]{
+		Logic:           gameLogic,
+		RankByAgentFunc: rankByAgentFunc,
+		Agents:          []int{agent1, agent2},
+	}
+	gameEngine.SetStandardResultScoreByAgentFunc()
 
-	fmt.Println(mcts.PoliciesProvider(&RockPaperScissors{}, legalActionTableProvider(&RockPaperScissors{})))
-	rootNode, err := mcts.NewNode(&RockPaperScissors{})
+	mcts := dpuct.Engine[RockPaperScissors, Hand, int]{
+		Game:         gameEngine,
+		PUCBFunc:     pucb.NewAlphaGoFunc(float32(math.Sqrt(1000.0))),
+		NextNodesCap: 3,
+		VirtualValue: 0.5, // 並列探索時のVirtual Lossの初期値（引き分け想定の0.5など）
+	}
+
+	// PolicyとPlayoutの設定
+	mcts.SetUniformPolicyFunc()
+	ac := simultaneous.NewRandomActorCritic[RockPaperScissors, Hand, int]()
+	
+	// Playout用のRNGを渡してセットアップ
+	playoutRng := randx.NewPCG()
+	mcts.SetPlayout(ac, playoutRng)
+
+	// ワーカー用のRNG配列を作成（今回は1スレッドで実行）
+	rngs := randx.NewPCGs(12)
+
+	// 探索の開始
+	rootState := RockPaperScissors{}
+	rootNode, err := mcts.NewNode(rootState)
 	if err != nil {
-		panic(err)
+		t.Fatalf("NewNode error: %v", err)
 	}
 
-	err = mcts.Search(rootNode, 19600, r)
+	// 1回目の探索
+	_, err = mcts.Search(rootNode, 19600, rngs)
 	if err != nil {
-		panic(err)
+		t.Fatalf("Search error: %v", err)
 	}
 
-	for playerI, m := range rootNode.UCBManagers {
-		for a, pucb := range m {
-			fmt.Println("playerI =", playerI, a, pucb.AverageValue(), pucb.Trial)
+	fmt.Println("スレッド数:", len(rngs))
+	fmt.Println("--- 19600回 シミュレーション後 ---")
+	vSelectors := rootNode.VirtualSelectors()
+	for agent, selector := range vSelectors {
+		for a, calc := range selector {
+			fmt.Printf("Agent = %d, Action = %s, Q = %.4f, Visits = %d\n", agent, a, calc.Q(), calc.Visits())
 		}
 	}
+
 	fmt.Println("")
-	err = mcts.Search(rootNode, 196000, r)
+
+	// 2回目の探索
+	_, err = mcts.Search(rootNode, 1960000, rngs)
 	if err != nil {
-		panic(err)
+		t.Fatalf("Search error: %v", err)
 	}
 
-	for playerI, m := range rootNode.UCBManagers {
-		for a, pucb := range m {
-			fmt.Println("playerI =", playerI, a, pucb.AverageValue(), pucb.Trial)
+	fmt.Println("--- +196000回 シミュレーション後 ---")
+	vSelectors = rootNode.VirtualSelectors()
+	for agent, selector := range vSelectors {
+		for a, calc := range selector {
+			fmt.Printf("Agent = %d, Action = %s, Q = %.4f, Visits = %d\n", agent, a, calc.Q(), calc.Visits())
 		}
 	}
 }

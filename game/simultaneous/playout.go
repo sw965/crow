@@ -1,13 +1,13 @@
-package sequential
+package simultaneous
 
 import (
 	"fmt"
 	"github.com/sw965/omw/mathx/randx"
 	"github.com/sw965/omw/parallel"
 	"github.com/sw965/omw/slicesx"
+	"maps"
 	"math/rand/v2"
 	"slices"
-	"maps"
 	"github.com/sw965/crow/game"
 )
 
@@ -37,31 +37,34 @@ func (e *Engine[S, M, A]) Playouts(inits []S, ac ActorCritic[S, M, A], rngs []*r
 				break
 			}
 
-			legalMoves := e.Logic.LegalMovesFunc(state)
-			// policy.ValidateForLegalMovesでもlegalMovesの空チェックをするが、PolicyFuncを安全に呼ぶ為に、ここでもチェックする
-			if len(legalMoves) == 0 {
+			legalMovesByAgent := e.Logic.LegalMovesByAgentFunc(state)
+			if len(legalMovesByAgent) == 0 {
 				return fmt.Errorf("game is not ended but no legal moves are available")
 			}
 
-			policy, _, err := ac.PolicyValueFunc(state, legalMoves)
+			jointPolicy, _, err := ac.PolicyValueFunc(state, legalMovesByAgent)
 			if err != nil {
 				return err
 			}
 
-			// legalMovesがユニークならば、policyは合法手のみを持つ事が保障される
-			// 第2引数がtrueならば、legalMovesがユニーク性をチェックするが、一手毎にチェックするのは、計算コストの観点から見送る
-			err = policy.ValidateForLegalMoves(legalMoves, false)
-			if err != nil {
-				return err
+			jointAction := make(map[A]M, len(e.Agents))
+			for _, agent := range e.Agents {
+				legalMoves := legalMovesByAgent[agent]
+				policy := jointPolicy[agent]
+
+				err = policy.ValidateForLegalMoves(legalMoves, false)
+				if err != nil {
+					return err
+				}
+
+				move, err := ac.SelectFunc(policy, agent, rng)
+				if err != nil {
+					return err
+				}
+				jointAction[agent] = move
 			}
 
-			agent := e.Logic.CurrentAgentFunc(state)
-			move, err := ac.SelectFunc(policy, agent, rng)
-			if err != nil {
-				return err
-			}
-
-			state, err = e.Logic.MoveFunc(state, move)
+			state, err = e.Logic.MoveFunc(state, jointAction)
 			if err != nil {
 				return err
 			}
@@ -95,35 +98,40 @@ func (e *Engine[S, M, A]) RecordPlayouts(inits []S, ac ActorCritic[S, M, A], rng
 				break
 			}
 
-			legalMoves := e.Logic.LegalMovesFunc(state)
-			if len(legalMoves) == 0 {
+			legalMovesByAgent := e.Logic.LegalMovesByAgentFunc(state)
+			if len(legalMovesByAgent) == 0 {
 				return fmt.Errorf("game is not ended but no legal moves are available")
 			}
 
-			policy, value, err := ac.PolicyValueFunc(state, legalMoves)
+			jointPolicy, jointValue, err := ac.PolicyValueFunc(state, legalMovesByAgent)
 			if err != nil {
 				return err
 			}
 
-			if err := policy.ValidateForLegalMoves(legalMoves, false); err != nil {
-				return err
-			}
+			jointAction := make(map[A]M, len(e.Agents))
+			for _, agent := range e.Agents {
+				legalMoves := legalMovesByAgent[agent]
+				policy := jointPolicy[agent]
 
-			agent := e.Logic.CurrentAgentFunc(state)
-			move, err := ac.SelectFunc(policy, agent, rng)
-			if err != nil {
-				return err
+				if err := policy.ValidateForLegalMoves(legalMoves, false); err != nil {
+					return err
+				}
+
+				move, err := ac.SelectFunc(policy, agent, rng)
+				if err != nil {
+					return err
+				}
+				jointAction[agent] = move
 			}
 
 			steps = append(steps, Step[S, M, A]{
-				State:  state,
-				Agent:  agent,
-				Move:   move,
-				Policy: policy,
-				Value:  value,
+				State:       state,
+				JointMove:   jointAction,
+				PolicyByAgent: jointPolicy,
+				ValueByAgent:  jointValue,
 			})
 
-			state, err = e.Logic.MoveFunc(state, move)
+			state, err = e.Logic.MoveFunc(state, jointAction)
 			if err != nil {
 				return err
 			}
@@ -152,10 +160,10 @@ type CrossPlayoutRecorder[S any, M, A comparable] struct {
 	rands   []*rand.Rand
 	stepCap int
 
-	currentIdx          int
-	numGames            int
-	totalScoreByAcName  map[game.ActorCriticName]float32
-	numGamesByAcName    map[game.ActorCriticName]int
+	currentIdx         int
+	numGames           int
+	totalScoreByAcName map[game.ActorCriticName]float32
+	numGamesByAcName   map[game.ActorCriticName]int
 }
 
 func (e *Engine[S, M, A]) NewCrossPlayoutRecorder(inits []S, acs []ActorCritic[S, M, A], p int) (*CrossPlayoutRecorder[S, M, A], error) {
@@ -175,13 +183,13 @@ func (e *Engine[S, M, A]) NewCrossPlayoutRecorder(inits []S, acs []ActorCritic[S
 	}
 
 	return &CrossPlayoutRecorder[S, M, A]{
-		engine:              e,
-		inits:               inits,
-		acPerms:             acPerms,
-		rands:               rands,
-		stepCap:             256,
-		totalScoreByAcName:  totalScoreByAcName,
-		numGamesByAcName:    numGamesByAcName,
+		engine:             e,
+		inits:              inits,
+		acPerms:            acPerms,
+		rands:              rands,
+		stepCap:            256,
+		totalScoreByAcName: totalScoreByAcName,
+		numGamesByAcName:   numGamesByAcName,
 	}, nil
 }
 
@@ -214,7 +222,7 @@ func (cp *CrossPlayoutRecorder[S, M, A]) AverageScoreByActorCriticName() (map[ga
 }
 
 func (cp *CrossPlayoutRecorder[S, M, A]) NumGamesByActorCriticName() map[game.ActorCriticName]int {
-    return maps.Clone(cp.numGamesByAcName)
+	return maps.Clone(cp.numGamesByAcName)
 }
 
 func (cp *CrossPlayoutRecorder[S, M, A]) Next() ([]Record[S, M, A], bool, error) {
@@ -224,7 +232,7 @@ func (cp *CrossPlayoutRecorder[S, M, A]) Next() ([]Record[S, M, A], bool, error)
 
 	agentsN := len(cp.engine.Agents)
 	acNameByAgent := make(map[A]game.ActorCriticName, agentsN)
-	pvFuncByAgent := make(map[A]PolicyValueFunc[S, M], agentsN)
+	pvFuncByAgent := make(map[A]PolicyValueFunc[S, M, A], agentsN)
 	selectFuncByAgent := make(map[A]game.SelectFunc[M, A], agentsN)
 	acPerm := cp.acPerms[cp.currentIdx]
 
@@ -235,9 +243,19 @@ func (cp *CrossPlayoutRecorder[S, M, A]) Next() ([]Record[S, M, A], bool, error)
 		selectFuncByAgent[agent] = ac.SelectFunc
 	}
 
-	pvFunc := func(state S, legalMoves []M) (game.Policy[M], float32, error) {
-		agent := cp.engine.Logic.CurrentAgentFunc(state)
-		return pvFuncByAgent[agent](state, legalMoves)
+	pvFunc := func(state S, legalMovesByAgent LegalMovesByAgent[M, A]) (PolicyByAgent[M, A], ValueByAgent[A], error) {
+		jp := make(PolicyByAgent[M, A], agentsN)
+		jv := make(ValueByAgent[A], agentsN)
+
+		for _, agent := range cp.engine.Agents {
+			acJP, acJV, err := pvFuncByAgent[agent](state, legalMovesByAgent)
+			if err != nil {
+				return nil, nil, err
+			}
+			jp[agent] = acJP[agent]
+			jv[agent] = acJV[agent]
+		}
+		return jp, jv, nil
 	}
 
 	selectFunc := func(p game.Policy[M], agent A, rng *rand.Rand) (M, error) {
@@ -294,11 +312,10 @@ func (cp *CrossPlayoutRecorder[S, M, A]) Collect() ([]Record[S, M, A], error) {
 }
 
 type Step[S any, M, A comparable] struct {
-	State  S
-	Agent  A
-	Move   M
-	Policy game.Policy[M]
-	Value  float32
+	State       S
+	JointMove   map[A]M
+	PolicyByAgent PolicyByAgent[M, A]
+	ValueByAgent  ValueByAgent[A]
 }
 
 type Record[S any, M, A comparable] struct {
@@ -309,7 +326,6 @@ type Record[S any, M, A comparable] struct {
 }
 
 func (r Record[S, M, A]) ElmoSteps(alpha float32) []Step[S, M, A] {
-	// alpha が範囲外の場合はクリッピングするか、呼び出し側の責任とする
 	if alpha < 0.0 {
 		alpha = 0.0
 	} else if alpha > 1.0 {
@@ -319,22 +335,18 @@ func (r Record[S, M, A]) ElmoSteps(alpha float32) []Step[S, M, A] {
 	elmoSteps := make([]Step[S, M, A], len(r.Steps))
 
 	for i, step := range r.Steps {
-		// 1. そのステップの手番エージェントの、実際のゲーム結果(Z)を取得
-		z := r.ResultScoreByAgent[step.Agent]
+		newValueByAgent := make(ValueByAgent[A], len(step.ValueByAgent))
 
-		// 2. そのステップでの探索評価値(V_search)を取得
-		v := step.Value
+		for agent, v := range step.ValueByAgent {
+			z := r.ResultScoreByAgent[agent]
+			newValueByAgent[agent] = alpha*z + (1.0-alpha)*v
+		}
 
-		// 3. ブレンドして新しいターゲット価値を計算
-		newValue := alpha*z + (1.0-alpha)*v
-
-		// 4. 新しい Step を作成 (Policy は元のマップの参照をそのまま使い、メモリを節約)
 		elmoSteps[i] = Step[S, M, A]{
-			State:  step.State,
-			Agent:  step.Agent,
-			Move:   step.Move,
-			Policy: step.Policy,
-			Value:  newValue,
+			State:       step.State,
+			JointMove:   step.JointMove,
+			PolicyByAgent: step.PolicyByAgent,
+			ValueByAgent:  newValueByAgent,
 		}
 	}
 	return elmoSteps

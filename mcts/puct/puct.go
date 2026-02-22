@@ -6,7 +6,8 @@ import (
 
 	"slices"
 	"errors"
-	game "github.com/sw965/crow/game/sequential"
+	"github.com/sw965/crow/game"
+	"github.com/sw965/crow/game/sequential"
 	"github.com/sw965/crow/pucb"
 	"github.com/sw965/omw/parallel"
 	"maps"
@@ -45,7 +46,7 @@ func (n *Node[S, M, A]) VirtualSelector() pucb.VirtualSelector[M] {
 
 type Nodes[S any, M, A comparable] []*Node[S, M, A]
 
-func (nodes Nodes[S, M, A]) FindByState(state S, eq game.EqualFunc[S]) (*Node[S, M, A], bool) {
+func (nodes Nodes[S, M, A]) FindByState(state S, eq sequential.EqualFunc[S]) (*Node[S, M, A], bool) {
 	for _, node := range nodes {
 		if eq(node.State, state) {
 			return node, true
@@ -92,9 +93,9 @@ func (ss selectBuffers[S, M, A]) rollbackO() {
 }
 
 type Engine[S any, M, A comparable] struct {
-	Game                    game.Engine[S, M, A]
+	Game                    sequential.Engine[S, M, A]
 	PUCBFunc                pucb.Func
-	PolicyFunc              game.PolicyFunc[S, M]
+	PolicyFunc              sequential.PolicyFunc[S, M]
 	LeafNodeEvalByAgentFunc LeafNodeEvalByAgentFunc[S, A]
 	NextNodesCap            int
 	VirtualValue            float32
@@ -124,10 +125,10 @@ func (e Engine[S, M, A]) Validate() error {
 }
 
 func (e *Engine[S, M, A]) SetUniformPolicyFunc() {
-	e.PolicyFunc = game.UniformPolicyFunc[S, M]
+	e.PolicyFunc = sequential.UniformPolicyFunc[S, M]
 }
 
-func (e *Engine[S, M, A]) SetPlayout(ac game.ActorCritic[S, M, A], rng *rand.Rand) {
+func (e *Engine[S, M, A]) SetPlayout(ac sequential.ActorCritic[S, M, A], rng *rand.Rand) {
 	e.LeafNodeEvalByAgentFunc = func(state S) (LeafNodeEvalByAgent[A], error) {
 		finals, err := e.Game.Playouts([]S{state}, ac, []*rand.Rand{rng})
 		if err != nil {
@@ -347,7 +348,7 @@ func (e Engine[S, M, A]) Search(rootNode *Node[S, M, A], n int, workerRngs []*ra
 	return sum, nil
 }
 
-func (e Engine[S, M, A]) NewPolicyNoValueFunc(simulations int, rngs []*rand.Rand) game.PolicyValueFunc[S, M] {
+func (e Engine[S, M, A]) NewPolicyNoValueFunc(simulations int, rngs []*rand.Rand) sequential.PolicyValueFunc[S, M] {
 	return func(state S, legalMoves []M) (game.Policy[M], float32, error) {
 		rootNode, err := e.NewNode(state)
 		if err != nil {
@@ -372,7 +373,7 @@ func (e Engine[S, M, A]) NewPolicyNoValueFunc(simulations int, rngs []*rand.Rand
 	}
 }
 
-func (e Engine[S, M, A]) NewPolicyValueFunc(simulations int, rngs []*rand.Rand) game.PolicyValueFunc[S, M] {
+func (e Engine[S, M, A]) NewPolicyValueFunc(simulations int, rngs []*rand.Rand) sequential.PolicyValueFunc[S, M] {
 	return func(state S, legalMoves []M) (game.Policy[M], float32, error) {
 		rootNode, err := e.NewNode(state)
 		if err != nil {
