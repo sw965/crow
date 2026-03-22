@@ -215,8 +215,3 @@ func (s VirtualSelector[K]) Select(rng *rand.Rand) (K, error) {
 	}
 	return randx.Choice(ks, rng)
 }
-
-// Selectors は Selectorのスライス型
-// 下記のURLのDUCTアルゴリズムのような場面で使う
-// https://www.terry-u16.net/entry/decoupled-uct
-type VirtualSelectors[K comparable] []VirtualSelector[K]

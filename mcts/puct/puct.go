@@ -19,34 +19,34 @@ var (
 	ErrInvalidConfig = errors.New("puct.Engineエラー: 設定値が不正です")
 )
 
-// このモンテカルロ木探索は、ユーザー側のゲーム設定次第では、無限ループするので直しておく。
+// TODO このモンテカルロ木探索は、ユーザー側のゲーム設定次第では、無限ループするので直しておく。
 
-type RootNodeEvalByAgent[A comparable] map[A]float32
+type RootNodeEvalByAgent[Ag comparable] map[Ag]float32
 
-func (es RootNodeEvalByAgent[A]) DivScalar(s float32) {
+func (es RootNodeEvalByAgent[Ag]) DivScalar(s float32) {
 	for k := range es {
 		es[k] /= s
 	}
 }
 
-type LeafNodeEvalByAgent[A comparable] map[A]float32
-type LeafNodeEvalByAgentFunc[S any, A comparable] func(S) (LeafNodeEvalByAgent[A], error)
+type LeafNodeEvalByAgent[Ag comparable] map[Ag]float32
+type LeafNodeEvalByAgentFunc[S any, Ag comparable] func(S) (LeafNodeEvalByAgent[Ag], error)
 
-type Node[S any, M, A comparable] struct {
+type Node[S any, Ac, Ag comparable] struct {
 	State           S
-	Agent           A
-	virtualSelector pucb.VirtualSelector[M]
-	nextNodesByMove map[M]Nodes[S, M, A]
+	Agent           Ag
+	virtualSelector pucb.VirtualSelector[Ac]
+	nextNodesByAction map[Ac]Nodes[S, Ac, Ag]
 	sync.Mutex
 }
 
-func (n *Node[S, M, A]) VirtualSelector() pucb.VirtualSelector[M] {
+func (n *Node[S, Ac, Ag]) VirtualSelector() pucb.VirtualSelector[Ac] {
 	return maps.Clone(n.virtualSelector)
 }
 
-type Nodes[S any, M, A comparable] []*Node[S, M, A]
+type Nodes[S any, Ac, Ag comparable] []*Node[S, Ac, Ag]
 
-func (nodes Nodes[S, M, A]) FindByState(state S, eq sequential.EqualFunc[S]) (*Node[S, M, A], bool) {
+func (nodes Nodes[S, Ac, Ag]) FindByState(state S, eq sequential.EqualFunc[S]) (*Node[S, Ac, Ag], bool) {
 	for _, node := range nodes {
 		if eq(node.State, state) {
 			return node, true
@@ -55,21 +55,21 @@ func (nodes Nodes[S, M, A]) FindByState(state S, eq sequential.EqualFunc[S]) (*N
 	return nil, false
 }
 
-type selectBuffer[S any, M, A comparable] struct {
-	node *Node[S, M, A]
-	move M
+type selectBuffer[S any, Ac, Ag comparable] struct {
+	node *Node[S, Ac, Ag]
+	action Ac
 }
 
-type selectBuffers[S any, M, A comparable] []selectBuffer[S, M, A]
+type selectBuffers[S any, Ac, Ag comparable] []selectBuffer[S, Ac, Ag]
 
-func (ss selectBuffers[S, M, A]) backward(evals LeafNodeEvalByAgent[A]) {
+func (ss selectBuffers[S, Ac, Ag]) backward(evals LeafNodeEvalByAgent[Ag]) {
 	for _, s := range ss {
 		node := s.node
-		move := s.move
+		action := s.action
 		eval, ok := evals[node.Agent]
 		if !ok {
 			msg := fmt.Sprintf(
-				"BUG: LeafNodeEvalByAgentに存在しないキー(Agent)でアクセスしようとした為、backwardを実行出来ませんでした。leafNode.Agent = %v, leftNodeEvalByAgent.Keys() = %v",
+				"BUG: LeafNodeEvalByAgentに存在しないキー(Agent)でアクセスしようとした為、backwardを実行出来ませんでした。leafNode.Agent = %v, LeafNodeEvalByAgent.Keys() = %v",
 				node.Agent, slices.Collect(maps.Keys(evals)),
 			)
 			panic(msg)
@@ -77,31 +77,31 @@ func (ss selectBuffers[S, M, A]) backward(evals LeafNodeEvalByAgent[A]) {
 
 		node.Lock()
 		// 未観測のカウントを消す
-		node.virtualSelector[move].DecrementO()
-		node.virtualSelector[move].AddW(eval)
-		node.virtualSelector[move].IncrementVisits()
+		node.virtualSelector[action].DecrementO()
+		node.virtualSelector[action].AddW(eval)
+		node.virtualSelector[action].IncrementVisits()
 		node.Unlock()
 	}
 }
 
-func (ss selectBuffers[S, M, A]) rollbackO() {
+func (ss selectBuffers[S, Ac, Ag]) rollbackO() {
 	for _, s := range ss {
 		s.node.Lock()
-		s.node.virtualSelector[s.move].DecrementO()
+		s.node.virtualSelector[s.action].DecrementO()
 		s.node.Unlock()
 	}
 }
 
-type Engine[S any, M, A comparable] struct {
-	Game                    sequential.Engine[S, M, A]
+type Engine[S any, Ac, Ag comparable] struct {
+	Game                    sequential.Engine[S, Ac, Ag]
 	PUCBFunc                pucb.Func
-	PolicyFunc              sequential.PolicyFunc[S, M]
-	LeafNodeEvalByAgentFunc LeafNodeEvalByAgentFunc[S, A]
+	PolicyFunc              sequential.PolicyFunc[S, Ac]
+	LeafNodeEvalByAgentFunc LeafNodeEvalByAgentFunc[S, Ag]
 	NextNodesCap            int
 	VirtualValue            float32
 }
 
-func (e Engine[S, M, A]) Validate() error {
+func (e Engine[S, Ac, Ag]) Validate() error {
 	if err := e.Game.Validate(); err != nil {
 		return err
 	}
@@ -124,13 +124,13 @@ func (e Engine[S, M, A]) Validate() error {
 	return nil
 }
 
-func (e *Engine[S, M, A]) SetUniformPolicyFunc() {
-	e.PolicyFunc = sequential.UniformPolicyFunc[S, M]
+func (e *Engine[S, Ac, Ag]) SetUniformPolicyFunc() {
+	e.PolicyFunc = sequential.UniformPolicyFunc[S, Ac]
 }
 
-func (e *Engine[S, M, A]) SetPlayout(ac sequential.ActorCritic[S, M, A], rng *rand.Rand) {
-	e.LeafNodeEvalByAgentFunc = func(state S) (LeafNodeEvalByAgent[A], error) {
-		finals, err := e.Game.Playouts([]S{state}, ac, []*rand.Rand{rng})
+func (e *Engine[S, Ac, Ag]) SetPlayout(accr sequential.ActorCritic[S, Ac, Ag], rng *rand.Rand) {
+	e.LeafNodeEvalByAgentFunc = func(state S) (LeafNodeEvalByAgent[Ag], error) {
+		finals, err := e.Game.Playouts([]S{state}, accr, []*rand.Rand{rng})
 		if err != nil {
 			return nil, err
 		}
@@ -141,7 +141,7 @@ func (e *Engine[S, M, A]) SetPlayout(ac sequential.ActorCritic[S, M, A], rng *ra
 			return nil, err
 		}
 
-		evals := LeafNodeEvalByAgent[A]{}
+		evals := LeafNodeEvalByAgent[Ag]{}
 		for k, v := range scores {
 			evals[k] = v
 		}
@@ -149,35 +149,35 @@ func (e *Engine[S, M, A]) SetPlayout(ac sequential.ActorCritic[S, M, A], rng *ra
 	}
 }
 
-func (e Engine[S, M, A]) NewNode(state S) (*Node[S, M, A], error) {
-	legalMoves := e.Game.Logic.LegalMovesFunc(state)
+func (e Engine[S, Ac, Ag]) NewNode(state S) (*Node[S, Ac, Ag], error) {
+	legalActions := e.Game.Logic.LegalActionsFunc(state)
 
-	// policy.ValidateForLegalMovesでもlegalMovesの空チェックはするが、PolicyFuncを安全に呼ぶ為に、ここでもチェックする
-	if len(legalMoves) == 0 {
+	// policy.ValidateForLegalActionsでもlegalActionsの空チェックはするが、PolicyFuncを安全に呼ぶ為に、ここでもチェックする
+	if len(legalActions) == 0 {
 		return nil, fmt.Errorf("後でエラーメッセージを書く")
 	}
 
-	policy, err := e.PolicyFunc(state, legalMoves)
+	policy, err := e.PolicyFunc(state, legalActions)
 	if err != nil {
 		return nil, err
 	}
 
-	err = policy.ValidateForLegalMoves(legalMoves, true)
+	err = policy.ValidateForLegalActions(legalActions, true)
 	if err != nil {
 		return nil, err
 	}
 
-	s := pucb.VirtualSelector[M]{}
-	for _, move := range legalMoves {
-		p := policy[move]
-		s[move] = &pucb.Calculator{Func: e.PUCBFunc, P: p, VirtualValue: e.VirtualValue}
+	s := pucb.VirtualSelector[Ac]{}
+	for _, action := range legalActions {
+		p := policy[action]
+		s[action] = &pucb.Calculator{Func: e.PUCBFunc, P: p, VirtualValue: e.VirtualValue}
 	}
 
 	agent := e.Game.Logic.CurrentAgentFunc(state)
 
 	found := false
-	for _, a := range e.Game.Agents {
-		if a == agent {
+	for _, ag := range e.Game.Agents {
+		if ag == agent {
 			found = true
 			break
 		}
@@ -187,17 +187,17 @@ func (e Engine[S, M, A]) NewNode(state S) (*Node[S, M, A], error) {
 		return nil, fmt.Errorf("後でエラーメッセージを書く")
 	}
 
-	return &Node[S, M, A]{
+	return &Node[S, Ac, Ag]{
 		State:           state,
 		Agent:           agent,
 		virtualSelector: s,
-		nextNodesByMove: make(map[M]Nodes[S, M, A], e.NextNodesCap),
+		nextNodesByAction: make(map[Ac]Nodes[S, Ac, Ag], e.NextNodesCap),
 	}, nil
 }
 
-func (e Engine[S, M, A]) SelectExpansionBackward(node *Node[S, M, A], capacity int, rng *rand.Rand) (LeafNodeEvalByAgent[A], int, error) {
+func (e Engine[S, Ac, Ag]) SelectExpansionBackward(node *Node[S, Ac, Ag], capacity int, rng *rand.Rand) (LeafNodeEvalByAgent[Ag], int, error) {
 	state := node.State
-	buffers := make(selectBuffers[S, M, A], 0, capacity)
+	buffers := make(selectBuffers[S, Ac, Ag], 0, capacity)
 	var err error
 	var isEnd bool
 
@@ -211,19 +211,19 @@ func (e Engine[S, M, A]) SelectExpansionBackward(node *Node[S, M, A], capacity i
 	for {
 		node.Lock()
 
-		var move M
-		move, err := node.virtualSelector.Select(rng)
+		var action Ac
+		action, err := node.virtualSelector.Select(rng)
 		if err != nil {
 			node.Unlock()
 			return nil, 0, err
 		}
 		// 選択した行動のノードの未観測の数をインクリメントする
-		node.virtualSelector[move].IncrementO()
+		node.virtualSelector[action].IncrementO()
 
 		node.Unlock()
-		buffers = append(buffers, selectBuffer[S, M, A]{node: node, move: move})
+		buffers = append(buffers, selectBuffer[S, Ac, Ag]{node: node, action: action})
 
-		state, err = e.Game.Logic.MoveFunc(state, move)
+		state, err = e.Game.Logic.ActionFunc(state, action)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -239,17 +239,17 @@ func (e Engine[S, M, A]) SelectExpansionBackward(node *Node[S, M, A], capacity i
 
 		var expand bool
 
-		// node.nextNodesByMoveはmap型 node.nextNodesByMove[move]はslice型
+		// node.nextNodesByActionはmap型 node.nextNodesByAction[action]はslice型
 		// この処理はデータを読むだけだが、他のワーカーが、書き込む処理をすると、破綻する為、Lockが必要
 		node.Lock()
-		nextNode, ok := node.nextNodesByMove[move].FindByState(state, e.Game.Logic.EqualFunc)
+		nextNode, ok := node.nextNodesByAction[action].FindByState(state, e.Game.Logic.EqualFunc)
 		node.Unlock()
 
 		if ok {
 			node = nextNode
 			expand = false
 		} else {
-			var newNode *Node[S, M, A]
+			var newNode *Node[S, Ac, Ag]
 			newNode, err = e.NewNode(state)
 			if err != nil {
 				return nil, 0, err
@@ -258,12 +258,12 @@ func (e Engine[S, M, A]) SelectExpansionBackward(node *Node[S, M, A], capacity i
 			// Unlockして NewNodeを作ってる間に、別のワーカーがノードを追加した可能性がある為、再度Lockして調べる
 			node.Lock()
 			// nextNodesの中に、一致するstateが見つかれば、それを次のノードとする
-			if nn, ok := node.nextNodesByMove[move].FindByState(state, e.Game.Logic.EqualFunc); ok {
+			if nn, ok := node.nextNodesByAction[action].FindByState(state, e.Game.Logic.EqualFunc); ok {
 				nextNode = nn
 				expand = false
 				// nextNodesの中に、一致するstateが見つからなければ、newNodeをnextNodesに追加し、selectを終了する
 			} else {
-				node.nextNodesByMove[move] = append(node.nextNodesByMove[move], newNode)
+				node.nextNodesByAction[action] = append(node.nextNodesByAction[action], newNode)
 				expand = true
 			}
 			node.Unlock()
@@ -275,11 +275,11 @@ func (e Engine[S, M, A]) SelectExpansionBackward(node *Node[S, M, A], capacity i
 		node = nextNode
 	}
 
-	evals := LeafNodeEvalByAgent[A]{}
+	evals := LeafNodeEvalByAgent[Ag]{}
 	// ゲームが終了した場合、ゲームエンジンの結果スコアを、リーフノードの評価値とする
 	// ゲームが終了していなかった場合、リーフノードの評価関数を呼び出す
 	if isEnd {
-		var scores game.ResultScoreByAgent[A]
+		var scores game.ResultScoreByAgent[Ag]
 		scores, err = e.Game.EvaluateResultScoreByAgent(state)
 		if err != nil {
 			return nil, 0, err
@@ -298,7 +298,7 @@ func (e Engine[S, M, A]) SelectExpansionBackward(node *Node[S, M, A], capacity i
 	return evals, len(buffers), err
 }
 
-func (e Engine[S, M, A]) Search(rootNode *Node[S, M, A], n int, workerRngs []*rand.Rand) (RootNodeEvalByAgent[A], error) {
+func (e Engine[S, Ac, Ag]) Search(rootNode *Node[S, Ac, Ag], n int, workerRngs []*rand.Rand) (RootNodeEvalByAgent[Ag], error) {
 	if err := e.Validate(); err != nil {
 		return nil, err
 	}
@@ -312,9 +312,9 @@ func (e Engine[S, M, A]) Search(rootNode *Node[S, M, A], n int, workerRngs []*ra
 	}
 
 	p := len(workerRngs)
-	rootEvalsPerWorker := make([]RootNodeEvalByAgent[A], p)
+	rootEvalsPerWorker := make([]RootNodeEvalByAgent[Ag], p)
 	for i := range p {
-		rootEvalsPerWorker[i] = RootNodeEvalByAgent[A]{}
+		rootEvalsPerWorker[i] = RootNodeEvalByAgent[Ag]{}
 	}
 
 	workerBuffCaps := make([]int, p)
@@ -337,7 +337,7 @@ func (e Engine[S, M, A]) Search(rootNode *Node[S, M, A], n int, workerRngs []*ra
 		return nil, err
 	}
 
-	sum := RootNodeEvalByAgent[A]{}
+	sum := RootNodeEvalByAgent[Ag]{}
 	for i := range rootEvalsPerWorker {
 		for k, v := range rootEvalsPerWorker[i] {
 			sum[k] += v
@@ -348,8 +348,8 @@ func (e Engine[S, M, A]) Search(rootNode *Node[S, M, A], n int, workerRngs []*ra
 	return sum, nil
 }
 
-func (e Engine[S, M, A]) NewPolicyNoValueFunc(simulations int, rngs []*rand.Rand) sequential.PolicyValueFunc[S, M] {
-	return func(state S, legalMoves []M) (game.Policy[M], float32, error) {
+func (e Engine[S, Ac, Ag]) NewPolicyNoValueFunc(simulations int, rngs []*rand.Rand) sequential.PolicyValueFunc[S, Ac] {
+	return func(state S, legalActions []Ac) (game.Policy[Ac], float32, error) {
 		rootNode, err := e.NewNode(state)
 		if err != nil {
 			return nil, 0.0, err
@@ -361,20 +361,20 @@ func (e Engine[S, M, A]) NewPolicyNoValueFunc(simulations int, rngs []*rand.Rand
 		}
 
 		visitPercents := rootNode.VirtualSelector().VisitPercentByKey()
-		policy := game.Policy[M]{}
-		for _, move := range legalMoves {
-			if p, ok := visitPercents[move]; !ok {
+		policy := game.Policy[Ac]{}
+		for _, action := range legalActions {
+			if p, ok := visitPercents[action]; !ok {
 				return nil, 0.0, fmt.Errorf("後でエラーメッセージを書く")
 			} else {
-				policy[move] = p
+				policy[action] = p
 			}
 		}
 		return policy, 0.0, nil
 	}
 }
 
-func (e Engine[S, M, A]) NewPolicyValueFunc(simulations int, rngs []*rand.Rand) sequential.PolicyValueFunc[S, M] {
-	return func(state S, legalMoves []M) (game.Policy[M], float32, error) {
+func (e Engine[S, Ac, Ag]) NewPolicyValueFunc(simulations int, rngs []*rand.Rand) sequential.PolicyValueFunc[S, Ac] {
+	return func(state S, legalActions []Ac) (game.Policy[Ac], float32, error) {
 		rootNode, err := e.NewNode(state)
 		if err != nil {
 			return nil, 0.0, err
@@ -386,12 +386,12 @@ func (e Engine[S, M, A]) NewPolicyValueFunc(simulations int, rngs []*rand.Rand) 
 		}
 
 		visitPercents := rootNode.VirtualSelector().VisitPercentByKey()
-		policy := game.Policy[M]{}
-		for _, move := range legalMoves {
-			if p, ok := visitPercents[move]; !ok {
+		policy := game.Policy[Ac]{}
+		for _, action := range legalActions {
+			if p, ok := visitPercents[action]; !ok {
 				return nil, 0.0, fmt.Errorf("後でエラーメッセージを書く")
 			} else {
-				policy[move] = p
+				policy[action] = p
 			}
 		}
 

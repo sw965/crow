@@ -5,23 +5,23 @@ import (
 	"github.com/sw965/crow/game"
 )
 
-type LegalMovesByAgent[M, A comparable] map[A][]M
-type LegalMovesByAgentFunc[S any, M, A comparable] func(S) LegalMovesByAgent[M, A]
-type MoveFunc[S any, M, A comparable] func(S, map[A]M) (S, error)
+type LegalActionsByAgent[Ac, Ag comparable] map[Ag][]Ac
+type LegalActionsByAgentFunc[S any, Ac, Ag comparable] func(S) LegalActionsByAgent[Ac, Ag]
+type ActionFunc[S any, Ac, Ag comparable] func(S, map[Ag]Ac) (S, error)
 type EqualFunc[S any] func(S, S) bool
 
-type Logic[S any, M, A comparable] struct {
-	LegalMovesByAgentFunc LegalMovesByAgentFunc[S, M, A]
-	MoveFunc              MoveFunc[S, M, A]
+type Logic[S any, Ac, Ag comparable] struct {
+	LegalActionsByAgentFunc LegalActionsByAgentFunc[S, Ac, Ag]
+	ActionFunc              ActionFunc[S, Ac, Ag]
 	EqualFunc             EqualFunc[S]
 }
 
-func (l Logic[S, M, A]) Validate() error {
-	if l.LegalMovesByAgentFunc == nil {
-		return fmt.Errorf("LegalMovesFunc must not be nil")
+func (l Logic[S, Ac, Ag]) Validate() error {
+	if l.LegalActionsByAgentFunc == nil {
+		return fmt.Errorf("LegalActionsByAgentFunc must not be nil")
 	}
-	if l.MoveFunc == nil {
-		return fmt.Errorf("MoveFunc must not be nil")
+	if l.ActionFunc == nil {
+		return fmt.Errorf("ActionFunc must not be nil")
 	}
 	if l.EqualFunc == nil {
 		return fmt.Errorf("EqualFunc must not be nil")
@@ -29,14 +29,14 @@ func (l Logic[S, M, A]) Validate() error {
 	return nil
 }
 
-type Engine[S any, M, A comparable] struct {
-	Logic                  Logic[S, M, A]
-	RankByAgentFunc        game.RankByAgentFunc[S, A]
-	ResultScoreByAgentFunc game.ResultScoreByAgentFunc[A]
-	Agents                 []A
+type Engine[S any, Ac, Ag comparable] struct {
+	Logic                  Logic[S, Ac, Ag]
+	RankByAgentFunc        game.RankByAgentFunc[S, Ag]
+	ResultScoreByAgentFunc game.ResultScoreByAgentFunc[Ag]
+	Agents                 []Ag
 }
 
-func (e Engine[S, M, A]) Validate() error {
+func (e Engine[S, Ac, Ag]) Validate() error {
 	if err := e.Logic.Validate(); err != nil {
 		return err
 	}
@@ -55,12 +55,12 @@ func (e Engine[S, M, A]) Validate() error {
 	return nil
 }
 
-func (e Engine[S, M, A]) IsEnd(state S) (bool, error) {
+func (e Engine[S, Ac, Ag]) IsEnd(state S) (bool, error) {
 	rankByAgent, err := e.RankByAgentFunc(state)
 	return len(rankByAgent) != 0, err
 }
 
-func (e Engine[S, M, A]) EvaluateResultScoreByAgent(state S) (game.ResultScoreByAgent[A], error) {
+func (e Engine[S, Ac, Ag]) EvaluateResultScoreByAgent(state S) (game.ResultScoreByAgent[Ag], error) {
 	rankByAgent, err := e.RankByAgentFunc(state)
 	if err != nil {
 		return nil, err
@@ -68,6 +68,6 @@ func (e Engine[S, M, A]) EvaluateResultScoreByAgent(state S) (game.ResultScoreBy
 	return e.ResultScoreByAgentFunc(rankByAgent)
 }
 
-func (e *Engine[S, M, A]) SetStandardResultScoreByAgentFunc() {
-	e.ResultScoreByAgentFunc = game.StandardResultScoreByAgentFunc[A]
+func (e *Engine[S, Ac, Ag]) SetStandardResultScoreByAgentFunc() {
+	e.ResultScoreByAgentFunc = game.StandardResultScoreByAgentFunc[Ag]
 }

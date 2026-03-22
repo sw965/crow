@@ -5,24 +5,24 @@ import (
 	"github.com/sw965/crow/game"
 )
 
-type PolicyByAgent[M, A comparable] map[A]game.Policy[M]
-type ValueByAgent[A comparable] map[A]float32
+type PolicyByAgent[Ac, Ag comparable] map[Ag]game.Policy[Ac]
+type ValueByAgent[Ag comparable] map[Ag]float32
 
-type PolicyValueFunc[S any, M, A comparable] func(S, LegalMovesByAgent[M, A]) (PolicyByAgent[M, A], ValueByAgent[A], error)
+type PolicyValueFunc[S any, Ac, Ag comparable] func(S, LegalActionsByAgent[Ac, Ag]) (PolicyByAgent[Ac, Ag], ValueByAgent[Ag], error)
 
-func UniformPolicyNoValueFunc[S any, M, A comparable](state S, legalMovesByAgent LegalMovesByAgent[M, A]) (PolicyByAgent[M, A], ValueByAgent[A], error) {
-	jp := PolicyByAgent[M, A]{}
-	jv := ValueByAgent[A]{}
+func UniformPolicyNoValueFunc[S any, Ac, Ag comparable](state S, legalActionsByAgent LegalActionsByAgent[Ac, Ag]) (PolicyByAgent[Ac, Ag], ValueByAgent[Ag], error) {
+	jp := PolicyByAgent[Ac, Ag]{}
+	jv := ValueByAgent[Ag]{}
 
-	for agent, moves := range legalMovesByAgent {
-		n := len(moves)
+	for agent, actions := range legalActionsByAgent {
+		n := len(actions)
 		if n == 0 {
-			return nil, nil, fmt.Errorf("agent %v has no legal moves", agent)
+			return nil, nil, fmt.Errorf("agent %v has no legal actions", agent)
 		}
 		p := 1.0 / float32(n)
-		policy := game.Policy[M]{}
-		for _, m := range moves {
-			policy[m] = p
+		policy := game.Policy[Ac]{}
+		for _, a := range actions {
+			policy[a] = p
 		}
 		jp[agent] = policy
 		jv[agent] = 0.0
@@ -30,21 +30,21 @@ func UniformPolicyNoValueFunc[S any, M, A comparable](state S, legalMovesByAgent
 	return jp, jv, nil
 }
 
-type ActorCritic[S any, M, A comparable] struct {
+type ActorCritic[S any, Ac, Ag comparable] struct {
 	Name            game.ActorCriticName
-	PolicyValueFunc PolicyValueFunc[S, M, A]
-	SelectFunc      game.SelectFunc[M, A]
+	PolicyValueFunc PolicyValueFunc[S, Ac, Ag]
+	SelectFunc      game.SelectFunc[Ac, Ag]
 }
 
-func NewRandomActorCritic[S any, M, A comparable]() ActorCritic[S, M, A] {
-	return ActorCritic[S, M, A]{
+func NewRandomActorCritic[S any, Ac, Ag comparable]() ActorCritic[S, Ac, Ag] {
+	return ActorCritic[S, Ac, Ag]{
 		Name:            "rand",
-		PolicyValueFunc: UniformPolicyNoValueFunc[S, M, A],
-		SelectFunc:      game.WeightedRandomSelectFunc[M, A],
+		PolicyValueFunc: UniformPolicyNoValueFunc[S, Ac, Ag],
+		SelectFunc:      game.WeightedRandomSelectFunc[Ac, Ag],
 	}
 }
 
-func (a ActorCritic[S, M, A]) Validate() error {
+func (a ActorCritic[S, Ac, Ag]) Validate() error {
 	if a.PolicyValueFunc == nil {
 		return fmt.Errorf("PolicyValueFunc must not be nil")
 	}

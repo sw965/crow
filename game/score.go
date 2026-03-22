@@ -6,10 +6,10 @@ import (
 )
 
 // ゲームが終了していない場合は、空あるいはnilにする
-type RankByAgent[A comparable] map[A]int
+type RankByAgent[Ag comparable] map[Ag]int
 
-func NewRankByAgent[A comparable](agentsPerRank [][]A) (RankByAgent[A], error) {
-	ranks := RankByAgent[A]{}
+func NewRankByAgent[Ag comparable](agentsPerRank [][]Ag) (RankByAgent[Ag], error) {
+	ranks := RankByAgent[Ag]{}
 	rank := 1
 	for _, agents := range agentsPerRank {
 		if len(agents) == 0 {
@@ -27,7 +27,7 @@ func NewRankByAgent[A comparable](agentsPerRank [][]A) (RankByAgent[A], error) {
 	return ranks, nil
 }
 
-func (r RankByAgent[A]) Validate() error {
+func (r RankByAgent[Ag]) Validate() error {
 	n := len(r)
 	if n == 0 {
 		return nil
@@ -63,17 +63,17 @@ func (r RankByAgent[A]) Validate() error {
 	return nil
 }
 
-type RankByAgentFunc[S any, A comparable] func(S) (RankByAgent[A], error)
-type ResultScoreByAgent[A comparable] map[A]float32
-type ResultScoreByAgentFunc[A comparable] func(RankByAgent[A]) (ResultScoreByAgent[A], error)
+type RankByAgentFunc[S any, Ag comparable] func(S) (RankByAgent[Ag], error)
+type ResultScoreByAgent[Ag comparable] map[Ag]float32
+type ResultScoreByAgentFunc[Ag comparable] func(RankByAgent[Ag]) (ResultScoreByAgent[Ag], error)
 
-func StandardResultScoreByAgentFunc[A comparable](ranks RankByAgent[A]) (ResultScoreByAgent[A], error) {
+func StandardResultScoreByAgentFunc[Ag comparable](ranks RankByAgent[Ag]) (ResultScoreByAgent[Ag], error) {
 	if err := ranks.Validate(); err != nil {
 		return nil, err
 	}
 
 	n := len(ranks)
-	scores := map[A]float32{}
+	scores := map[Ag]float32{}
 
 	if n == 1 {
 		for agent := range ranks {

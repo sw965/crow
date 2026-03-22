@@ -7,6 +7,7 @@ import (
 	"github.com/sw965/omw/mathx/randx"
 	"testing"
 	"time"
+	"runtime"
 )
 
 func Test(t *testing.T) {
@@ -21,7 +22,8 @@ func Test(t *testing.T) {
 		panic(err)
 	}
 
-	p := 4
+	p := runtime.NumCPU()
+	fmt.Println("p =", p)
 	numClasses := 10
 	outputSize := 1024
 	rng := randx.NewPCG()
@@ -41,15 +43,13 @@ func Test(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-
-	sharedContext := binary.SharedContext{
-		GateDropThresholdScale: 1.0,
-		NoiseStdScale:          0.5,
-		GroupSize:              4,
-	}
+	
+	sharedContext := binary.NewSharedContext()
 	model.Backbone.SetSharedContext(&sharedContext)
 
 	trainer := binary.NewTrainer(model, p)
+	trainer.MiniBatchSize = 1024
+	fmt.Println("ミニバッチサイズ", trainer.MiniBatchSize)
 	trainer.Margin = 0.25
 	// 確認用
 	fmt.Printf("Prototype Checksum: %d\n", model.Prototypes[0].Data[0])

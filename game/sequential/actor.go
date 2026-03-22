@@ -5,47 +5,47 @@ import (
 	"github.com/sw965/crow/game"
 )
 
-type PolicyFunc[S any, M comparable] func(S, []M) (game.Policy[M], error)
+type PolicyFunc[S any, Ac comparable] func(S, []Ac) (game.Policy[Ac], error)
 
-func UniformPolicyFunc[S any, M comparable](state S, legalMoves []M) (game.Policy[M], error) {
-	n := len(legalMoves)
+func UniformPolicyFunc[S any, Ac comparable](state S, legalActions []Ac) (game.Policy[Ac], error) {
+	n := len(legalActions)
 	if n == 0 {
 		return nil, fmt.Errorf("後でエラーメッセージを書く")
 	}
 
 	p := 1.0 / float32(n)
-	policy := game.Policy[M]{}
-	for _, a := range legalMoves {
+	policy := game.Policy[Ac]{}
+	for _, a := range legalActions {
 		policy[a] = p
 	}
 	return policy, nil
 }
 
-type PolicyValueFunc[S any, M comparable] func(S, []M) (game.Policy[M], float32, error)
+type PolicyValueFunc[S any, Ac comparable] func(S, []Ac) (game.Policy[Ac], float32, error)
 
-func UniformPolicyNoValueFunc[S any, M comparable](state S, legalMoves []M) (game.Policy[M], float32, error) {
-	policy, err := UniformPolicyFunc(state, legalMoves)
+func UniformPolicyNoValueFunc[S any, Ac comparable](state S, legalActions []Ac) (game.Policy[Ac], float32, error) {
+	policy, err := UniformPolicyFunc(state, legalActions)
 	if err != nil {
 		return nil, 0.0, err
 	}
 	return policy, 0.0, err
 }
 
-type ActorCritic[S any, M, A comparable] struct {
+type ActorCritic[S any, Ac, Ag comparable] struct {
 	Name            game.ActorCriticName
-	PolicyValueFunc PolicyValueFunc[S, M]
-	SelectFunc      game.SelectFunc[M, A]
+	PolicyValueFunc PolicyValueFunc[S, Ac]
+	SelectFunc      game.SelectFunc[Ac, Ag]
 }
 
-func NewRandomActorCritic[S any, M, A comparable]() ActorCritic[S, M, A] {
-	return ActorCritic[S, M, A]{
+func NewRandomActorCritic[S any, Ac, Ag comparable]() ActorCritic[S, Ac, Ag] {
+	return ActorCritic[S, Ac, Ag]{
 		Name:            "rand",
-		PolicyValueFunc: UniformPolicyNoValueFunc[S, M],
-		SelectFunc:      game.WeightedRandomSelectFunc[M, A],
+		PolicyValueFunc: UniformPolicyNoValueFunc[S, Ac],
+		SelectFunc:      game.WeightedRandomSelectFunc[Ac, Ag],
 	}
 }
 
-func (a ActorCritic[S, M, A]) Validate() error {
+func (a ActorCritic[S, Ac, Ag]) Validate() error {
 	if a.PolicyValueFunc == nil {
 		return fmt.Errorf("PolicyValueFunc must not be nil")
 	}

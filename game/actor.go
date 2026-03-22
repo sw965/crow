@@ -10,32 +10,32 @@ import (
 	"slices"
 )
 
-type Policy[M comparable] map[M]float32
+type Policy[Ac comparable] map[Ac]float32
 
-func (p Policy[M]) ValidateForLegalMoves(legalMoves []M, checkUnique bool) error {
+func (p Policy[Ac]) ValidateForLegalActions(legalActions []Ac, checkUnique bool) error {
 	if checkUnique {
-		if !slicesx.IsUnique(legalMoves) {
-			return fmt.Errorf("legalMoves contains duplicates")
+		if !slicesx.IsUnique(legalActions) {
+			return fmt.Errorf("legalActions contains duplicates")
 		}
 	}
 
-	if len(legalMoves) == 0 {
-		return fmt.Errorf("legalMoves must not be empty")
+	if len(legalActions) == 0 {
+		return fmt.Errorf("legalActions must not be empty")
 	}
 
-	if len(p) != len(legalMoves) {
-		return fmt.Errorf("policy size (%d) does not match legal moves count (%d)", len(p), len(legalMoves))
+	if len(p) != len(legalActions) {
+		return fmt.Errorf("policy size (%d) does not match legal actions count (%d)", len(p), len(legalActions))
 	}
 
 	var sum float32
-	for _, m := range legalMoves {
-		v, ok := p[m]
+	for _, a := range legalActions {
+		v, ok := p[a]
 		if !ok {
-			return fmt.Errorf("policy is missing probability for move: %v", m)
+			return fmt.Errorf("policy is missing probability for action: %v", a)
 		}
 
 		if v < 0 || mathx.IsNaN(v) || mathx.IsInf(v, 0) {
-			return fmt.Errorf("invalid probability value %f for move: %v", v, m)
+			return fmt.Errorf("invalid probability value %f for action: %v", v, a)
 		}
 		sum += v
 	}
@@ -46,48 +46,48 @@ func (p Policy[M]) ValidateForLegalMoves(legalMoves []M, checkUnique bool) error
 	return nil
 }
 
-type SelectFunc[M, A comparable] func(Policy[M], A, *rand.Rand) (M, error)
+type SelectFunc[Ac, Ag comparable] func(Policy[Ac], Ag, *rand.Rand) (Ac, error)
 
-func MaxSelectFunc[M, A comparable](policy Policy[M], agent A, rng *rand.Rand) (M, error) {
+func MaxSelectFunc[Ac, Ag comparable](policy Policy[Ac], agent Ag, rng *rand.Rand) (Ac, error) {
 	keys := slices.Collect(maps.Keys(policy))
 	max := policy[keys[0]]
 	// capの確保をする。
-	moves := []M{keys[0]}
+	actions := []Ac{keys[0]}
 
 	for _, k := range keys[1:] {
 		v := policy[k]
 		switch {
 		case v > max:
 			max = v
-			moves = []M{k}
+			actions = []Ac{k}
 		case v == max:
-			moves = append(moves, k)
+			actions = append(actions, k)
 		}
 	}
 
-	move, err := randx.Choice(moves, rng)
+	action, err := randx.Choice(actions, rng)
 	if err != nil {
-		var zero M
+		var zero Ac
 		return zero, err
 	}
-	return move, nil
+	return action, nil
 }
 
-func WeightedRandomSelectFunc[M, A comparable](policy Policy[M], agent A, rng *rand.Rand) (M, error) {
+func WeightedRandomSelectFunc[Ac, Ag comparable](policy Policy[Ac], agent Ag, rng *rand.Rand) (Ac, error) {
 	n := len(policy)
-	moves := make([]M, 0, n)
+	actions := make([]Ac, 0, n)
 	ws := make([]float32, 0, n)
-	for m, p := range policy {
-		moves = append(moves, m)
+	for a, p := range policy {
+		actions = append(actions, a)
 		ws = append(ws, p)
 	}
 
 	idx, err := randx.IntByWeights(ws, rng)
 	if err != nil {
-		var zero M
+		var zero Ac
 		return zero, err
 	}
-	return moves[idx], nil
+	return actions[idx], nil
 }
 
 type ActorCriticName string

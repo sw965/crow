@@ -23,6 +23,14 @@ type SharedContext struct {
 	GroupSize              int
 }
 
+func NewSharedContext() SharedContext {
+	return SharedContext{
+		GateDropThresholdScale:1.0,
+		NoiseStdScale:0.5,
+		GroupSize:4,
+	}
+}
+
 type Layer interface {
 	Forward(*bitsx.Matrix, *rand.Rand) (*bitsx.Matrix, Backward, error)
 	Predict(*bitsx.Matrix) (*bitsx.Matrix, error)

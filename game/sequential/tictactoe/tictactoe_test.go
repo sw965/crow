@@ -100,16 +100,16 @@ func TestNewInitState(t *testing.T) {
 	}
 }
 
-func TestLegalMoves(t *testing.T) {
+func TestLegalActions(t *testing.T) {
 	tests := []struct {
 		name  string
 		state ttt.State
-		want  []ttt.Move
+		want  []ttt.Action
 	}{
 		{
 			name:  "正常_初期局面",
 			state: ttt.NewInitState(),
-			want: []ttt.Move{
+			want: []ttt.Action{
 				{Row: 0, Col: 0, Mark: ttt.Nought}, {Row: 0, Col: 1, Mark: ttt.Nought}, {Row: 0, Col: 2, Mark: ttt.Nought},
 				{Row: 1, Col: 0, Mark: ttt.Nought}, {Row: 1, Col: 1, Mark: ttt.Nought}, {Row: 1, Col: 2, Mark: ttt.Nought},
 				{Row: 2, Col: 0, Mark: ttt.Nought}, {Row: 2, Col: 1, Mark: ttt.Nought}, {Row: 2, Col: 2, Mark: ttt.Nought},
@@ -125,13 +125,13 @@ func TestLegalMoves(t *testing.T) {
 				},
 				Turn: ttt.Cross,
 			},
-			want: []ttt.Move{{Row: 1, Col: 1, Mark: ttt.Cross}},
+			want: []ttt.Action{{Row: 1, Col: 1, Mark: ttt.Cross}},
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := ttt.LegalMoves(tc.state)
+			got := ttt.LegalActions(tc.state)
 			if !slices.Equal(got, tc.want) {
 				t.Errorf("want: %v, got: %v", tc.want, got)
 			}
@@ -139,11 +139,11 @@ func TestLegalMoves(t *testing.T) {
 	}
 }
 
-func TestMoveFunc(t *testing.T) {
+func TestActionFunc(t *testing.T) {
 	tests := []struct {
 		name      string
 		state     ttt.State
-		move      ttt.Move
+		action      ttt.Action
 		want      ttt.State
 		wantErr   bool
 		wantErrIs error
@@ -151,7 +151,7 @@ func TestMoveFunc(t *testing.T) {
 		{
 			name:  "正常_境界値_(0,0)",
 			state: ttt.NewInitState(),
-			move:  ttt.Move{Mark: ttt.Nought, Row: 0, Col: 0},
+			action:  ttt.Action{Mark: ttt.Nought, Row: 0, Col: 0},
 			want: ttt.State{
 				Board: ttt.Board{
 					{ttt.Nought, ttt.EmptyMark, ttt.EmptyMark},
@@ -164,7 +164,7 @@ func TestMoveFunc(t *testing.T) {
 		{
 			name:  "正常_境界値_(0,2)",
 			state: ttt.NewInitState(),
-			move:  ttt.Move{Mark: ttt.Nought, Row: 0, Col: 2},
+			action:  ttt.Action{Mark: ttt.Nought, Row: 0, Col: 2},
 			want: ttt.State{
 				Board: ttt.Board{
 					{ttt.EmptyMark, ttt.EmptyMark, ttt.Nought},
@@ -177,7 +177,7 @@ func TestMoveFunc(t *testing.T) {
 		{
 			name:  "正常_境界値_(2,0)",
 			state: ttt.NewInitState(),
-			move:  ttt.Move{Mark: ttt.Nought, Row: 2, Col: 0},
+			action:  ttt.Action{Mark: ttt.Nought, Row: 2, Col: 0},
 			want: ttt.State{
 				Board: ttt.Board{
 					{ttt.EmptyMark, ttt.EmptyMark, ttt.EmptyMark},
@@ -190,7 +190,7 @@ func TestMoveFunc(t *testing.T) {
 		{
 			name:  "正常_境界値_(2,2)",
 			state: ttt.NewInitState(),
-			move:  ttt.Move{Mark: ttt.Nought, Row: 2, Col: 2},
+			action:  ttt.Action{Mark: ttt.Nought, Row: 2, Col: 2},
 			want: ttt.State{
 				Board: ttt.Board{
 					{ttt.EmptyMark, ttt.EmptyMark, ttt.EmptyMark},
@@ -204,28 +204,28 @@ func TestMoveFunc(t *testing.T) {
 		{
 			name:      "異常_境界値_Row下限越え(-1,0)",
 			state:     ttt.NewInitState(),
-			move:      ttt.Move{Mark: ttt.Nought, Row: -1, Col: 0},
+			action:      ttt.Action{Mark: ttt.Nought, Row: -1, Col: 0},
 			wantErr:   true,
 			wantErrIs: ttt.ErrOutOfBounds,
 		},
 		{
 			name:      "異常_境界値_Row下限越え_Col最大(-1,2)",
 			state:     ttt.NewInitState(),
-			move:      ttt.Move{Mark: ttt.Nought, Row: -1, Col: 2},
+			action:      ttt.Action{Mark: ttt.Nought, Row: -1, Col: 2},
 			wantErr:   true,
 			wantErrIs: ttt.ErrOutOfBounds,
 		},
 		{
 			name:      "異常_境界値_Row上限越え(3,0)",
 			state:     ttt.NewInitState(),
-			move:      ttt.Move{Mark: ttt.Nought, Row: 3, Col: 0},
+			action:      ttt.Action{Mark: ttt.Nought, Row: 3, Col: 0},
 			wantErr:   true,
 			wantErrIs: ttt.ErrOutOfBounds,
 		},
 		{
 			name:      "異常_境界値_Row上限越え_Col最大(3,2)",
 			state:     ttt.NewInitState(),
-			move:      ttt.Move{Mark: ttt.Nought, Row: 3, Col: 2},
+			action:      ttt.Action{Mark: ttt.Nought, Row: 3, Col: 2},
 			wantErr:   true,
 			wantErrIs: ttt.ErrOutOfBounds,
 		},
@@ -233,28 +233,28 @@ func TestMoveFunc(t *testing.T) {
 		{
 			name:      "異常_境界値_(0,-1)",
 			state:     ttt.NewInitState(),
-			move:      ttt.Move{Mark: ttt.Nought, Row: 0, Col: -1},
+			action:      ttt.Action{Mark: ttt.Nought, Row: 0, Col: -1},
 			wantErr:   true,
 			wantErrIs: ttt.ErrOutOfBounds,
 		},
 		{
 			name:      "異常_境界値_(2,-1)",
 			state:     ttt.NewInitState(),
-			move:      ttt.Move{Mark: ttt.Nought, Row: 2, Col: -1},
+			action:      ttt.Action{Mark: ttt.Nought, Row: 2, Col: -1},
 			wantErr:   true,
 			wantErrIs: ttt.ErrOutOfBounds,
 		},
 		{
 			name:      "異常_境界値_(0,3)",
 			state:     ttt.NewInitState(),
-			move:      ttt.Move{Mark: ttt.Nought, Row: 0, Col: 3},
+			action:      ttt.Action{Mark: ttt.Nought, Row: 0, Col: 3},
 			wantErr:   true,
 			wantErrIs: ttt.ErrOutOfBounds,
 		},
 		{
 			name:      "異常_境界値_(2,3)",
 			state:     ttt.NewInitState(),
-			move:      ttt.Move{Mark: ttt.Nought, Row: 2, Col: 3},
+			action:      ttt.Action{Mark: ttt.Nought, Row: 2, Col: 3},
 			wantErr:   true,
 			wantErrIs: ttt.ErrOutOfBounds,
 		},
@@ -262,28 +262,28 @@ func TestMoveFunc(t *testing.T) {
 		{
 			name:      "異常_境界値_複合_(-1,-1)",
 			state:     ttt.NewInitState(),
-			move:      ttt.Move{Mark: ttt.Nought, Row: -1, Col: -1},
+			action:      ttt.Action{Mark: ttt.Nought, Row: -1, Col: -1},
 			wantErr:   true,
 			wantErrIs: ttt.ErrOutOfBounds,
 		},
 		{
 			name:      "異常_境界値_複合_(-1,3)",
 			state:     ttt.NewInitState(),
-			move:      ttt.Move{Mark: ttt.Nought, Row: -1, Col: 3},
+			action:      ttt.Action{Mark: ttt.Nought, Row: -1, Col: 3},
 			wantErr:   true,
 			wantErrIs: ttt.ErrOutOfBounds,
 		},
 		{
 			name:      "異常_境界値_複合_(3,-1)",
 			state:     ttt.NewInitState(),
-			move:      ttt.Move{Mark: ttt.Nought, Row: 3, Col: -1},
+			action:      ttt.Action{Mark: ttt.Nought, Row: 3, Col: -1},
 			wantErr:   true,
 			wantErrIs: ttt.ErrOutOfBounds,
 		},
 		{
 			name:      "異常_境界値_複合_(3,3)",
 			state:     ttt.NewInitState(),
-			move:      ttt.Move{Mark: ttt.Nought, Row: 3, Col: 3},
+			action:      ttt.Action{Mark: ttt.Nought, Row: 3, Col: 3},
 			wantErr:   true,
 			wantErrIs: ttt.ErrOutOfBounds,
 		},
@@ -293,8 +293,8 @@ func TestMoveFunc(t *testing.T) {
 				Board: ttt.Board{}, // 盤面の状態に関わらず、TurnがEmptyMarkならエラーになるべき
 				Turn:  ttt.EmptyMark,
 			},
-			move: ttt.Move{
-				Mark: ttt.Nought, // どのようなMoveであっても
+			action: ttt.Action{
+				Mark: ttt.Nought, // どのようなActionであっても
 				Row:  0,
 				Col:  0,
 			},
@@ -304,14 +304,14 @@ func TestMoveFunc(t *testing.T) {
 		{
 			name:      "異常_手番違い_その1",
 			state:     ttt.State{Turn: ttt.Nought},
-			move:      ttt.Move{Mark: ttt.Cross},
+			action:      ttt.Action{Mark: ttt.Cross},
 			wantErr:   true,
 			wantErrIs: ttt.ErrNotYourTurn,
 		},
 		{
 			name:      "異常_手番違い_その2",
 			state:     ttt.State{Turn: ttt.Cross},
-			move:      ttt.Move{Mark: ttt.Nought},
+			action:      ttt.Action{Mark: ttt.Nought},
 			wantErr:   true,
 			wantErrIs: ttt.ErrNotYourTurn,
 		},
@@ -328,7 +328,7 @@ func TestMoveFunc(t *testing.T) {
 			},
 
 			// (2, 2) の地点に丸を入力
-			move: ttt.Move{
+			action: ttt.Action{
 				Mark: ttt.Nought,
 				Row:  2,
 				Col:  2,
@@ -342,7 +342,7 @@ func TestMoveFunc(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Helper()
-			got, err := ttt.MoveFunc(tc.state, tc.move)
+			got, err := ttt.ActionFunc(tc.state, tc.action)
 			if tc.wantErr {
 				if err == nil {
 					t.Fatalf("エラーを期待したが、nilが返された")

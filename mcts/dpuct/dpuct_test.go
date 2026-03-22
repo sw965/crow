@@ -34,22 +34,22 @@ func TestDPUCT(t *testing.T) {
 	agent1 := 1
 	agent2 := 2
 
-	legalMovesByAgentFunc := func(rps RockPaperScissors) simultaneous.LegalMovesByAgent[Hand, int] {
+	legalActionsByAgentFunc := func(rps RockPaperScissors) simultaneous.LegalActionsByAgent[Hand, int] {
 		// ゲーム終了時は合法手なし
 		if rps.Finished {
-			return simultaneous.LegalMovesByAgent[Hand, int]{}
+			return simultaneous.LegalActionsByAgent[Hand, int]{}
 		}
-		return simultaneous.LegalMovesByAgent[Hand, int]{
+		return simultaneous.LegalActionsByAgent[Hand, int]{
 			agent1: HANDS,
 			agent2: HANDS,
 		}
 	}
 
-	moveFunc := func(rps RockPaperScissors, moves map[int]Hand) (RockPaperScissors, error) {
+	actionFunc := func(rps RockPaperScissors, actions map[int]Hand) (RockPaperScissors, error) {
 		return RockPaperScissors{
 			Finished: true,
-			Hand1:    moves[agent1],
-			Hand2:    moves[agent2],
+			Hand1:    actions[agent1],
+			Hand2:    actions[agent2],
 		}, nil
 	}
 
@@ -82,8 +82,8 @@ func TestDPUCT(t *testing.T) {
 	}
 
 	gameLogic := simultaneous.Logic[RockPaperScissors, Hand, int]{
-		LegalMovesByAgentFunc: legalMovesByAgentFunc,
-		MoveFunc:              moveFunc,
+		LegalActionsByAgentFunc: legalActionsByAgentFunc,
+		ActionFunc:              actionFunc,
 		EqualFunc:             equalFunc,
 	}
 
@@ -103,11 +103,11 @@ func TestDPUCT(t *testing.T) {
 
 	// PolicyとPlayoutの設定
 	mcts.SetUniformPolicyFunc()
-	ac := simultaneous.NewRandomActorCritic[RockPaperScissors, Hand, int]()
+	accr := simultaneous.NewRandomActorCritic[RockPaperScissors, Hand, int]()
 	
 	// Playout用のRNGを渡してセットアップ
 	playoutRng := randx.NewPCG()
-	mcts.SetPlayout(ac, playoutRng)
+	mcts.SetPlayout(accr, playoutRng)
 
 	// ワーカー用のRNG配列を作成（今回は1スレッドで実行）
 	rngs := randx.NewPCGs(12)

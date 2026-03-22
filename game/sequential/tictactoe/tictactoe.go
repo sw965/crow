@@ -47,10 +47,10 @@ func (b Board) IsFull() bool {
 	return true
 }
 
-// Move represents a player's action, specifying the mark and the position.
+// Action represents a player's action, specifying the mark and the position.
 //
-// Moveはプレイヤーの行動を表し、記号と配置する場所（行・列）を指定します。
-type Move struct {
+// Actionはプレイヤーの行動を表し、記号と配置する場所（行・列）を指定します。
+type Action struct {
 	Mark Mark
 	Row  int
 	Col  int
@@ -74,43 +74,43 @@ func NewInitState() State {
 	}
 }
 
-// LegalMoves returns all available moves for the current state.
+// LegalActions returns all available actions for the current state.
 //
-// LegalMovesは、現在の状態から可能な全ての合法手を返します。
-func LegalMoves(state State) []Move {
-	moves := make([]Move, 0, Rows*Cols)
+// LegalActionsは、現在の状態から可能な全ての合法手を返します。
+func LegalActions(state State) []Action {
+	actions := make([]Action, 0, Rows*Cols)
 	for i, row := range state.Board {
 		for j, mark := range row {
 			if mark == EmptyMark {
-				moves = append(moves, Move{Mark: state.Turn, Row: i, Col: j})
+				actions = append(actions, Action{Mark: state.Turn, Row: i, Col: j})
 			}
 		}
 	}
-	return moves
+	return actions
 }
 
-// MoveFunc applies a move to the current state and returns the next state.
+// ActionFunc applies a action to the current state and returns the next state.
 //
-// MoveFuncは、現在の状態に行動を適用し、次の状態を返します。
-func MoveFunc(state State, move Move) (State, error) {
+// ActionFuncは、現在の状態に行動を適用し、次の状態を返します。
+func ActionFunc(state State, action Action) (State, error) {
 	if state.Turn == EmptyMark {
 		return State{}, fmt.Errorf("")
 	}
 
-	if state.Turn != move.Mark {
+	if state.Turn != action.Mark {
 		return State{}, fmt.Errorf("")
 	}
 
-	if move.Row < 0 || move.Row >= Rows || move.Col < 0 || move.Col >= Cols {
+	if action.Row < 0 || action.Row >= Rows || action.Col < 0 || action.Col >= Cols {
 		return State{}, fmt.Errorf("")
 	}
 
-	if state.Board[move.Row][move.Col] != EmptyMark {
+	if state.Board[action.Row][action.Col] != EmptyMark {
 		return State{}, fmt.Errorf("")
 	}
 
 	next := state
-	next.Board[move.Row][move.Col] = move.Mark
+	next.Board[action.Row][action.Col] = action.Mark
 
 	var nextTurn Mark
 	if state.Turn == Nought {
@@ -126,10 +126,10 @@ func MoveFunc(state State, move Move) (State, error) {
 // NewLogic creates a new Logic instance for the Tic-Tac-Toe game.
 //
 // NewLogicは、三目並べゲームのための新しいLogicインスタンスを作成します。
-func NewLogic() sequential.Logic[State, Move, Mark] {
-	return sequential.Logic[State, Move, Mark]{
-		LegalMovesFunc: LegalMoves,
-		MoveFunc:       MoveFunc,
+func NewLogic() sequential.Logic[State, Action, Mark] {
+	return sequential.Logic[State, Action, Mark]{
+		LegalActionsFunc: LegalActions,
+		ActionFunc:       ActionFunc,
 		EqualFunc: func(s1, s2 State) bool {
 			return s1 == s2
 		},
@@ -187,8 +187,8 @@ func RankByAgentFunc(state State) (game.RankByAgent[Mark], error) {
 	return game.RankByAgent[Mark]{}, nil
 }
 
-func NewEngine() sequential.Engine[State, Move, Mark] {
-	engine := sequential.Engine[State, Move, Mark]{
+func NewEngine() sequential.Engine[State, Action, Mark] {
+	engine := sequential.Engine[State, Action, Mark]{
 		Logic:           NewLogic(),
 		RankByAgentFunc: RankByAgentFunc,
 		Agents:          []Mark{Nought, Cross},
