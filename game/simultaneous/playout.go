@@ -64,7 +64,7 @@ func (e *Engine[S, Ac, Ag]) Playouts(inits []S, accr ActorCritic[S, Ac, Ag], rng
 				jointAction[agent] = action
 			}
 
-			state, err = e.Logic.ActionFunc(state, jointAction)
+			state, err = e.Logic.TransitionFunc(state, jointAction)
 			if err != nil {
 				return err
 			}
@@ -131,7 +131,7 @@ func (e *Engine[S, Ac, Ag]) RecordPlayouts(inits []S, accr ActorCritic[S, Ac, Ag
 				ValueByAgent:  jointValue,
 			})
 
-			state, err = e.Logic.ActionFunc(state, jointAction)
+			state, err = e.Logic.TransitionFunc(state, jointAction)
 			if err != nil {
 				return err
 			}

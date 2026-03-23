@@ -61,7 +61,7 @@ func (e *Engine[S, Ac, Ag]) Playouts(inits []S, accr ActorCritic[S, Ac, Ag], rng
 				return err
 			}
 
-			state, err = e.Logic.ActionFunc(state, action)
+			state, err = e.Logic.TransitionFunc(state, action)
 			if err != nil {
 				return err
 			}
@@ -123,7 +123,7 @@ func (e *Engine[S, Ac, Ag]) RecordPlayouts(inits []S, accr ActorCritic[S, Ac, Ag
 				Value:  value,
 			})
 
-			state, err = e.Logic.ActionFunc(state, action)
+			state, err = e.Logic.TransitionFunc(state, action)
 			if err != nil {
 				return err
 			}

@@ -4,13 +4,13 @@ import (
 	"fmt"
 	"math/rand/v2"
 
-	"slices"
 	"errors"
 	"github.com/sw965/crow/game"
 	"github.com/sw965/crow/game/sequential"
 	"github.com/sw965/crow/pucb"
 	"github.com/sw965/omw/parallel"
 	"maps"
+	"slices"
 	"sync"
 )
 
@@ -33,9 +33,9 @@ type LeafNodeEvalByAgent[Ag comparable] map[Ag]float32
 type LeafNodeEvalByAgentFunc[S any, Ag comparable] func(S) (LeafNodeEvalByAgent[Ag], error)
 
 type Node[S any, Ac, Ag comparable] struct {
-	State           S
-	Agent           Ag
-	virtualSelector pucb.VirtualSelector[Ac]
+	State             S
+	Agent             Ag
+	virtualSelector   pucb.VirtualSelector[Ac]
 	nextNodesByAction map[Ac]Nodes[S, Ac, Ag]
 	sync.Mutex
 }
@@ -56,7 +56,7 @@ func (nodes Nodes[S, Ac, Ag]) FindByState(state S, eq sequential.EqualFunc[S]) (
 }
 
 type selectBuffer[S any, Ac, Ag comparable] struct {
-	node *Node[S, Ac, Ag]
+	node   *Node[S, Ac, Ag]
 	action Ac
 }
 
@@ -188,9 +188,9 @@ func (e Engine[S, Ac, Ag]) NewNode(state S) (*Node[S, Ac, Ag], error) {
 	}
 
 	return &Node[S, Ac, Ag]{
-		State:           state,
-		Agent:           agent,
-		virtualSelector: s,
+		State:             state,
+		Agent:             agent,
+		virtualSelector:   s,
 		nextNodesByAction: make(map[Ac]Nodes[S, Ac, Ag], e.NextNodesCap),
 	}, nil
 }
@@ -223,7 +223,7 @@ func (e Engine[S, Ac, Ag]) SelectExpansionBackward(node *Node[S, Ac, Ag], capaci
 		node.Unlock()
 		buffers = append(buffers, selectBuffer[S, Ac, Ag]{node: node, action: action})
 
-		state, err = e.Game.Logic.ActionFunc(state, action)
+		state, err = e.Game.Logic.TransitionFunc(state, action)
 		if err != nil {
 			return nil, 0, err
 		}

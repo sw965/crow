@@ -7,12 +7,12 @@ import (
 
 type LegalActionsByAgent[Ac, Ag comparable] map[Ag][]Ac
 type LegalActionsByAgentFunc[S any, Ac, Ag comparable] func(S) LegalActionsByAgent[Ac, Ag]
-type ActionFunc[S any, Ac, Ag comparable] func(S, map[Ag]Ac) (S, error)
+type TransitionFunc[S any, Ac, Ag comparable] func(S, map[Ag]Ac) (S, error)
 type EqualFunc[S any] func(S, S) bool
 
 type Logic[S any, Ac, Ag comparable] struct {
 	LegalActionsByAgentFunc LegalActionsByAgentFunc[S, Ac, Ag]
-	ActionFunc              ActionFunc[S, Ac, Ag]
+	TransitionFunc              TransitionFunc[S, Ac, Ag]
 	EqualFunc             EqualFunc[S]
 }
 
@@ -20,8 +20,8 @@ func (l Logic[S, Ac, Ag]) Validate() error {
 	if l.LegalActionsByAgentFunc == nil {
 		return fmt.Errorf("LegalActionsByAgentFunc must not be nil")
 	}
-	if l.ActionFunc == nil {
-		return fmt.Errorf("ActionFunc must not be nil")
+	if l.TransitionFunc == nil {
+		return fmt.Errorf("TransitionFunc must not be nil")
 	}
 	if l.EqualFunc == nil {
 		return fmt.Errorf("EqualFunc must not be nil")

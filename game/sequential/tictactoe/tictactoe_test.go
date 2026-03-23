@@ -139,7 +139,7 @@ func TestLegalActions(t *testing.T) {
 	}
 }
 
-func TestActionFunc(t *testing.T) {
+func TestTransitionFunc(t *testing.T) {
 	tests := []struct {
 		name      string
 		state     ttt.State
@@ -342,7 +342,7 @@ func TestActionFunc(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Helper()
-			got, err := ttt.ActionFunc(tc.state, tc.action)
+			got, err := ttt.TransitionFunc(tc.state, tc.action)
 			if tc.wantErr {
 				if err == nil {
 					t.Fatalf("エラーを期待したが、nilが返された")

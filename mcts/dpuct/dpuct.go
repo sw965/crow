@@ -62,7 +62,7 @@ func (nodes Nodes[S, Ac, Ag]) FindByState(state S, eq simultaneous.EqualFunc[S])
 }
 
 type selectBuffer[S any, Ac, Ag comparable] struct {
-	node        *Node[S, Ac, Ag]
+	node          *Node[S, Ac, Ag]
 	actionByAgent map[Ag]Ac
 }
 
@@ -83,7 +83,7 @@ func (ss selectBuffers[S, Ac, Ag]) backward(evals LeafNodeEvalByAgent[Ag]) {
 				)
 				panic(msg)
 			}
-			
+
 			// 未観測のカウントを消し、実観測データを反映する
 			node.virtualSelectors[agent][action].DecrementO()
 			node.virtualSelectors[agent][action].AddW(eval)
@@ -234,7 +234,7 @@ func (e Engine[S, Ac, Ag]) SelectExpansionBackward(node *Node[S, Ac, Ag], capaci
 
 		buffers = append(buffers, selectBuffer[S, Ac, Ag]{node: node, actionByAgent: actionByAgent})
 
-		state, err = e.Game.Logic.ActionFunc(state, actionByAgent)
+		state, err = e.Game.Logic.TransitionFunc(state, actionByAgent)
 		if err != nil {
 			return nil, 0, err
 		}

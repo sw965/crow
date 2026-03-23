@@ -45,7 +45,7 @@ func TestDPUCT(t *testing.T) {
 		}
 	}
 
-	actionFunc := func(rps RockPaperScissors, actions map[int]Hand) (RockPaperScissors, error) {
+	transitionFunc := func(rps RockPaperScissors, actions map[int]Hand) (RockPaperScissors, error) {
 		return RockPaperScissors{
 			Finished: true,
 			Hand1:    actions[agent1],
@@ -83,8 +83,8 @@ func TestDPUCT(t *testing.T) {
 
 	gameLogic := simultaneous.Logic[RockPaperScissors, Hand, int]{
 		LegalActionsByAgentFunc: legalActionsByAgentFunc,
-		ActionFunc:              actionFunc,
-		EqualFunc:             equalFunc,
+		TransitionFunc:          transitionFunc,
+		EqualFunc:               equalFunc,
 	}
 
 	gameEngine := simultaneous.Engine[RockPaperScissors, Hand, int]{
@@ -104,7 +104,7 @@ func TestDPUCT(t *testing.T) {
 	// PolicyとPlayoutの設定
 	mcts.SetUniformPolicyFunc()
 	accr := simultaneous.NewRandomActorCritic[RockPaperScissors, Hand, int]()
-	
+
 	// Playout用のRNGを渡してセットアップ
 	playoutRng := randx.NewPCG()
 	mcts.SetPlayout(accr, playoutRng)

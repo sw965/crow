@@ -89,10 +89,10 @@ func LegalActions(state State) []Action {
 	return actions
 }
 
-// ActionFunc applies a action to the current state and returns the next state.
+// TransitionFunc applies a action to the current state and returns the next state.
 //
-// ActionFuncは、現在の状態に行動を適用し、次の状態を返します。
-func ActionFunc(state State, action Action) (State, error) {
+// TransitionFuncは、現在の状態に行動を適用し、次の状態を返します。
+func TransitionFunc(state State, action Action) (State, error) {
 	if state.Turn == EmptyMark {
 		return State{}, fmt.Errorf("")
 	}
@@ -129,7 +129,7 @@ func ActionFunc(state State, action Action) (State, error) {
 func NewLogic() sequential.Logic[State, Action, Mark] {
 	return sequential.Logic[State, Action, Mark]{
 		LegalActionsFunc: LegalActions,
-		ActionFunc:       ActionFunc,
+		TransitionFunc:   TransitionFunc,
 		EqualFunc: func(s1, s2 State) bool {
 			return s1 == s2
 		},
