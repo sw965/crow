@@ -1,2 +1,4 @@
-github.com/sw965/omw v0.0.0-20260216135110-ddfa2ea43de7 h1:tom1lnMSypRO9f1UT3o8Q7INpHgpwJlrLYhlo3j7te8=
-github.com/sw965/omw v0.0.0-20260216135110-ddfa2ea43de7/go.mod h1:6sxDC1FbUj7Am/WJkeefmNhGdhVNoXjSLgdraR67R5U=
+github.com/sw965/omw v0.0.0-20260723025923-722caecbf137 h1:FwUM0RoWmtHsmpMnL/FS9/Kmas5rIY7DLqQOdb5KXa8=
+github.com/sw965/omw v0.0.0-20260723025923-722caecbf137/go.mod h1:6sxDC1FbUj7Am/WJkeefmNhGdhVNoXjSLgdraR67R5U=
+golang.org/x/sys v0.40.0 h1:DBZZqJ2Rkml6QMQsZywtnjnnGvHza6BTfYFWY9kjEWQ=
+golang.org/x/sys v0.40.0/go.mod h1:OgkHotnGiDImocRcuBABYBEXf8A9a87e/uXjp9XT3ks=

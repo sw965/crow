@@ -10,7 +10,7 @@ type PolicyFunc[S any, Ac comparable] func(S, []Ac) (game.Policy[Ac], error)
 func UniformPolicyFunc[S any, Ac comparable](state S, legalActions []Ac) (game.Policy[Ac], error) {
 	n := len(legalActions)
 	if n == 0 {
-		return nil, fmt.Errorf("後でエラーメッセージを書く")
+		return nil, fmt.Errorf("legalActionsが空です: len(legalActions) > 0 であるべき")
 	}
 
 	p := 1.0 / float32(n)
@@ -47,10 +47,10 @@ func NewRandomActorCritic[S any, Ac, Ag comparable]() ActorCritic[S, Ac, Ag] {
 
 func (a ActorCritic[S, Ac, Ag]) Validate() error {
 	if a.PolicyValueFunc == nil {
-		return fmt.Errorf("PolicyValueFunc must not be nil")
+		return fmt.Errorf("PolicyValueFuncがnilです")
 	}
 	if a.SelectFunc == nil {
-		return fmt.Errorf("SelectFunc must not be nil")
+		return fmt.Errorf("SelectFuncがnilです")
 	}
 	return nil
 }

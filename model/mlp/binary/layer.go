@@ -1,33 +1,36 @@
 package binary
 
 import (
+	"cmp"
 	"encoding/gob"
 	"fmt"
-	"github.com/sw965/omw/encoding/gobx"
-	"github.com/sw965/omw/mathx"
-	"github.com/sw965/omw/mathx/bitsx"
-	"github.com/sw965/omw/mathx/randx"
-	"github.com/sw965/omw/parallel"
-	//"github.com/sw965/omw/slicesx"
-	"cmp"
 	"math"
 	"math/rand/v2"
 	"slices"
+
+	"github.com/sw965/omw/encoding/gobx"
+	"github.com/sw965/omw/mathx/bitsx"
+	"github.com/sw965/omw/mathx/randx"
+	"github.com/sw965/omw/parallel"
 )
 
 type H []int8
 
-type SharedContext struct {
+// Hの初期絶対値。大きくすると重み反転までに必要な更新回数が増え、序盤の学習が沈黙する。
+// bep_report 実験3: ±31では3〜4エポック完全沈黙、±4なら1エポック目から立ち上がる。
+const hInitAbs = 4
+
+type SharedHyperparameters struct {
 	GateDropThresholdScale float32
 	NoiseStdScale          float32
 	GroupSize              int
 }
 
-func NewSharedContext() SharedContext {
-	return SharedContext{
-		GateDropThresholdScale:1.0,
-		NoiseStdScale:0.5,
-		GroupSize:4,
+func NewSharedHyperparameters() SharedHyperparameters {
+	return SharedHyperparameters{
+		GateDropThresholdScale: 1.0,
+		NoiseStdScale:          0.5,
+		GroupSize:              4,
 	}
 }
 
@@ -37,7 +40,7 @@ type Layer interface {
 	NewZerosDeltas() Deltas
 	OutputShape(xRows, xCols int) (int, int, error)
 	Update(Deltas, float32, *rand.Rand) error
-	setSharedContext(*SharedContext) error
+	setSharedHyperparameters(*SharedHyperparameters) error
 }
 
 type Backward func(*bitsx.Matrix, Deltas) (*bitsx.Matrix, error)
@@ -45,8 +48,8 @@ type Backwards []Backward
 
 func (bs Backwards) Propagate(t *bitsx.Matrix, seqDelta SeqDelta) (*bitsx.Matrix, error) {
 	var err error
-	for layerI := len(bs) - 1; layerI >= 0; layerI-- {
-		t, err = bs[layerI](t, seqDelta[layerI])
+	for layerIdx := len(bs) - 1; layerIdx >= 0; layerIdx-- {
+		t, err = bs[layerIdx](t, seqDelta[layerIdx])
 		if err != nil {
 			return nil, err
 		}
@@ -57,22 +60,22 @@ func (bs Backwards) Propagate(t *bitsx.Matrix, seqDelta SeqDelta) (*bitsx.Matrix
 type Dense struct {
 	W  *bitsx.Matrix
 	WT *bitsx.Matrix
-	H  []int8
+	H  H
 
 	GateDropThresholdBase int
 	NoiseStdBase          float32
-	sharedContext         *SharedContext
+	sharedHyperparameters *SharedHyperparameters
 }
 
 func NewDense(wRows, wCols int, rng *rand.Rand) (*Dense, error) {
 	w, err := bitsx.NewRandMatrix(wRows, wCols, 0, rng)
 	if err != nil {
-		return nil, fmt.Errorf("後でエラーメッセージを書く")
+		return nil, fmt.Errorf("重み行列の生成に失敗: %w", err)
 	}
 
 	wt, err := w.Transpose()
 	if err != nil {
-		return nil, fmt.Errorf("後でエラーメッセージを書く")
+		return nil, fmt.Errorf("重み行列の転置に失敗: %w", err)
 	}
 
 	h := make(H, wRows*wCols)
@@ -82,16 +85,15 @@ func NewDense(wRows, wCols int, rng *rand.Rand) (*Dense, error) {
 		ctx.ScanBits(func(i, col, colT int) error {
 			wBit := wWord >> uint64(i) & 1
 			if wBit == 1 {
-				hWord[i] = math.MaxInt8 / 4
+				hWord[i] = hInitAbs
 			} else {
-				hWord[i] = math.MinInt8 / 4
+				hWord[i] = -hInitAbs
 			}
 			return nil
 		})
 		return nil
 	})
 
-	// mathx.Sqrtにする？
 	noiseStdBase := float32(math.Sqrt(float64(w.Cols)))
 	gateDropThresholdBase := int(noiseStdBase)
 
@@ -105,11 +107,11 @@ func NewDense(wRows, wCols int, rng *rand.Rand) (*Dense, error) {
 }
 
 func (d *Dense) GateDropThreshold() int {
-	return int(d.sharedContext.GateDropThresholdScale * float32(d.GateDropThresholdBase))
+	return int(d.sharedHyperparameters.GateDropThresholdScale * float32(d.GateDropThresholdBase))
 }
 
 func (d *Dense) NoiseStd() float32 {
-	return d.sharedContext.NoiseStdScale * d.NoiseStdBase
+	return d.sharedHyperparameters.NoiseStdScale * d.NoiseStdBase
 }
 
 func (d *Dense) Forward(x *bitsx.Matrix, rng *rand.Rand) (*bitsx.Matrix, Backward, error) {
@@ -178,7 +180,7 @@ func (d *Dense) Forward(x *bitsx.Matrix, rng *rand.Rand) (*bitsx.Matrix, Backwar
 			// 引数iに代入される値は、100ビットの場合、一週目は0～63、二週目は64～99
 			tCtx.ScanBits(func(i, col, colT int) error {
 				zi := zWord[i]
-				absZi := mathx.Abs(zi)
+				absZi := int(math.Abs(float64(zi)))
 
 				if absZi <= gateDropThreshold {
 					keepGateWord |= (1 << uint64(i))
@@ -192,7 +194,7 @@ func (d *Dense) Forward(x *bitsx.Matrix, rng *rand.Rand) (*bitsx.Matrix, Backwar
 
 				// 不正解なら更新対象
 				if tBit != yBit {
-					wordMismatches = append(wordMismatches, wordMismatch{absZi: absZi, tBit: tBit, col:col})
+					wordMismatches = append(wordMismatches, wordMismatch{absZi: absZi, tBit: tBit, col: col})
 				}
 				return nil
 			})
@@ -203,7 +205,7 @@ func (d *Dense) Forward(x *bitsx.Matrix, rng *rand.Rand) (*bitsx.Matrix, Backwar
 				return cmp.Compare(a.absZi, b.absZi)
 			})
 
-			updateK := len(zWord) / d.sharedContext.GroupSize
+			updateK := len(zWord) / d.sharedHyperparameters.GroupSize
 			if updateK == 0 {
 				updateK = 1
 			}
@@ -292,14 +294,14 @@ func (d *Dense) NewZerosDeltas() Deltas {
 
 func (d *Dense) OutputShape(xRows, xCols int) (int, int, error) {
 	if xCols != d.W.Cols {
-		return 0, 0, fmt.Errorf("input cols %d does not match layer input dim %d", xCols, d.W.Cols)
+		return 0, 0, fmt.Errorf("入力の列数が不一致: xCols = %d, W.Cols = %d", xCols, d.W.Cols)
 	}
 	return xRows, d.W.Rows, nil
 }
 
 func (d *Dense) Update(deltas Deltas, lr float32, rng *rand.Rand) error {
 	if len(deltas) != 1 {
-		return fmt.Errorf("後でエラーメッセージを書く")
+		return fmt.Errorf("Deltasの数が不正: len(deltas) = %d: Dense層は1つのDeltaを持つべき", len(deltas))
 	}
 
 	delta := deltas[0]
@@ -318,9 +320,9 @@ func (d *Dense) Update(deltas Deltas, lr float32, rng *rand.Rand) error {
 			clipped := int8(max(math.MinInt8, min(newVal, math.MaxInt8)))
 			hWord[i] = clipped
 
-			isOldPlus := old >= 0
-			isNewPlus := clipped >= 0
-			if isOldPlus != isNewPlus {
+			oldIsNonNegative := old >= 0
+			newIsNonNegative := clipped >= 0
+			if oldIsNonNegative != newIsNonNegative {
 				flips |= (1 << uint64(i))
 				err := d.WT.Toggle(col, ctx.Row)
 				if err != nil {
@@ -335,8 +337,8 @@ func (d *Dense) Update(deltas Deltas, lr float32, rng *rand.Rand) error {
 	return err
 }
 
-func (d *Dense) setSharedContext(ctx *SharedContext) error {
-	d.sharedContext = ctx
+func (d *Dense) setSharedHyperparameters(ctx *SharedHyperparameters) error {
+	d.sharedHyperparameters = ctx
 	return nil
 }
 
@@ -346,7 +348,7 @@ func LoadSequence(path string) (Sequence, error) {
 	return gobx.Load[Sequence](path)
 }
 
-func (s Sequence) Forwards(x *bitsx.Matrix, rng *rand.Rand) (*bitsx.Matrix, Backwards, error) {
+func (s Sequence) Forward(x *bitsx.Matrix, rng *rand.Rand) (*bitsx.Matrix, Backwards, error) {
 	var backward Backward
 	var err error
 	backwards := make(Backwards, len(s))
@@ -380,7 +382,7 @@ func (s Sequence) OutputShape(xRows, xCols int) (int, int, error) {
 			return 0, 0, fmt.Errorf("layer %d: %w", i, err)
 		}
 		if xRows <= 0 || xCols <= 0 {
-			return 0, 0, fmt.Errorf("後でエラーメッセージを書く")
+			return 0, 0, fmt.Errorf("layer %d: 出力形状が不正: rows = %d, cols = %d: どちらも正であるべき", i, xRows, xCols)
 		}
 	}
 	yRows, yCols := xRows, xCols
@@ -398,18 +400,18 @@ func (s Sequence) Update(seqDelta SeqDelta, lr float32, rngs []*rand.Rand) error
 		p = numLayers
 	}
 
-	err := parallel.For(numLayers, p, func(workerId, idx int) error {
+	err := parallel.For(numLayers, p, func(workerID, idx int) error {
 		layer := s[idx]
 		layerDelta := seqDelta[idx]
-		rng := rngs[workerId]
+		rng := rngs[workerID]
 		return layer.Update(layerDelta, lr, rng)
 	})
 	return err
 }
 
-func (s Sequence) SetSharedContext(ctx *SharedContext) error {
+func (s Sequence) SetSharedHyperparameters(ctx *SharedHyperparameters) error {
 	for i := range s {
-		err := s[i].setSharedContext(ctx)
+		err := s[i].setSharedHyperparameters(ctx)
 		if err != nil {
 			return err
 		}

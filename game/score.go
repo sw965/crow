@@ -13,12 +13,12 @@ func NewRankByAgent[Ag comparable](agentsPerRank [][]Ag) (RankByAgent[Ag], error
 	rank := 1
 	for _, agents := range agentsPerRank {
 		if len(agents) == 0 {
-			return nil, fmt.Errorf("agents list for a rank cannot be empty")
+			return nil, fmt.Errorf("ある順位のエージェントのリストが空です: 各順位に1体以上のエージェントが必要")
 		}
 
 		for _, agent := range agents {
 			if _, ok := ranks[agent]; ok {
-				return nil, fmt.Errorf("duplicate agent detected: %v", agent)
+				return nil, fmt.Errorf("エージェントが重複しています: agent = %v", agent)
 			}
 			ranks[agent] = rank
 		}
@@ -36,7 +36,7 @@ func (r RankByAgent[Ag]) Validate() error {
 	ranks := make([]int, 0, n)
 	for _, rank := range r {
 		if rank < 1 {
-			return fmt.Errorf("rank must be >= 1, got %d", rank)
+			return fmt.Errorf("rankが不正(rank < 1): rank = %d: rank >= 1 であるべき", rank)
 		}
 		ranks = append(ranks, rank)
 	}
@@ -44,7 +44,7 @@ func (r RankByAgent[Ag]) Validate() error {
 
 	current := ranks[0]
 	if current != 1 {
-		return fmt.Errorf("ranks must start at 1, got %d", current)
+		return fmt.Errorf("最小のrankが不正: rank = %d: 最小のrankは1であるべき", current)
 	}
 	expected := current + 1
 
@@ -57,7 +57,7 @@ func (r RankByAgent[Ag]) Validate() error {
 			current = rank
 			expected = rank + 1
 		} else {
-			return fmt.Errorf("invalid rank sequence: expected %d, got %d", expected, rank)
+			return fmt.Errorf("rankの並びが不正: rank = %d: 次のrankは %d であるべき", rank, expected)
 		}
 	}
 	return nil

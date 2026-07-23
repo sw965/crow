@@ -2,12 +2,13 @@ package game
 
 import (
 	"fmt"
-	"github.com/sw965/omw/mathx"
-	"github.com/sw965/omw/mathx/randx"
-	"github.com/sw965/omw/slicesx"
 	"maps"
+	"math"
 	"math/rand/v2"
 	"slices"
+
+	"github.com/sw965/omw/mathx/randx"
+	"github.com/sw965/omw/slicesx"
 )
 
 type Policy[Ac comparable] map[Ac]float32
@@ -15,33 +16,33 @@ type Policy[Ac comparable] map[Ac]float32
 func (p Policy[Ac]) ValidateForLegalActions(legalActions []Ac, checkUnique bool) error {
 	if checkUnique {
 		if !slicesx.IsUnique(legalActions) {
-			return fmt.Errorf("legalActions contains duplicates")
+			return fmt.Errorf("legalActionsが重複しています")
 		}
 	}
 
 	if len(legalActions) == 0 {
-		return fmt.Errorf("legalActions must not be empty")
+		return fmt.Errorf("legalActionsが空です: len(legalActions) > 0 であるべき")
 	}
 
 	if len(p) != len(legalActions) {
-		return fmt.Errorf("policy size (%d) does not match legal actions count (%d)", len(p), len(legalActions))
+		return fmt.Errorf("policyとlegalActionsの要素数が不一致: len(policy) = %d, len(legalActions) = %d", len(p), len(legalActions))
 	}
 
 	var sum float32
 	for _, a := range legalActions {
 		v, ok := p[a]
 		if !ok {
-			return fmt.Errorf("policy is missing probability for action: %v", a)
+			return fmt.Errorf("policyにactionの確率が存在しません: action = %v", a)
 		}
 
-		if v < 0 || mathx.IsNaN(v) || mathx.IsInf(v, 0) {
-			return fmt.Errorf("invalid probability value %f for action: %v", v, a)
+		if v < 0 || math.IsNaN(float64(v)) || math.IsInf(float64(v), 0) {
+			return fmt.Errorf("確率が不正(負/NaN/Inf): action = %v, p = %f", a, v)
 		}
 		sum += v
 	}
 
 	if sum == 0 {
-		return fmt.Errorf("sum of policy probabilities is zero")
+		return fmt.Errorf("policyの確率の合計が0です: 合計は正であるべき")
 	}
 	return nil
 }
@@ -49,18 +50,22 @@ func (p Policy[Ac]) ValidateForLegalActions(legalActions []Ac, checkUnique bool)
 type SelectFunc[Ac, Ag comparable] func(Policy[Ac], Ag, *rand.Rand) (Ac, error)
 
 func MaxSelectFunc[Ac, Ag comparable](policy Policy[Ac], agent Ag, rng *rand.Rand) (Ac, error) {
+	if len(policy) == 0 {
+		var zero Ac
+		return zero, fmt.Errorf("policyが空です: len(policy) > 0 であるべき")
+	}
+
 	keys := slices.Collect(maps.Keys(policy))
-	max := policy[keys[0]]
-	// capの確保をする。
+	maxP := policy[keys[0]]
 	actions := []Ac{keys[0]}
 
 	for _, k := range keys[1:] {
 		v := policy[k]
 		switch {
-		case v > max:
-			max = v
+		case v > maxP:
+			maxP = v
 			actions = []Ac{k}
-		case v == max:
+		case v == maxP:
 			actions = append(actions, k)
 		}
 	}

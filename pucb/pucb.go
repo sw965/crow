@@ -13,48 +13,66 @@ import (
 	"fmt"
 	"math"
 	"math/rand/v2"
-	"github.com/sw965/omw/mathx"
+
 	"github.com/sw965/omw/mathx/randx"
 )
+
+func sqrt32(x float32) float32 {
+	return float32(math.Sqrt(float64(x)))
+}
+
+func log32(x float32) float32 {
+	return float32(math.Log(float64(x)))
+}
+
+func isNaN32(x float32) bool {
+	return math.IsNaN(float64(x))
+}
+
+func isInf32(x float32) bool {
+	return math.IsInf(float64(x), 0)
+}
 
 type Func func(float32, float32, int, int) float32
 
 func NewAlphaGoFunc(c float32) Func {
 	return func(q, p float32, sumVisits, selfVisits int) float32 {
 		n := float32(1 + selfVisits)
-		exploration := c * p * mathx.Sqrt(float32(sumVisits)) / n
+		exploration := c * p * sqrt32(float32(sumVisits)) / n
 		return q + exploration
 	}
 }
 
-func NewAlphaZeroFunc(cinit, cbase float32) (Func, error) {
-	if mathx.IsNaN(cinit) || mathx.IsInf(cinit, 0) {
-		return nil, fmt.Errorf("cinitが不正(NaN/Inf): cinit=%.6g", cinit)
+func NewAlphaZeroFunc(cInit, cBase float32) (Func, error) {
+	if isNaN32(cInit) || isInf32(cInit) {
+		return nil, fmt.Errorf("cinitが不正(NaN/Inf): cinit=%.6g", cInit)
 	}
 
-	if cbase <= 0 || mathx.IsNaN(cbase) || mathx.IsInf(cbase, 0) {
-		return nil, fmt.Errorf("cbaseが不正(<=0/NaN/Inf): cbase=%.6g", cbase)
+	if cBase <= 0 || isNaN32(cBase) || isInf32(cBase) {
+		return nil, fmt.Errorf("cbaseが不正(<=0/NaN/Inf): cbase=%.6g", cBase)
 	}
 
 	return func(q, p float32, sumVisits, selfVisits int) float32 {
 		n := float32(1 + selfVisits)
-		c := cinit + mathx.Log((float32(sumVisits)+cbase+1.0)/cbase)
-		exploration := c * p * mathx.Sqrt(float32(sumVisits)) / n
+		c := cInit + log32((float32(sumVisits)+cBase+1.0)/cBase)
+		exploration := c * p * sqrt32(float32(sumVisits)) / n
 		return q + exploration
 	}, nil
 }
 
 type Calculator struct {
-	Func         Func
-	P            float32
-	w            float32
-	visits       int
-	o            int
+	Func   Func
+	P      float32
+	w      float32
+	visits int
+	// pending は「選択済みだが、まだ結果を観測していない」回数。
+	// 並列探索で複数のワーカーが同じ行動に集中しないようにする、virtual lossの仕組みに使う。
+	pending      int
 	VirtualValue float32
 }
 
 func (c *Calculator) AddW(v float32) error {
-	if mathx.IsNaN(v) || mathx.IsInf(v, 0) {
+	if isNaN32(v) || isInf32(v) {
 		return fmt.Errorf("vが不正(NaN/Inf): v=%.6g", v)
 	}
 	c.w += v
@@ -65,28 +83,28 @@ func (c *Calculator) IncrementVisits() {
 	c.visits += 1
 }
 
-func (c *Calculator) O() int {
-	return c.o
+func (c *Calculator) Pending() int {
+	return c.pending
 }
 
-func (c *Calculator) IncrementO() {
-	c.o += 1
+func (c *Calculator) IncrementPending() {
+	c.pending += 1
 }
 
-func (c *Calculator) DecrementO() error {
-	if c.o == 0 {
-		return fmt.Errorf("oが不正(underflow): o=0")
+func (c *Calculator) DecrementPending() error {
+	if c.pending == 0 {
+		return fmt.Errorf("pendingが不正(underflow): pending = 0")
 	}
-	c.o -= 1
+	c.pending -= 1
 	return nil
 }
 
 func (c *Calculator) Visits() int {
-	return c.visits + c.o
+	return c.visits + c.pending
 }
 
 func (c *Calculator) W() float32 {
-	return c.w + (c.VirtualValue * float32(c.o))
+	return c.w + (c.VirtualValue * float32(c.pending))
 }
 
 func (c *Calculator) Q() float32 {
@@ -108,7 +126,7 @@ func (c *Calculator) ValidateForSumVisits(sumVisits int) error {
 		return fmt.Errorf("sumVisits=%d < visits=%d", sumVisits, visits)
 	}
 
-	if p := float64(c.P); c.P < 0 || math.IsNaN(p) || math.IsInf(p, 0) {
+	if c.P < 0 || isNaN32(c.P) || isInf32(c.P) {
 		return fmt.Errorf("Pが不正(負/NaN/Inf): P=%.6g", c.P)
 	}
 
@@ -127,12 +145,11 @@ func (c *Calculator) U(sumVisits int) (float32, error) {
 	q := c.Q()
 	u := c.Func(q, c.P, sumVisits, visits)
 
-	if v := float64(u); math.IsNaN(v) || math.IsInf(v, 0) {
+	if isNaN32(u) || isInf32(u) {
 		return 0.0, fmt.Errorf(
 			"Funcの戻り値が不正(NaN/Inf): q=%.6g P=%.6g sumVisits=%d visits=%d u=%.6g",
 			q, c.P, sumVisits, visits, u,
 		)
-
 	}
 	return u, nil
 }
@@ -147,7 +164,7 @@ func (s VirtualSelector[K]) SumVisits() int {
 	return sum
 }
 
-func (s VirtualSelector[K]) VisitPercentByKey() map[K]float32 {
+func (s VirtualSelector[K]) VisitRatioByKey() map[K]float32 {
 	n := len(s)
 	if n == 0 {
 		return map[K]float32{}

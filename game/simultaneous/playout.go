@@ -2,13 +2,13 @@ package simultaneous
 
 import (
 	"fmt"
+	"math/rand/v2"
+	"slices"
+
+	"github.com/sw965/crow/game"
 	"github.com/sw965/omw/mathx/randx"
 	"github.com/sw965/omw/parallel"
 	"github.com/sw965/omw/slicesx"
-	"maps"
-	"math/rand/v2"
-	"slices"
-	"github.com/sw965/crow/game"
 )
 
 func (e *Engine[S, Ac, Ag]) Playouts(inits []S, accr ActorCritic[S, Ac, Ag], rngs []*rand.Rand) ([]S, error) {
@@ -24,11 +24,12 @@ func (e *Engine[S, Ac, Ag]) Playouts(inits []S, accr ActorCritic[S, Ac, Ag], rng
 	p := len(rngs)
 	finals := make([]S, n)
 
-	err := parallel.For(n, p, func(workerId, idx int) error {
-		rng := rngs[workerId]
+	err := parallel.For(n, p, func(workerID, idx int) error {
+		rng := rngs[workerID]
 		state := inits[idx]
+		numSteps := 0
 		for {
-			isEnd, err := e.IsEnd(state)
+			isEnd, err := e.IsTerminal(state)
 			if err != nil {
 				return err
 			}
@@ -37,20 +38,24 @@ func (e *Engine[S, Ac, Ag]) Playouts(inits []S, accr ActorCritic[S, Ac, Ag], rng
 				break
 			}
 
-			legalActionsByAgent := e.Logic.LegalActionsByAgentFunc(state)
-			if len(legalActionsByAgent) == 0 {
-				return fmt.Errorf("game is not ended but no legal actions are available")
+			if e.MaxSteps > 0 && numSteps >= e.MaxSteps {
+				return fmt.Errorf("手数がMaxSteps(%d)に達してもゲームが終了しませんでした", e.MaxSteps)
 			}
 
-			jointPolicy, _, err := accr.PolicyValueFunc(state, legalActionsByAgent)
+			legalActionsByAgent := e.Logic.LegalActionsByAgentFunc(state)
+			if len(legalActionsByAgent) == 0 {
+				return fmt.Errorf("ゲームが終了していないのに合法手がありません")
+			}
+
+			policyByAgent, _, err := accr.PolicyValueFunc(state, legalActionsByAgent)
 			if err != nil {
 				return err
 			}
 
-			jointAction := make(map[Ag]Ac, len(e.Agents))
+			jointAction := make(JointAction[Ac, Ag], len(e.Agents))
 			for _, agent := range e.Agents {
 				legalActions := legalActionsByAgent[agent]
-				policy := jointPolicy[agent]
+				policy := policyByAgent[agent]
 
 				err = policy.ValidateForLegalActions(legalActions, false)
 				if err != nil {
@@ -68,6 +73,7 @@ func (e *Engine[S, Ac, Ag]) Playouts(inits []S, accr ActorCritic[S, Ac, Ag], rng
 			if err != nil {
 				return err
 			}
+			numSteps++
 		}
 		finals[idx] = state
 		return nil
@@ -75,7 +81,7 @@ func (e *Engine[S, Ac, Ag]) Playouts(inits []S, accr ActorCritic[S, Ac, Ag], rng
 	return finals, err
 }
 
-func (e *Engine[S, Ac, Ag]) RecordPlayouts(inits []S, accr ActorCritic[S, Ac, Ag], rngs []*rand.Rand, stepCap int) ([]Record[S, Ac, Ag], error) {
+func (e *Engine[S, Ac, Ag]) RecordPlayouts(inits []S, accr ActorCritic[S, Ac, Ag], rngs []*rand.Rand, initStepsCap int) ([]Record[S, Ac, Ag], error) {
 	if err := e.Validate(); err != nil {
 		return nil, err
 	}
@@ -84,13 +90,13 @@ func (e *Engine[S, Ac, Ag]) RecordPlayouts(inits []S, accr ActorCritic[S, Ac, Ag
 	p := len(rngs)
 	records := make([]Record[S, Ac, Ag], n)
 
-	err := parallel.For(n, p, func(workerId, idx int) error {
-		rng := rngs[workerId]
+	err := parallel.For(n, p, func(workerID, idx int) error {
+		rng := rngs[workerID]
 		state := inits[idx]
-		steps := make([]Step[S, Ac, Ag], 0, stepCap)
+		steps := make([]Step[S, Ac, Ag], 0, initStepsCap)
 
 		for {
-			isEnd, err := e.IsEnd(state)
+			isEnd, err := e.IsTerminal(state)
 			if err != nil {
 				return err
 			}
@@ -98,20 +104,24 @@ func (e *Engine[S, Ac, Ag]) RecordPlayouts(inits []S, accr ActorCritic[S, Ac, Ag
 				break
 			}
 
-			legalActionsByAgent := e.Logic.LegalActionsByAgentFunc(state)
-			if len(legalActionsByAgent) == 0 {
-				return fmt.Errorf("game is not ended but no legal actions are available")
+			if e.MaxSteps > 0 && len(steps) >= e.MaxSteps {
+				return fmt.Errorf("手数がMaxSteps(%d)に達してもゲームが終了しませんでした", e.MaxSteps)
 			}
 
-			jointPolicy, jointValue, err := accr.PolicyValueFunc(state, legalActionsByAgent)
+			legalActionsByAgent := e.Logic.LegalActionsByAgentFunc(state)
+			if len(legalActionsByAgent) == 0 {
+				return fmt.Errorf("ゲームが終了していないのに合法手がありません")
+			}
+
+			policyByAgent, valueByAgent, err := accr.PolicyValueFunc(state, legalActionsByAgent)
 			if err != nil {
 				return err
 			}
 
-			jointAction := make(map[Ag]Ac, len(e.Agents))
+			jointAction := make(JointAction[Ac, Ag], len(e.Agents))
 			for _, agent := range e.Agents {
 				legalActions := legalActionsByAgent[agent]
-				policy := jointPolicy[agent]
+				policy := policyByAgent[agent]
 
 				if err := policy.ValidateForLegalActions(legalActions, false); err != nil {
 					return err
@@ -125,10 +135,10 @@ func (e *Engine[S, Ac, Ag]) RecordPlayouts(inits []S, accr ActorCritic[S, Ac, Ag
 			}
 
 			steps = append(steps, Step[S, Ac, Ag]{
-				State:       state,
+				State:         state,
 				JointAction:   jointAction,
-				PolicyByAgent: jointPolicy,
-				ValueByAgent:  jointValue,
+				PolicyByAgent: policyByAgent,
+				ValueByAgent:  valueByAgent,
 			})
 
 			state, err = e.Logic.TransitionFunc(state, jointAction)
@@ -153,168 +163,80 @@ func (e *Engine[S, Ac, Ag]) RecordPlayouts(inits []S, accr ActorCritic[S, Ac, Ag
 	return records, err
 }
 
-type CrossPlayoutRecorder[S any, Ac, Ag comparable] struct {
-	engine  *Engine[S, Ac, Ag]
-	inits   []S
-	accrPerms [][]ActorCritic[S, Ac, Ag]
-	rands   []*rand.Rand
-	stepCap int
-
-	currentIdx         int
-	numGames           int
-	totalScoreByAccrName map[game.ActorCriticName]float32
-	numGamesByAccrName   map[game.ActorCriticName]int
-}
-
-func (e *Engine[S, Ac, Ag]) NewCrossPlayoutRecorder(inits []S, accrs []ActorCritic[S, Ac, Ag], p int) (*CrossPlayoutRecorder[S, Ac, Ag], error) {
+// NewCrossPlayoutRecorderは、複数のActorCriticを総当たりで対戦させる game.CrossPlayoutRecorder を返す。
+// 総当たりの進行とスコアの集計は共通実装(game側)が担い、ここでは並び1組分の対戦の実行方法だけを定義する。
+func (e *Engine[S, Ac, Ag]) NewCrossPlayoutRecorder(inits []S, accrs []ActorCritic[S, Ac, Ag], p int) (*game.CrossPlayoutRecorder[Record[S, Ac, Ag], Ag], error) {
 	agentsN := len(e.Agents)
 	if len(accrs) < agentsN {
-		return nil, fmt.Errorf("insufficient actors: expected at least %d, got %d", agentsN, len(accrs))
+		return nil, fmt.Errorf("ActorCriticが不足しています: len(accrs) = %d: %d 以上であるべき", len(accrs), agentsN)
 	}
 
 	accrPerms := slices.Collect(slicesx.Permutations(accrs, agentsN))
-	rands := randx.NewPCGs(p)
+	rngs := randx.NewPCGs(p)
 
-	totalScoreByAccrName := make(map[game.ActorCriticName]float32)
-	numGamesByAccrName := make(map[game.ActorCriticName]int)
-	for _, accr := range accrs {
-		totalScoreByAccrName[accr.Name] = 0
-		numGamesByAccrName[accr.Name] = 0
+	accrNames := make([]game.ActorCriticName, len(accrs))
+	for i, accr := range accrs {
+		accrNames[i] = accr.Name
 	}
 
-	return &CrossPlayoutRecorder[S, Ac, Ag]{
-		engine:             e,
-		inits:              inits,
-		accrPerms:          accrPerms,
-		rands:              rands,
-		stepCap:            256,
-		totalScoreByAccrName: totalScoreByAccrName,
-		numGamesByAccrName:   numGamesByAccrName,
-	}, nil
-}
+	playPermutationFunc := func(permIdx, initStepsCap int) ([]Record[S, Ac, Ag], map[Ag]game.ActorCriticName, error) {
+		accrPerm := accrPerms[permIdx]
+		accrNameByAgent := make(map[Ag]game.ActorCriticName, agentsN)
+		pvFuncByAgent := make(map[Ag]PolicyValueFunc[S, Ac, Ag], agentsN)
+		selectFuncByAgent := make(map[Ag]game.SelectFunc[Ac, Ag], agentsN)
 
-func (cp *CrossPlayoutRecorder[S, Ac, Ag]) NumGames() int {
-	return cp.numGames
-}
-
-func (cp *CrossPlayoutRecorder[S, Ac, Ag]) SetStepCap(c int) {
-	cp.stepCap = c
-}
-
-func (cp *CrossPlayoutRecorder[S, Ac, Ag]) TotalScoreByActorCriticName() map[game.ActorCriticName]float32 {
-	return maps.Clone(cp.totalScoreByAccrName)
-}
-
-func (cp *CrossPlayoutRecorder[S, Ac, Ag]) AverageScoreByActorCriticName() (map[game.ActorCriticName]float32, error) {
-	if cp.numGames <= 0 {
-		return nil, fmt.Errorf("ゲームがまだ行われていないので、平均スコアを計算出来ません。")
-	}
-	avg := make(map[game.ActorCriticName]float32, len(cp.totalScoreByAccrName))
-	for k, v := range cp.totalScoreByAccrName {
-		numGames := cp.numGamesByAccrName[k]
-		if numGames > 0 {
-			avg[k] = v / float32(numGames)
-		} else {
-			avg[k] = 0
+		for i, agent := range e.Agents {
+			accr := accrPerm[i]
+			accrNameByAgent[agent] = accr.Name
+			pvFuncByAgent[agent] = accr.PolicyValueFunc
+			selectFuncByAgent[agent] = accr.SelectFunc
 		}
-	}
-	return avg, nil
-}
 
-func (cp *CrossPlayoutRecorder[S, Ac, Ag]) NumGamesByActorCriticName() map[game.ActorCriticName]int {
-	return maps.Clone(cp.numGamesByAccrName)
-}
+		pvFunc := func(state S, legalActionsByAgent LegalActionsByAgent[Ac, Ag]) (PolicyByAgent[Ac, Ag], ValueByAgent[Ag], error) {
+			policyByAgent := make(PolicyByAgent[Ac, Ag], agentsN)
+			valueByAgent := make(ValueByAgent[Ag], agentsN)
 
-func (cp *CrossPlayoutRecorder[S, Ac, Ag]) Next() ([]Record[S, Ac, Ag], bool, error) {
-	if cp.currentIdx >= len(cp.accrPerms) {
-		return nil, false, nil
-	}
-
-	agentsN := len(cp.engine.Agents)
-	accrNameByAgent := make(map[Ag]game.ActorCriticName, agentsN)
-	pvFuncByAgent := make(map[Ag]PolicyValueFunc[S, Ac, Ag], agentsN)
-	selectFuncByAgent := make(map[Ag]game.SelectFunc[Ac, Ag], agentsN)
-	accrPerm := cp.accrPerms[cp.currentIdx]
-
-	for i, agent := range cp.engine.Agents {
-		accr := accrPerm[i]
-		accrNameByAgent[agent] = accr.Name
-		pvFuncByAgent[agent] = accr.PolicyValueFunc
-		selectFuncByAgent[agent] = accr.SelectFunc
-	}
-
-	pvFunc := func(state S, legalActionsByAgent LegalActionsByAgent[Ac, Ag]) (PolicyByAgent[Ac, Ag], ValueByAgent[Ag], error) {
-		jp := make(PolicyByAgent[Ac, Ag], agentsN)
-		jv := make(ValueByAgent[Ag], agentsN)
-
-		for _, agent := range cp.engine.Agents {
-			accrJP, accrJV, err := pvFuncByAgent[agent](state, legalActionsByAgent)
-			if err != nil {
-				return nil, nil, err
+			for _, agent := range e.Agents {
+				actorPolicyByAgent, actorValueByAgent, err := pvFuncByAgent[agent](state, legalActionsByAgent)
+				if err != nil {
+					return nil, nil, err
+				}
+				policyByAgent[agent] = actorPolicyByAgent[agent]
+				valueByAgent[agent] = actorValueByAgent[agent]
 			}
-			jp[agent] = accrJP[agent]
-			jv[agent] = accrJV[agent]
+			return policyByAgent, valueByAgent, nil
 		}
-		return jp, jv, nil
-	}
 
-	selectFunc := func(p game.Policy[Ac], agent Ag, rng *rand.Rand) (Ac, error) {
-		return selectFuncByAgent[agent](p, agent, rng)
-	}
-
-	wrapperActor := ActorCritic[S, Ac, Ag]{
-		PolicyValueFunc: pvFunc,
-		SelectFunc:      selectFunc,
-	}
-
-	records, err := cp.engine.RecordPlayouts(cp.inits, wrapperActor, cp.rands, cp.stepCap)
-	if err != nil {
-		return nil, false, err
-	}
-
-	for i := range records {
-		records[i].ActorCriticNameByAgent = accrNameByAgent
-	}
-
-	// スコアの集計
-	for _, record := range records {
-		for agent, score := range record.ResultScoreByAgent {
-			accrName := accrNameByAgent[agent]
-			cp.totalScoreByAccrName[accrName] += score
-			cp.numGamesByAccrName[accrName]++
+		selectFunc := func(p game.Policy[Ac], agent Ag, rng *rand.Rand) (Ac, error) {
+			return selectFuncByAgent[agent](p, agent, rng)
 		}
-	}
 
-	cp.currentIdx++
-	cp.numGames += len(records)
-	return records, true, nil
-}
+		wrapperActor := ActorCritic[S, Ac, Ag]{
+			PolicyValueFunc: pvFunc,
+			SelectFunc:      selectFunc,
+		}
 
-func (cp *CrossPlayoutRecorder[S, Ac, Ag]) Collect() ([]Record[S, Ac, Ag], error) {
-	remainingPerms := len(cp.accrPerms) - cp.currentIdx
-	if remainingPerms <= 0 {
-		return nil, nil
-	}
-
-	c := remainingPerms * len(cp.inits)
-	collected := make([]Record[S, Ac, Ag], 0, c)
-	for {
-		records, hasNext, err := cp.Next()
+		records, err := e.RecordPlayouts(inits, wrapperActor, rngs, initStepsCap)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		if !hasNext {
-			break
+
+		for i := range records {
+			records[i].ActorCriticNameByAgent = accrNameByAgent
 		}
-		collected = append(collected, records...)
+		return records, accrNameByAgent, nil
 	}
-	return collected, nil
+
+	resultScoreFromRecordFunc := func(r Record[S, Ac, Ag]) game.ResultScoreByAgent[Ag] {
+		return r.ResultScoreByAgent
+	}
+
+	return game.NewCrossPlayoutRecorder(accrNames, len(accrPerms), len(inits), playPermutationFunc, resultScoreFromRecordFunc), nil
 }
 
 type Step[S any, Ac, Ag comparable] struct {
-	State       S
-	// TODO 型定義しておく？
-	JointAction   map[Ag]Ac
+	State         S
+	JointAction   JointAction[Ac, Ag]
 	PolicyByAgent PolicyByAgent[Ac, Ag]
 	ValueByAgent  ValueByAgent[Ag]
 }
@@ -344,7 +266,7 @@ func (r Record[S, Ac, Ag]) ElmoSteps(alpha float32) []Step[S, Ac, Ag] {
 		}
 
 		elmoSteps[i] = Step[S, Ac, Ag]{
-			State:       step.State,
+			State:         step.State,
 			JointAction:   step.JointAction,
 			PolicyByAgent: step.PolicyByAgent,
 			ValueByAgent:  newValueByAgent,

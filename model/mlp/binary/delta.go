@@ -10,7 +10,7 @@ type Delta []int16
 
 func (d Delta) Add(other Delta) error {
 	if len(d) != len(other) {
-		return fmt.Errorf("後でエラーメッセージを書く")
+		return fmt.Errorf("Deltaの長さが不一致: len(d) = %d, len(other) = %d", len(d), len(other))
 	}
 	for i, v := range other {
 		d[i] += v
@@ -36,7 +36,7 @@ func (ds Deltas) ZerosLike() Deltas {
 
 func (ds Deltas) Add(other Deltas) error {
 	if len(ds) != len(other) {
-		return fmt.Errorf("後でエラーメッセージを書く")
+		return fmt.Errorf("Deltasの数が不一致: len(ds) = %d, len(other) = %d", len(ds), len(other))
 	}
 	for i, d := range other {
 		err := ds[i].Add(d)
@@ -71,7 +71,7 @@ type SeqDelta []Deltas
 
 func (sd SeqDelta) Add(other SeqDelta) error {
 	if len(sd) != len(other) {
-		return fmt.Errorf("sequence delta length mismatch: %d != %d", len(sd), len(other))
+		return fmt.Errorf("SeqDeltaの数が不一致: len(sd) = %d, len(other) = %d", len(sd), len(other))
 	}
 	for i := range sd {
 		if err := sd[i].Add(other[i]); err != nil {
@@ -101,21 +101,21 @@ func (sd SeqDelta) Clear() {
 	}
 }
 
-type WorkerDelta []SeqDelta
+type SeqDeltas []SeqDelta
 
-func (wd WorkerDelta) Clear() {
-	for i := range wd {
-		wd[i].Clear()
+func (sds SeqDeltas) Clear() {
+	for i := range sds {
+		sds[i].Clear()
 	}
 }
 
-func (wd WorkerDelta) Aggregate(dst SeqDelta) error {
-	if len(wd) == 0 {
-		return fmt.Errorf("worker delta is empty")
+func (sds SeqDeltas) Aggregate(dst SeqDelta) error {
+	if len(sds) == 0 {
+		return fmt.Errorf("SeqDeltasが空です")
 	}
 	dst.Clear()
 
-	for _, sd := range wd {
+	for _, sd := range sds {
 		if err := dst.Add(sd); err != nil {
 			return err
 		}

@@ -19,16 +19,16 @@ type Logic[S any, Ac, Ag comparable] struct {
 
 func (l Logic[S, Ac, Ag]) Validate() error {
 	if l.LegalActionsFunc == nil {
-		return fmt.Errorf("LegalActionsFunc must not be nil")
+		return fmt.Errorf("LegalActionsFuncがnilです")
 	}
 	if l.TransitionFunc == nil {
-		return fmt.Errorf("TransitionFunc must not be nil")
+		return fmt.Errorf("TransitionFuncがnilです")
 	}
 	if l.EqualFunc == nil {
-		return fmt.Errorf("EqualFunc must not be nil")
+		return fmt.Errorf("EqualFuncがnilです")
 	}
 	if l.CurrentAgentFunc == nil {
-		return fmt.Errorf("CurrentAgentFunc must not be nil")
+		return fmt.Errorf("CurrentAgentFuncがnilです")
 	}
 	return nil
 }
@@ -38,6 +38,10 @@ type Engine[S any, Ac, Ag comparable] struct {
 	RankByAgentFunc        game.RankByAgentFunc[S, Ag]
 	ResultScoreByAgentFunc game.ResultScoreByAgentFunc[Ag]
 	Agents                 []Ag
+	// MaxSteps はプレイアウト1回あたりの手数の上限。
+	// 状態が循環し得るゲームでプレイアウトが終了しなくなるのを防ぐ。
+	// 0の場合は無制限。上限に達した場合、Playouts / RecordPlayouts はエラーを返す。
+	MaxSteps int
 }
 
 func (e Engine[S, Ac, Ag]) Validate() error {
@@ -46,20 +50,20 @@ func (e Engine[S, Ac, Ag]) Validate() error {
 	}
 
 	if e.RankByAgentFunc == nil {
-		return fmt.Errorf("RankByAgentFunc must not be nil")
+		return fmt.Errorf("RankByAgentFuncがnilです")
 	}
 
 	if e.ResultScoreByAgentFunc == nil {
-		return fmt.Errorf("ResultScoreByAgentFunc must not be nil")
+		return fmt.Errorf("ResultScoreByAgentFuncがnilです")
 	}
 
 	if len(e.Agents) == 0 {
-		return fmt.Errorf("agents list must not be empty")
+		return fmt.Errorf("Agentsが空です: 1体以上のエージェントが必要")
 	}
 	return nil
 }
 
-func (e Engine[S, Ac, Ag]) IsEnd(state S) (bool, error) {
+func (e Engine[S, Ac, Ag]) IsTerminal(state S) (bool, error) {
 	rankByAgent, err := e.RankByAgentFunc(state)
 	return len(rankByAgent) != 0, err
 }

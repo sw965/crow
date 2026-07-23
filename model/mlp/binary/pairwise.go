@@ -2,9 +2,9 @@ package binary
 
 import (
 	"fmt"
+
 	"github.com/sw965/omw/mathx/bitsx"
 	"github.com/sw965/omw/parallel"
-	"slices"
 )
 
 type RankPairX struct {
@@ -21,7 +21,11 @@ type RankPairLabel struct {
 
 func (m *Model) PairwiseLabels(pairX RankPairX, margin float32) (RankPairLabel, bool, error) {
 	if margin > 1.0 || margin < 0.0 {
-		return RankPairLabel{}, false, fmt.Errorf("後でエラーメッセージを書く")
+		return RankPairLabel{}, false, fmt.Errorf("marginが不正: margin = %v: 0.0 <= margin <= 1.0 であるべき", margin)
+	}
+
+	if err := m.validateAscendingValues(); err != nil {
+		return RankPairLabel{}, false, err
 	}
 
 	highY, err := m.PredictValue(pairX.High)
@@ -34,8 +38,8 @@ func (m *Model) PairwiseLabels(pairX RankPairX, margin float32) (RankPairLabel, 
 		return RankPairLabel{}, false, err
 	}
 
-	// 後で昇順を前提としたコードに書き換えておく。
-	valueRange := slices.Max(m.Values) - slices.Min(m.Values)
+	// Valuesは昇順である事が保証されている為、両端の差が値域になる
+	valueRange := m.Values[len(m.Values)-1] - m.Values[0]
 	absMargin := margin * valueRange
 
 	if highY-lowY >= absMargin {
@@ -64,12 +68,12 @@ func (m *Model) PairwiseLabels(pairX RankPairX, margin float32) (RankPairLabel, 
 func (m *Model) PairwiseAccuracy(pairXs RankPairXs, p int) (float32, error) {
 	n := len(pairXs)
 	if n == 0 {
-		return 0.0, fmt.Errorf("pairXs is empty")
+		return 0.0, fmt.Errorf("pairXsが空です")
 	}
 
 	correctCounts := make([]int, p)
 
-	err := parallel.For(n, p, func(workerId, idx int) error {
+	err := parallel.For(n, p, func(workerID, idx int) error {
 		pairX := pairXs[idx]
 
 		yHigh, err := m.PredictValue(pairX.High)
@@ -83,7 +87,7 @@ func (m *Model) PairwiseAccuracy(pairXs RankPairXs, p int) (float32, error) {
 		}
 
 		if yHigh > yLow {
-			correctCounts[workerId]++
+			correctCounts[workerID]++
 		}
 		return nil
 	})
