@@ -98,7 +98,7 @@ func (m *Model) SetRegressionLowPrototypes(n int) error {
 func (m *Model) SetValues(minVal, maxVal float32) error {
 	n := len(m.Prototypes)
 	if n <= 1 {
-		return fmt.Errorf("Prototypesが不足: len(Prototypes) = %d: Valuesを設定する前に、2つ以上のPrototypesを設定するべき", n)
+		return fmt.Errorf("prototypesが不足: len(Prototypes) = %d: Valuesを設定する前に、2つ以上のPrototypesを設定するべき", n)
 	}
 
 	if minVal >= maxVal {
@@ -153,7 +153,7 @@ func (m *Model) ValueToLabel(val float32) int {
 // validateAscendingValues は、Valuesが昇順である事を確認する。
 func (m *Model) validateAscendingValues() error {
 	if !slices.IsSorted(m.Values) {
-		return fmt.Errorf("Valuesが昇順ではありません: Values = %v: 昇順であるべき", m.Values)
+		return fmt.Errorf("valuesが昇順ではありません: Values = %v: 昇順であるべき", m.Values)
 	}
 	return nil
 }
@@ -174,7 +174,7 @@ func (m *Model) PredictLogits(x *bitsx.Matrix) ([]int, error) {
 
 	for i, proto := range m.Prototypes {
 		if err := y.ValidateSameShape(proto); err != nil {
-			return nil, fmt.Errorf("Prototypes[%d]と出力の形状が不一致: %w", i, err)
+			return nil, fmt.Errorf("prototypes[%d]と出力の形状が不一致: %w", i, err)
 		}
 		mismatch, err := y.HammingDistance(proto)
 		if err != nil {
@@ -290,7 +290,7 @@ func (m *Model) Loss(xs bitsx.Matrices, labels []int, p int) (float32, error) {
 	}
 
 	if len(m.Values) == 0 {
-		return 0.0, fmt.Errorf("Valuesが未設定です: Lossの計算にはValuesが必要です")
+		return 0.0, fmt.Errorf("valuesが未設定です: Lossの計算にはValuesが必要です")
 	}
 
 	losses := make([]float32, p)

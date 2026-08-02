@@ -202,7 +202,7 @@ func runSearchTrial(base *Model, prm SearchParams, trainXs bitsx.Matrices, train
 		BestEpoch: -1,
 	}
 
-	for e := 0; e < epochs; e++ {
+	for e := range epochs {
 		if err := trainer.Train(trainXs, trainLabels); err != nil {
 			return TrialResult{}, err
 		}

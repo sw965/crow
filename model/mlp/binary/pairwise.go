@@ -57,9 +57,7 @@ func (m *Model) PairwiseLabels(pairX RankPairX, margin float32) (RankPairLabel, 
 	currentLowLabel := m.ValueToLabel(lowY)
 	nextLowLabel := currentLowLabel - 1
 	// 下限を下回ったらクリップする
-	if nextLowLabel < 0 {
-		nextLowLabel = 0
-	}
+	nextLowLabel = max(nextLowLabel, 0)
 
 	label := RankPairLabel{High: nextHighLabel, Low: nextLowLabel}
 	return label, true, nil

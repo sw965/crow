@@ -187,7 +187,7 @@ func TestSearchMaxDepth(t *testing.T) {
 	rng := randx.NewPCG()
 
 	// シミュレーションを重ねても、1回の探索の深さはMaxDepthを超えない
-	for i := 0; i < 200; i++ {
+	for range 200 {
 		evals, depth, err := mcts.SelectExpansionBackward(rootNode, 0, rng)
 		if err != nil {
 			t.Fatalf("予期せぬエラー: %v", err)

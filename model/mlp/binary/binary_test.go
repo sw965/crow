@@ -146,7 +146,7 @@ func TestModelValueToLabel(t *testing.T) {
 			return bestIdx
 		}
 
-		for i := 0; i < 1000; i++ {
+		for range 1000 {
 			val := rng.Float32() * v
 			got := m.ValueToLabel(val)
 			want := linearSearch(val)

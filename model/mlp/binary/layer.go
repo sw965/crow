@@ -48,7 +48,7 @@ type Backwards []Backward
 
 func (bs Backwards) Propagate(t *bitsx.Matrix, seqDelta SeqDelta) (*bitsx.Matrix, error) {
 	var err error
-	for layerIdx := len(bs) - 1; layerIdx >= 0; layerIdx-- {
+	for layerIdx := range slices.Backward(bs) {
 		t, err = bs[layerIdx](t, seqDelta[layerIdx])
 		if err != nil {
 			return nil, err
@@ -79,7 +79,7 @@ func NewDense(wRows, wCols int, rng *rand.Rand) (*Dense, error) {
 	}
 
 	h := make(H, wRows*wCols)
-	err = w.ScanRowsWord(nil, func(ctx bitsx.MatrixWordContext) error {
+	if err = w.ScanRowsWord(nil, func(ctx bitsx.MatrixWordContext) error {
 		wWord := w.Data[ctx.WordIndex]
 		hWord := h[ctx.GlobalStart:ctx.GlobalEnd]
 		ctx.ScanBits(func(i, col, colT int) error {
@@ -92,7 +92,9 @@ func NewDense(wRows, wCols int, rng *rand.Rand) (*Dense, error) {
 			return nil
 		})
 		return nil
-	})
+	}); err != nil {
+		return nil, err
+	}
 
 	noiseStdBase := float32(math.Sqrt(float64(w.Cols)))
 	gateDropThresholdBase := int(noiseStdBase)
@@ -150,8 +152,7 @@ func (d *Dense) Forward(x *bitsx.Matrix, rng *rand.Rand) (*bitsx.Matrix, Backwar
 		return nil, nil, err
 	}
 
-	var backward Backward
-	backward = func(t *bitsx.Matrix, deltas Deltas) (*bitsx.Matrix, error) {
+	backward := func(t *bitsx.Matrix, deltas Deltas) (*bitsx.Matrix, error) {
 		if err := t.ValidateSameShape(y); err != nil {
 			return nil, err
 		}
@@ -301,7 +302,7 @@ func (d *Dense) OutputShape(xRows, xCols int) (int, int, error) {
 
 func (d *Dense) Update(deltas Deltas, lr float32, rng *rand.Rand) error {
 	if len(deltas) != 1 {
-		return fmt.Errorf("Deltasの数が不正: len(deltas) = %d: Dense層は1つのDeltaを持つべき", len(deltas))
+		return fmt.Errorf("deltasの数が不正: len(deltas) = %d: Dense層は1つのDeltaを持つべき", len(deltas))
 	}
 
 	delta := deltas[0]

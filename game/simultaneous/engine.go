@@ -58,7 +58,7 @@ func (e Engine[S, Ac, Ag]) Validate() error {
 	}
 
 	if len(e.Agents) == 0 {
-		return fmt.Errorf("Agentsが空です: 1体以上のエージェントが必要")
+		return fmt.Errorf("agentsが空です: 1体以上のエージェントが必要")
 	}
 	return nil
 }

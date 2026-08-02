@@ -37,7 +37,7 @@ func NewTrainer(model Model, p int) *Trainer {
 	numLayers := len(backbone)
 
 	// ワーカーごとのバッファの初期化
-	for i := 0; i < workerCount; i++ {
+	for i := range workerCount {
 		sd := make(SeqDelta, numLayers)
 		for l, layer := range backbone {
 			sd[l] = layer.NewZerosDeltas()
@@ -81,9 +81,7 @@ func (t *Trainer) Train(xs bitsx.Matrices, labels []int) error {
 	shuffledIdxs := t.shuffleRNG.Perm(n)
 	for i := 0; i < n; i += batchSize {
 		end := i + batchSize
-		if end > n {
-			end = n
-		}
+		end = min(end, n)
 
 		batchIdxs := shuffledIdxs[i:end]
 		batchXs, err := slicesx.ElementsByIndices(xs, batchIdxs...)
@@ -166,11 +164,11 @@ func (t *Trainer) ComputeSeqSignDelta(xs bitsx.Matrices, labels []int) (SeqDelta
 
 func (t *Trainer) Validate() error {
 	if len(t.model.Backbone) == 0 {
-		return fmt.Errorf("Backboneが空です: 学習前に1層以上追加するべき")
+		return fmt.Errorf("model validation: Backboneが空です: 学習前に1層以上追加するべき")
 	}
 
 	if len(t.model.Prototypes) == 0 {
-		return fmt.Errorf("Prototypesが未設定です: 学習前にSetClassPrototypes等で設定するべき")
+		return fmt.Errorf("prototypesが未設定です: 学習前にSetClassPrototypes等で設定するべき")
 	}
 
 	if t.LR <= 0.0 {

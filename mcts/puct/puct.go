@@ -172,9 +172,7 @@ func (e *Engine[S, Ac, Ag]) SetPlayout(accr sequential.ActorCritic[S, Ac, Ag]) {
 		}
 
 		evals := LeafNodeEvalByAgent[Ag]{}
-		for k, v := range scores {
-			evals[k] = v
-		}
+		maps.Copy(evals, scores)
 		return evals, nil
 	}
 }
@@ -205,13 +203,7 @@ func (e Engine[S, Ac, Ag]) NewNode(state S) (*Node[S, Ac, Ag], error) {
 
 	agent := e.Game.Logic.CurrentAgentFunc(state)
 
-	found := false
-	for _, ag := range e.Game.Agents {
-		if ag == agent {
-			found = true
-			break
-		}
-	}
+	found := slices.Contains(e.Game.Agents, agent)
 
 	if !found {
 		return nil, fmt.Errorf("CurrentAgentFuncが返したエージェントがAgentsに含まれていません: agent = %v", agent)
@@ -322,9 +314,7 @@ func (e Engine[S, Ac, Ag]) SelectExpansionBackward(node *Node[S, Ac, Ag], capaci
 		if err != nil {
 			return nil, 0, err
 		}
-		for k, v := range scores {
-			evals[k] = v
-		}
+		maps.Copy(evals, scores)
 	} else {
 		evals, err = e.LeafNodeEvalByAgentFunc(state, rng)
 		if err != nil {

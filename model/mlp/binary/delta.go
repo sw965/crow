@@ -10,7 +10,7 @@ type Delta []int16
 
 func (d Delta) Add(other Delta) error {
 	if len(d) != len(other) {
-		return fmt.Errorf("Deltaの長さが不一致: len(d) = %d, len(other) = %d", len(d), len(other))
+		return fmt.Errorf("deltaの長さが不一致: len(d) = %d, len(other) = %d", len(d), len(other))
 	}
 	for i, v := range other {
 		d[i] += v
@@ -36,7 +36,7 @@ func (ds Deltas) ZerosLike() Deltas {
 
 func (ds Deltas) Add(other Deltas) error {
 	if len(ds) != len(other) {
-		return fmt.Errorf("Deltasの数が不一致: len(ds) = %d, len(other) = %d", len(ds), len(other))
+		return fmt.Errorf("deltasの数が不一致: len(ds) = %d, len(other) = %d", len(ds), len(other))
 	}
 	for i, d := range other {
 		err := ds[i].Add(d)

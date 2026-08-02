@@ -127,7 +127,7 @@ func transition(s State, a Action) (State, error) {
 	}
 
 	if s.Turn != Nought && s.Turn != Cross {
-		return State{}, fmt.Errorf("Turnが不正: turn = %v: NoughtまたはCrossであるべき", s.Turn)
+		return State{}, fmt.Errorf("turnが不正: turn = %v: NoughtまたはCrossであるべき", s.Turn)
 	}
 
 	next := s
