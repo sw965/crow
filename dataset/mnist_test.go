@@ -162,11 +162,11 @@ func TestLoadDataset(t *testing.T) {
 		if !slices.Equal(got.TestLabels, wantTestLabels) {
 			t.Errorf("TestLabelsの不一致: got = %v, want = %v", got.TestLabels, wantTestLabels)
 		}
-		if !slices.Equal(got.TrainImages[0].Data, wantTrainImages[0].Data) {
-			t.Errorf("TrainImagesの不一致: got = %v, want = %v", got.TrainImages[0].Data, wantTrainImages[0].Data)
+		if !got.TrainImages[0].Equal(wantTrainImages[0]) {
+			t.Errorf("TrainImagesの不一致: got = %v, want = %v", got.TrainImages[0], wantTrainImages[0])
 		}
-		if !slices.Equal(got.TestImages[0].Data, wantTestImages[0].Data) {
-			t.Errorf("TestImagesの不一致: got = %v, want = %v", got.TestImages[0].Data, wantTestImages[0].Data)
+		if !got.TestImages[0].Equal(wantTestImages[0]) {
+			t.Errorf("TestImagesの不一致: got = %v, want = %v", got.TestImages[0], wantTestImages[0])
 		}
 
 		// 2回目はキャッシュから読み込まれ、結果が同じになる
