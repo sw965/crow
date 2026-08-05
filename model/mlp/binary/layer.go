@@ -80,9 +80,12 @@ func NewDense(wRows, wCols int, rng *rand.Rand) (*Dense, error) {
 
 	h := make(H, wRows*wCols)
 	if err = w.ScanRowsWord(nil, func(ctx bitsx.MatrixWordContext) error {
-		wWord := w.Data[ctx.WordIndex]
+		wWord, err := w.Word(ctx.WordIndex)
+		if err != nil {
+			return err
+		}
 		hWord := h[ctx.GlobalStart:ctx.GlobalEnd]
-		ctx.ScanBits(func(i, col, colT int) error {
+		err = ctx.ScanBits(func(i, col, colT int) error {
 			wBit := wWord >> uint64(i) & 1
 			if wBit == 1 {
 				hWord[i] = hInitAbs
@@ -91,7 +94,7 @@ func NewDense(wRows, wCols int, rng *rand.Rand) (*Dense, error) {
 			}
 			return nil
 		})
-		return nil
+		return err
 	}); err != nil {
 		return nil, err
 	}
@@ -174,12 +177,15 @@ func (d *Dense) Forward(x *bitsx.Matrix, rng *rand.Rand) (*bitsx.Matrix, Backwar
 			}
 			wordMismatches := make([]wordMismatch, 0, wordSize)
 
-			tWord := t.Data[tCtx.WordIndex]
+			tWord, err := t.Word(tCtx.WordIndex)
+			if err != nil {
+				return err
+			}
 			var keepGateWord uint64
 
 			// ScanBitsで上記の64ビット(Word)に対して操作する
 			// 引数iに代入される値は、100ビットの場合、一週目は0～63、二週目は64～99
-			tCtx.ScanBits(func(i, col, colT int) error {
+			err = tCtx.ScanBits(func(i, col, colT int) error {
 				zi := zWord[i]
 				absZi := int(math.Abs(float64(zi)))
 
@@ -200,7 +206,13 @@ func (d *Dense) Forward(x *bitsx.Matrix, rng *rand.Rand) (*bitsx.Matrix, Backwar
 				return nil
 			})
 
-			keepGate.Data[tCtx.WordIndex] = keepGateWord
+			if err != nil {
+				return err
+			}
+
+			if err := keepGate.SetWord(tCtx.WordIndex, keepGateWord); err != nil {
+				return err
+			}
 
 			slices.SortFunc(wordMismatches, func(a, b wordMismatch) int {
 				return cmp.Compare(a.absZi, b.absZi)
@@ -220,8 +232,11 @@ func (d *Dense) Forward(x *bitsx.Matrix, rng *rand.Rand) (*bitsx.Matrix, Backwar
 				col := mismatch.col
 				deltaRow := deltas[0][col*d.W.Cols : (col+1)*d.W.Cols]
 
-				x.ScanRowsWord([]int{tCtx.Row}, func(xCtx bitsx.MatrixWordContext) error {
-					xWord := x.Data[xCtx.WordIndex]
+				err = x.ScanRowsWord([]int{tCtx.Row}, func(xCtx bitsx.MatrixWordContext) error {
+					xWord, err := x.Word(xCtx.WordIndex)
+					if err != nil {
+						return err
+					}
 					deltaWord := deltaRow[xCtx.ColStart:xCtx.ColEnd]
 					for b := range deltaWord {
 						xBit := (xWord >> uint(b)) & 1
@@ -229,6 +244,10 @@ func (d *Dense) Forward(x *bitsx.Matrix, rng *rand.Rand) (*bitsx.Matrix, Backwar
 					}
 					return nil
 				})
+
+				if err != nil {
+					return err
+				}
 			}
 			return nil
 		})
@@ -249,14 +268,16 @@ func (d *Dense) Forward(x *bitsx.Matrix, rng *rand.Rand) (*bitsx.Matrix, Backwar
 
 		err = nextT.ScanRowsWord(nil, func(ctx bitsx.MatrixWordContext) error {
 			var word uint64
-			ctx.ScanBits(func(i, col, colT int) error {
+			err := ctx.ScanBits(func(i, col, colT int) error {
 				if rawNextTT[colT] >= 0 {
 					word |= (1 << uint(i))
 				}
 				return nil
 			})
-			nextT.Data[ctx.WordIndex] = word
-			return nil
+			if err != nil {
+				return err
+			}
+			return nextT.SetWord(ctx.WordIndex, word)
 		})
 
 		if err != nil {
@@ -310,7 +331,7 @@ func (d *Dense) Update(deltas Deltas, lr float32, rng *rand.Rand) error {
 		hWord := d.H[ctx.GlobalStart:ctx.GlobalEnd]
 		deltaWord := delta[ctx.GlobalStart:ctx.GlobalEnd]
 		var flips uint64
-		ctx.ScanBits(func(i, col, colT int) error {
+		err := ctx.ScanBits(func(i, col, colT int) error {
 			if rng.Float32() > lr {
 				return nil
 			}
@@ -332,8 +353,16 @@ func (d *Dense) Update(deltas Deltas, lr float32, rng *rand.Rand) error {
 			}
 			return nil
 		})
-		d.W.Data[ctx.WordIndex] ^= flips
-		return nil
+
+		if err != nil {
+			return err
+		}
+
+		old, err := d.W.Word(ctx.WordIndex)
+		if err != nil {
+			return err
+		}
+		return d.W.SetWord(ctx.WordIndex, old^flips)
 	})
 	return err
 }

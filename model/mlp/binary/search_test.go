@@ -60,7 +60,7 @@ func TestGridSearch(t *testing.T) {
 
 	// クローンの独立性確認用に、baseの重みをスナップショット
 	dense := model.Backbone[0].(*binary.Dense)
-	wSnapshot := slices.Clone(dense.W.Data)
+	wSnapshot := dense.W.Clone()
 	hSnapshot := slices.Clone(dense.H)
 
 	space := binary.SearchSpace{
@@ -103,7 +103,7 @@ func TestGridSearch(t *testing.T) {
 	}
 
 	// 全試行を回しても base モデルは変更されない事
-	if !slices.Equal(wSnapshot, dense.W.Data) {
+	if !wSnapshot.Equal(dense.W) {
 		t.Fatal("base model W was mutated by GridSearch")
 	}
 	if !slices.Equal(hSnapshot, dense.H) {
