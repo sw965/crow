@@ -99,7 +99,7 @@ func NewDense(wRows, wCols int, rng *rand.Rand) (*Dense, error) {
 		return nil, err
 	}
 
-	noiseStdBase := float32(math.Sqrt(float64(w.Cols)))
+	noiseStdBase := float32(math.Sqrt(float64(w.Cols())))
 	gateDropThresholdBase := int(noiseStdBase)
 
 	return &Dense{
@@ -125,14 +125,14 @@ func (d *Dense) Forward(x *bitsx.Matrix, rng *rand.Rand) (*bitsx.Matrix, Backwar
 		return nil, nil, err
 	}
 
-	maxZi := d.W.Cols
+	maxZi := d.W.Cols()
 	minZi := -maxZi
 
 	noiseStd := d.NoiseStd()
 	isNoisy := noiseStd > 0.0
 
-	yRows := x.Rows
-	yCols := d.W.Rows
+	yRows := x.Rows()
+	yCols := d.W.Rows()
 	z := make([]int, yRows*yCols)
 
 	if isNoisy {
@@ -230,7 +230,7 @@ func (d *Dense) Forward(x *bitsx.Matrix, rng *rand.Rand) (*bitsx.Matrix, Backwar
 			for _, mismatch := range wordMismatches[:updateK] {
 				tBit := mismatch.tBit
 				col := mismatch.col
-				deltaRow := deltas[0][col*d.W.Cols : (col+1)*d.W.Cols]
+				deltaRow := deltas[0][col*d.W.Cols() : (col+1)*d.W.Cols()]
 
 				err = x.ScanRowsWord([]int{tCtx.Row}, func(xCtx bitsx.MatrixWordContext) error {
 					xWord, err := x.Word(xCtx.WordIndex)
@@ -261,7 +261,7 @@ func (d *Dense) Forward(x *bitsx.Matrix, rng *rand.Rand) (*bitsx.Matrix, Backwar
 			return nil, err
 		}
 
-		nextT, err := bitsx.NewZerosMatrix(yRows, d.W.Cols)
+		nextT, err := bitsx.NewZerosMatrix(yRows, d.W.Cols())
 		if err != nil {
 			return nil, err
 		}
@@ -294,14 +294,14 @@ func (d *Dense) Predict(x *bitsx.Matrix) (*bitsx.Matrix, error) {
 		return nil, err
 	}
 
-	maxZi := d.W.Cols
+	maxZi := d.W.Cols()
 	z := make([]int, len(u))
 	for i, count := range u {
 		z[i] = 2*count - maxZi
 	}
 
-	yRows := x.Rows
-	yCols := d.W.Rows
+	yRows := x.Rows()
+	yCols := d.W.Rows()
 	y, err := bitsx.NewSignMatrix(yRows, yCols, z)
 	if err != nil {
 		return nil, err
@@ -310,15 +310,15 @@ func (d *Dense) Predict(x *bitsx.Matrix) (*bitsx.Matrix, error) {
 }
 
 func (d *Dense) NewZerosDeltas() Deltas {
-	n := d.W.Rows * d.W.Cols
+	n := d.W.Rows() * d.W.Cols()
 	return Deltas{make(Delta, n)}
 }
 
 func (d *Dense) OutputShape(xRows, xCols int) (int, int, error) {
-	if xCols != d.W.Cols {
-		return 0, 0, fmt.Errorf("入力の列数が不一致: xCols = %d, W.Cols = %d", xCols, d.W.Cols)
+	if xCols != d.W.Cols() {
+		return 0, 0, fmt.Errorf("入力の列数が不一致: xCols = %d, W.Cols = %d", xCols, d.W.Cols())
 	}
-	return xRows, d.W.Rows, nil
+	return xRows, d.W.Rows(), nil
 }
 
 func (d *Dense) Update(deltas Deltas, lr float32, rng *rand.Rand) error {

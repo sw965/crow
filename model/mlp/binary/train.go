@@ -210,7 +210,7 @@ func SatisfiesUpdateCriterion(y *bitsx.Matrix, label int, prototypes bitsx.Matri
 		return false, err
 	}
 
-	totalBits := y.Rows * y.Cols
+	totalBits := y.Rows() * y.Cols()
 	// margin は論文(BEP)の r と同じ ±1内積スケール。
 	// ここでのロジットは一致ビット数(0..K)で、±1内積 = 2*一致数 - K だから、
 	// 論文の r*K は一致数の差では r*K/2 に相当する。

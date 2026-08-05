@@ -170,7 +170,7 @@ func (m *Model) PredictLogits(x *bitsx.Matrix) ([]int, error) {
 
 	n := len(m.Prototypes)
 	logits := make([]int, n)
-	maxMatch := y.Rows * y.Cols
+	maxMatch := y.Rows() * y.Cols()
 
 	for i, proto := range m.Prototypes {
 		if err := y.ValidateSameShape(proto); err != nil {

@@ -39,7 +39,7 @@ func TestGridSearch(t *testing.T) {
 	for i := range n {
 		label := i % numClasses
 		x := centers[label].Clone()
-		for col := 0; col < x.Cols; col++ {
+		for col := 0; col < x.Cols(); col++ {
 			if rng.Float64() < 0.05 {
 				if err := x.Toggle(0, col); err != nil {
 					t.Fatal(err)
