@@ -21,7 +21,7 @@ type RankPairLabel struct {
 
 func (m *Model) PairwiseLabels(pairX RankPairX, margin float32) (RankPairLabel, bool, error) {
 	if margin > 1.0 || margin < 0.0 {
-		return RankPairLabel{}, false, fmt.Errorf("marginが不正: margin = %v: 0.0 <= margin <= 1.0 であるべき", margin)
+		return RankPairLabel{}, false, fmt.Errorf("marginが不正: margin = %g: 0.0 <= margin <= 1.0 であるべき", margin)
 	}
 
 	if err := m.validateAscendingValues(); err != nil {

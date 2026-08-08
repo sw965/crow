@@ -102,7 +102,7 @@ func (m *Model) SetValues(minVal, maxVal float32) error {
 	}
 
 	if minVal >= maxVal {
-		return fmt.Errorf("範囲が不正(min >= max): min = %v, max = %v: min < max であるべき", minVal, maxVal)
+		return fmt.Errorf("範囲が不正(min >= max): min = %g, max = %g: min < max であるべき", minVal, maxVal)
 	}
 
 	m.Values = make([]float32, n)

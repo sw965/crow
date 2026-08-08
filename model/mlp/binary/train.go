@@ -172,7 +172,7 @@ func (t *Trainer) Validate() error {
 	}
 
 	if t.LR <= 0.0 {
-		return fmt.Errorf("LRが不正(LR <= 0): LR = %v: LR > 0 であるべき", t.LR)
+		return fmt.Errorf("LRが不正(LR <= 0): LR = %g: LR > 0 であるべき", t.LR)
 	}
 
 	if len(t.workerRNGs) == 0 {
