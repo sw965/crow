@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/sw965/omw/encoding/atomicfile"
+	"github.com/sw965/omw/atomicfile"
 	"github.com/sw965/omw/encoding/gobx"
 	"github.com/sw965/omw/mathx/bitsx"
 )
