@@ -1,6 +1,7 @@
 package simultaneous
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/sw965/crow/game"
@@ -47,10 +48,10 @@ func NewRandomActorCritic[S any, Ac, Ag comparable]() ActorCritic[S, Ac, Ag] {
 
 func (a ActorCritic[S, Ac, Ag]) Validate() error {
 	if a.PolicyValueFunc == nil {
-		return fmt.Errorf("PolicyValueFuncがnilです")
+		return errors.New("PolicyValueFuncがnilです")
 	}
 	if a.SelectFunc == nil {
-		return fmt.Errorf("SelectFuncがnilです")
+		return errors.New("SelectFuncがnilです")
 	}
 	return nil
 }

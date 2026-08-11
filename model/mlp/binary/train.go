@@ -1,6 +1,7 @@
 package binary
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"math/rand/v2"
@@ -164,11 +165,11 @@ func (t *Trainer) ComputeSeqSignDelta(xs bitsx.Matrices, labels []int) (SeqDelta
 
 func (t *Trainer) Validate() error {
 	if len(t.model.Backbone) == 0 {
-		return fmt.Errorf("model validation: Backboneが空です: 学習前に1層以上追加するべき")
+		return errors.New("model validation: Backboneが空です: 学習前に1層以上追加するべき")
 	}
 
 	if len(t.model.Prototypes) == 0 {
-		return fmt.Errorf("prototypesが未設定です: 学習前にSetClassPrototypes等で設定するべき")
+		return errors.New("prototypesが未設定です: 学習前にSetClassPrototypes等で設定するべき")
 	}
 
 	if t.LR <= 0.0 {
@@ -176,7 +177,7 @@ func (t *Trainer) Validate() error {
 	}
 
 	if len(t.workerRNGs) == 0 {
-		return fmt.Errorf("workerRNGsが空です: NewTrainerのpは1以上であるべき")
+		return errors.New("workerRNGsが空です: NewTrainerのpは1以上であるべき")
 	}
 
 	if err := t.model.validateAscendingValues(); err != nil {
@@ -195,10 +196,10 @@ func (t *Trainer) Validate() error {
 
 func SatisfiesUpdateCriterion(y *bitsx.Matrix, label int, prototypes bitsx.Matrices, margin float32) (bool, error) {
 	if y == nil {
-		return false, fmt.Errorf("yがnilです")
+		return false, errors.New("yがnilです")
 	}
 	if len(prototypes) == 0 {
-		return false, fmt.Errorf("prototypesが空です")
+		return false, errors.New("prototypesが空です")
 	}
 	if label < 0 || label >= len(prototypes) {
 		return false, fmt.Errorf("labelが範囲外: label = %d: 0 <= label < %d であるべき", label, len(prototypes))

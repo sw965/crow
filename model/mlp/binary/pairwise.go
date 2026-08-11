@@ -1,6 +1,7 @@
 package binary
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/sw965/omw/mathx/bitsx"
@@ -66,7 +67,7 @@ func (m *Model) PairwiseLabels(pairX RankPairX, margin float32) (RankPairLabel, 
 func (m *Model) PairwiseAccuracy(pairXs RankPairXs, p int) (float32, error) {
 	n := len(pairXs)
 	if n == 0 {
-		return 0.0, fmt.Errorf("pairXsが空です")
+		return 0.0, errors.New("pairXsが空です")
 	}
 
 	correctCounts := make([]int, p)

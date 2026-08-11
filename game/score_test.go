@@ -17,7 +17,7 @@ func TestNewRankByAgent(t *testing.T) {
 		wantErr        bool
 		wantErrMsgSubs []string
 	}{
-		//正常
+		// 正常
 		{
 			name: "正常_同順なし",
 			agentsPerRank: [][]string{
@@ -59,7 +59,7 @@ func TestNewRankByAgent(t *testing.T) {
 				"プレイヤー": 1,
 			},
 		},
-		//異常系
+		// 異常系
 		{
 			name: "異常_エージェント重複",
 			// チームCが重複
@@ -90,7 +90,7 @@ func TestNewRankByAgent(t *testing.T) {
 				"空",
 			},
 		},
-		//準正常系
+		// 準正常系
 		{
 			name:          "準正常_nil入力",
 			agentsPerRank: nil,
@@ -109,7 +109,7 @@ func TestNewRankByAgent(t *testing.T) {
 			got, err := game.NewRankByAgent(tc.agentsPerRank)
 			if tc.wantErr {
 				if err == nil {
-					t.Fatalf("エラーを期待したが、nilが返された")
+					t.Fatal("エラーを期待したが、nilが返された")
 				}
 
 				if len(tc.wantErrMsgSubs) == 0 {

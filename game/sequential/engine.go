@@ -1,7 +1,8 @@
 package sequential
 
 import (
-	"fmt"
+	"errors"
+
 	"github.com/sw965/crow/game"
 )
 
@@ -19,16 +20,16 @@ type Logic[S any, Ac, Ag comparable] struct {
 
 func (l Logic[S, Ac, Ag]) Validate() error {
 	if l.LegalActionsFunc == nil {
-		return fmt.Errorf("LegalActionsFuncがnilです")
+		return errors.New("LegalActionsFuncがnilです")
 	}
 	if l.TransitionFunc == nil {
-		return fmt.Errorf("TransitionFuncがnilです")
+		return errors.New("TransitionFuncがnilです")
 	}
 	if l.EqualFunc == nil {
-		return fmt.Errorf("EqualFuncがnilです")
+		return errors.New("EqualFuncがnilです")
 	}
 	if l.CurrentAgentFunc == nil {
-		return fmt.Errorf("CurrentAgentFuncがnilです")
+		return errors.New("CurrentAgentFuncがnilです")
 	}
 	return nil
 }
@@ -50,15 +51,15 @@ func (e Engine[S, Ac, Ag]) Validate() error {
 	}
 
 	if e.RankByAgentFunc == nil {
-		return fmt.Errorf("RankByAgentFuncがnilです")
+		return errors.New("RankByAgentFuncがnilです")
 	}
 
 	if e.ResultScoreByAgentFunc == nil {
-		return fmt.Errorf("ResultScoreByAgentFuncがnilです")
+		return errors.New("ResultScoreByAgentFuncがnilです")
 	}
 
 	if len(e.Agents) == 0 {
-		return fmt.Errorf("agentsが空です: 1体以上のエージェントが必要")
+		return errors.New("agentsが空です: 1体以上のエージェントが必要")
 	}
 	return nil
 }

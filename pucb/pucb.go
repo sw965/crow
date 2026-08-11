@@ -10,6 +10,7 @@
 package pucb
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"math/rand/v2"
@@ -93,7 +94,7 @@ func (c *Calculator) IncrementPending() {
 
 func (c *Calculator) DecrementPending() error {
 	if c.pending == 0 {
-		return fmt.Errorf("pendingが不正(underflow): pending = 0")
+		return errors.New("pendingが不正(underflow): pending = 0")
 	}
 	c.pending -= 1
 	return nil
@@ -131,7 +132,7 @@ func (c *Calculator) ValidateForSumVisits(sumVisits int) error {
 	}
 
 	if c.Func == nil {
-		return fmt.Errorf("Funcが未初期化(nil)")
+		return errors.New("Funcが未初期化(nil)")
 	}
 	return nil
 }

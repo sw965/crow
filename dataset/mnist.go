@@ -1,6 +1,7 @@
 package dataset
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"os"
@@ -171,7 +172,11 @@ func ensureFile(path, url string, logf LogFunc) error {
 	}
 
 	logf("Downloading %s...\n", url)
-	resp, err := http.Get(url)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, nil)
+	if err != nil {
+		return fmt.Errorf("リクエストの作成に失敗: %w", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("ダウンロードに失敗: %w", err)
 	}

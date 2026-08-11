@@ -40,7 +40,7 @@ type Node[S any, Ac, Ag comparable] struct {
 	Agent             Ag
 	virtualSelector   pucb.VirtualSelector[Ac]
 	nextNodesByAction map[Ac]Nodes[S, Ac, Ag]
-	sync.Mutex
+	mu                sync.Mutex
 }
 
 func (n *Node[S, Ac, Ag]) VirtualSelector() pucb.VirtualSelector[Ac] {
@@ -74,7 +74,7 @@ func (ss selectBuffers[S, Ac, Ag]) backward(evals LeafNodeEvalByAgent[Ag]) error
 		node := s.node
 		action := s.action
 
-		node.Lock()
+		node.mu.Lock()
 		c := node.virtualSelector[action]
 		// 未観測のカウントを消す
 		if err := c.DecrementPending(); err != nil {
@@ -87,17 +87,17 @@ func (ss selectBuffers[S, Ac, Ag]) backward(evals LeafNodeEvalByAgent[Ag]) error
 				"LeafNodeEvalByAgentに存在しないキー(Agent)でアクセスしようとした為、backwardを実行出来ませんでした。node.Agent = %v, LeafNodeEvalByAgent.Keys() = %v",
 				node.Agent, slices.Collect(maps.Keys(evals)),
 			))
-			node.Unlock()
+			node.mu.Unlock()
 			continue
 		}
 
 		if err := c.AddW(eval); err != nil {
 			errs = append(errs, err)
-			node.Unlock()
+			node.mu.Unlock()
 			continue
 		}
 		c.IncrementVisits()
-		node.Unlock()
+		node.mu.Unlock()
 	}
 	return errors.Join(errs...)
 }
@@ -106,11 +106,11 @@ func (ss selectBuffers[S, Ac, Ag]) backward(evals LeafNodeEvalByAgent[Ag]) error
 func (ss selectBuffers[S, Ac, Ag]) rollbackPending() error {
 	var errs []error
 	for _, s := range ss {
-		s.node.Lock()
+		s.node.mu.Lock()
 		if err := s.node.virtualSelector[s.action].DecrementPending(); err != nil {
 			errs = append(errs, err)
 		}
-		s.node.Unlock()
+		s.node.mu.Unlock()
 	}
 	return errors.Join(errs...)
 }
@@ -182,7 +182,7 @@ func (e Engine[S, Ac, Ag]) NewNode(state S) (*Node[S, Ac, Ag], error) {
 
 	// policy.ValidateForLegalActionsでもlegalActionsの空チェックはするが、PolicyFuncを安全に呼ぶ為に、ここでもチェックする
 	if len(legalActions) == 0 {
-		return nil, fmt.Errorf("ゲームが終了していないのに合法手がありません")
+		return nil, errors.New("ゲームが終了していないのに合法手がありません")
 	}
 
 	policy, err := e.PolicyFunc(state, legalActions)
@@ -234,18 +234,18 @@ func (e Engine[S, Ac, Ag]) SelectExpansionBackward(node *Node[S, Ac, Ag], capaci
 	}()
 
 	for {
-		node.Lock()
+		node.mu.Lock()
 
 		var action Ac
 		action, err = node.virtualSelector.Select(rng)
 		if err != nil {
-			node.Unlock()
+			node.mu.Unlock()
 			return nil, 0, err
 		}
 		// 選択した行動のノードの未観測の数をインクリメントする
 		node.virtualSelector[action].IncrementPending()
 
-		node.Unlock()
+		node.mu.Unlock()
 		buffers = append(buffers, selectBuffer[S, Ac, Ag]{node: node, action: action})
 
 		state, err = e.Game.Logic.TransitionFunc(state, action)
@@ -271,9 +271,9 @@ func (e Engine[S, Ac, Ag]) SelectExpansionBackward(node *Node[S, Ac, Ag], capaci
 
 		// node.nextNodesByActionはmap型 node.nextNodesByAction[action]はslice型
 		// この処理はデータを読むだけだが、他のワーカーが、書き込む処理をすると、破綻する為、Lockが必要
-		node.Lock()
+		node.mu.Lock()
 		nextNode, ok := node.nextNodesByAction[action].FindByState(state, e.Game.Logic.EqualFunc)
-		node.Unlock()
+		node.mu.Unlock()
 
 		if ok {
 			node = nextNode
@@ -286,7 +286,7 @@ func (e Engine[S, Ac, Ag]) SelectExpansionBackward(node *Node[S, Ac, Ag], capaci
 			}
 
 			// Unlockして NewNodeを作ってる間に、別のワーカーがノードを追加した可能性がある為、再度Lockして調べる
-			node.Lock()
+			node.mu.Lock()
 			// nextNodesの中に、一致するstateが見つかれば、それを次のノードとする
 			if nn, ok := node.nextNodesByAction[action].FindByState(state, e.Game.Logic.EqualFunc); ok {
 				nextNode = nn
@@ -296,7 +296,7 @@ func (e Engine[S, Ac, Ag]) SelectExpansionBackward(node *Node[S, Ac, Ag], capaci
 				node.nextNodesByAction[action] = append(node.nextNodesByAction[action], newNode)
 				expand = true
 			}
-			node.Unlock()
+			node.mu.Unlock()
 		}
 
 		if expand {
@@ -335,7 +335,7 @@ func (e Engine[S, Ac, Ag]) Search(rootNode *Node[S, Ac, Ag], n int, workerRngs [
 	}
 
 	if rootNode == nil {
-		return nil, fmt.Errorf("rootNode が nil です")
+		return nil, errors.New("rootNode が nil です")
 	}
 
 	if n <= 0 {

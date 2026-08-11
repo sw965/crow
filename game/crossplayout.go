@@ -1,7 +1,7 @@
 package game
 
 import (
-	"fmt"
+	"errors"
 	"maps"
 )
 
@@ -67,7 +67,7 @@ func (cp *CrossPlayoutRecorder[R, Ag]) TotalScoreByActorCriticName() map[ActorCr
 
 func (cp *CrossPlayoutRecorder[R, Ag]) AverageScoreByActorCriticName() (map[ActorCriticName]float32, error) {
 	if cp.numGames <= 0 {
-		return nil, fmt.Errorf("ゲームがまだ行われていないので、平均スコアを計算出来ません。")
+		return nil, errors.New("ゲームがまだ行われていないので、平均スコアを計算出来ません。")
 	}
 	avg := make(map[ActorCriticName]float32, len(cp.totalScoreByAccrName))
 	for k, v := range cp.totalScoreByAccrName {

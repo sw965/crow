@@ -1,6 +1,7 @@
 package game
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 )
@@ -13,7 +14,7 @@ func NewRankByAgent[Ag comparable](agentsPerRank [][]Ag) (RankByAgent[Ag], error
 	rank := 1
 	for _, agents := range agentsPerRank {
 		if len(agents) == 0 {
-			return nil, fmt.Errorf("ある順位のエージェントのリストが空です: 各順位に1体以上のエージェントが必要")
+			return nil, errors.New("ある順位のエージェントのリストが空です: 各順位に1体以上のエージェントが必要")
 		}
 
 		for _, agent := range agents {

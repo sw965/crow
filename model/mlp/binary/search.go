@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"cmp"
 	"encoding/gob"
+	"errors"
 	"fmt"
 	"math/rand/v2"
 	"slices"
@@ -145,7 +146,7 @@ func GridSearch(base Model, trainXs bitsx.Matrices, trainLabels []int, valXs bit
 	epochs, miniBatchSize, p int, space SearchSpace, logf func(format string, a ...any)) ([]TrialResult, error) {
 
 	if epochs <= 0 {
-		return nil, fmt.Errorf("epochs <= 0: epochs > 0 であるべき")
+		return nil, errors.New("epochs <= 0: epochs > 0 であるべき")
 	}
 	if logf == nil {
 		logf = func(string, ...any) {}

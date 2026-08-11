@@ -1,6 +1,7 @@
 package simultaneous
 
 import (
+	"errors"
 	"fmt"
 	"math/rand/v2"
 	"slices"
@@ -44,7 +45,7 @@ func (e *Engine[S, Ac, Ag]) Playouts(inits []S, accr ActorCritic[S, Ac, Ag], rng
 
 			legalActionsByAgent := e.Logic.LegalActionsByAgentFunc(state)
 			if len(legalActionsByAgent) == 0 {
-				return fmt.Errorf("ゲームが終了していないのに合法手がありません")
+				return errors.New("ゲームが終了していないのに合法手がありません")
 			}
 
 			policyByAgent, _, err := accr.PolicyValueFunc(state, legalActionsByAgent)
@@ -110,7 +111,7 @@ func (e *Engine[S, Ac, Ag]) RecordPlayouts(inits []S, accr ActorCritic[S, Ac, Ag
 
 			legalActionsByAgent := e.Logic.LegalActionsByAgentFunc(state)
 			if len(legalActionsByAgent) == 0 {
-				return fmt.Errorf("ゲームが終了していないのに合法手がありません")
+				return errors.New("ゲームが終了していないのに合法手がありません")
 			}
 
 			policyByAgent, valueByAgent, err := accr.PolicyValueFunc(state, legalActionsByAgent)

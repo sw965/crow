@@ -1,6 +1,7 @@
 package binary
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"math/rand/v2"
@@ -160,7 +161,7 @@ func (m *Model) validateAscendingValues() error {
 
 func (m *Model) PredictLogits(x *bitsx.Matrix) ([]int, error) {
 	if len(m.Prototypes) == 0 {
-		return nil, fmt.Errorf("Prototypesが未設定です")
+		return nil, errors.New("Prototypesが未設定です")
 	}
 
 	y, err := m.Backbone.Predict(x)
@@ -213,7 +214,7 @@ func (m *Model) PredictValue(x *bitsx.Matrix) (float32, error) {
 	}
 
 	if len(logits) == 0 {
-		return 0.0, fmt.Errorf("logitsが空です")
+		return 0.0, errors.New("logitsが空です")
 	}
 
 	if len(logits) != len(m.Values) {
@@ -239,7 +240,7 @@ func (m *Model) Accuracy(xs bitsx.Matrices, labels []int, p int) (float32, error
 		return 0.0, fmt.Errorf("長さが不一致: len(xs) = %d, len(labels) = %d", n, len(labels))
 	}
 	if n == 0 {
-		return 0.0, fmt.Errorf("xsが空です")
+		return 0.0, errors.New("xsが空です")
 	}
 	if p <= 0 {
 		return 0.0, fmt.Errorf("ワーカー数が不正: p = %d: p > 0 であるべき", p)
@@ -256,7 +257,7 @@ func (m *Model) Accuracy(xs bitsx.Matrices, labels []int, p int) (float32, error
 		}
 
 		if len(logits) == 0 {
-			return fmt.Errorf("logitsが空です")
+			return errors.New("logitsが空です")
 		}
 
 		predictedLabel := slicesx.Argsort(logits)[len(logits)-1]
@@ -283,14 +284,14 @@ func (m *Model) Loss(xs bitsx.Matrices, labels []int, p int) (float32, error) {
 		return 0.0, fmt.Errorf("長さが不一致: len(xs) = %d, len(labels) = %d", n, len(labels))
 	}
 	if n == 0 {
-		return 0.0, fmt.Errorf("xsが空です")
+		return 0.0, errors.New("xsが空です")
 	}
 	if p <= 0 {
 		return 0.0, fmt.Errorf("ワーカー数が不正: p = %d: p > 0 であるべき", p)
 	}
 
 	if len(m.Values) == 0 {
-		return 0.0, fmt.Errorf("valuesが未設定です: Lossの計算にはValuesが必要です")
+		return 0.0, errors.New("valuesが未設定です: Lossの計算にはValuesが必要です")
 	}
 
 	losses := make([]float32, p)

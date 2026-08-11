@@ -1,6 +1,7 @@
 package sequential
 
 import (
+	"errors"
 	"fmt"
 	"math/rand/v2"
 	"slices"
@@ -45,7 +46,7 @@ func (e *Engine[S, Ac, Ag]) Playouts(inits []S, accr ActorCritic[S, Ac, Ag], rng
 			legalActions := e.Logic.LegalActionsFunc(state)
 			// policy.ValidateForLegalActionsでもlegalActionsの空チェックをするが、PolicyFuncを安全に呼ぶ為に、ここでもチェックする
 			if len(legalActions) == 0 {
-				return fmt.Errorf("ゲームが終了していないのに合法手がありません")
+				return errors.New("ゲームが終了していないのに合法手がありません")
 			}
 
 			policy, _, err := accr.PolicyValueFunc(state, legalActions)
@@ -107,7 +108,7 @@ func (e *Engine[S, Ac, Ag]) RecordPlayouts(inits []S, accr ActorCritic[S, Ac, Ag
 
 			legalActions := e.Logic.LegalActionsFunc(state)
 			if len(legalActions) == 0 {
-				return fmt.Errorf("ゲームが終了していないのに合法手がありません")
+				return errors.New("ゲームが終了していないのに合法手がありません")
 			}
 
 			policy, value, err := accr.PolicyValueFunc(state, legalActions)

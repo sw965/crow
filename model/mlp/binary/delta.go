@@ -2,6 +2,7 @@ package binary
 
 import (
 	"cmp"
+	"errors"
 	"fmt"
 	"slices"
 )
@@ -111,7 +112,7 @@ func (sds SeqDeltas) Clear() {
 
 func (sds SeqDeltas) Aggregate(dst SeqDelta) error {
 	if len(sds) == 0 {
-		return fmt.Errorf("SeqDeltasが空です")
+		return errors.New("SeqDeltasが空です")
 	}
 	dst.Clear()
 
