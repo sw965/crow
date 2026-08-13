@@ -13,7 +13,9 @@ import (
 )
 
 const (
-	defaultBaseURL = "https://github.com/sw965/crow/releases/download/v0.1.0-test/"
+	// v0.2.0-test 以降のgobは現行の bitsx.Matrix(GobEncode/GobDecode)形式。
+	// v0.1.0-test は公開フィールド時代の旧形式であり、現行型ではデコードできない。
+	defaultBaseURL = "https://github.com/sw965/crow/releases/download/v0.2.0-test/"
 
 	// MNIST
 	mnistTrainImagesFile = "mnist_train_flat_binary_imgs.gob"
