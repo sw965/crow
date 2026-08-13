@@ -52,12 +52,18 @@ func NewTrainer(model Model, p int) *Trainer {
 		aggregatedDelta[l] = layer.NewZerosDeltas()
 	}
 
+	// TODO: 暫定的にpanicでガードしている。エラーの扱いを決めたら見直す。
+	workerRNGs, err := randx.NewPCGs(workerCount)
+	if err != nil {
+		panic(err)
+	}
+
 	return &Trainer{
 		MiniBatchSize:   128,
 		LR:              defaultLR,
 		Margin:          defaultMargin,
 		model:           model,
-		workerRNGs:      randx.NewPCGs(workerCount),
+		workerRNGs:      workerRNGs,
 		shuffleRNG:      randx.NewPCG(),
 		workerDeltas:    workerDeltas,
 		aggregatedDelta: aggregatedDelta,

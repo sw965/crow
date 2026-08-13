@@ -165,7 +165,11 @@ func (e *Engine[S, Ac, Ag]) NewCrossPlayoutRecorder(inits []S, accrs []ActorCrit
 	}
 
 	accrPerms := slices.Collect(slicesx.Permutations(accrs, agentsN))
-	rngs := randx.NewPCGs(p)
+	// TODO: 暫定的にpanicでガードしている。エラーの扱いを決めたら見直す。
+	rngs, err := randx.NewPCGs(p)
+	if err != nil {
+		panic(err)
+	}
 
 	accrNames := make([]game.ActorCriticName, len(accrs))
 	for i, accr := range accrs {

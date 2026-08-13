@@ -110,7 +110,10 @@ func TestDPUCT(t *testing.T) {
 	mcts.SetPlayout(accr)
 
 	// マルチスレッドで探索する
-	rngs := randx.NewPCGs(4)
+	rngs, err := randx.NewPCGs(4)
+	if err != nil {
+		panic(err)
+	}
 
 	rootState := RockPaperScissors{}
 	rootNode, err := mcts.NewNode(rootState)
@@ -200,7 +203,10 @@ func TestDPUCTNewPolicyValueFunc(t *testing.T) {
 	accr := simultaneous.NewRandomActorCritic[RockPaperScissors, Hand, int]()
 	mcts.SetPlayout(accr)
 
-	rngs := randx.NewPCGs(2)
+	rngs, err := randx.NewPCGs(2)
+	if err != nil {
+		panic(err)
+	}
 	pvFunc := mcts.NewPolicyValueFunc(3000, rngs)
 
 	rootState := RockPaperScissors{}

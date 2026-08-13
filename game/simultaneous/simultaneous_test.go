@@ -117,7 +117,10 @@ func TestUniformPolicyNoValueFunc(t *testing.T) {
 func TestEnginePlayouts(t *testing.T) {
 	engine := newRPSEngine()
 	accr := simultaneous.NewRandomActorCritic[RockPaperScissors, Hand, int]()
-	rngs := randx.NewPCGs(2)
+	rngs, err := randx.NewPCGs(2)
+	if err != nil {
+		panic(err)
+	}
 
 	n := 50
 	inits := make([]RockPaperScissors, n)
@@ -145,7 +148,10 @@ func TestEnginePlayouts(t *testing.T) {
 func TestEngineRecordPlayouts(t *testing.T) {
 	engine := newRPSEngine()
 	accr := simultaneous.NewRandomActorCritic[RockPaperScissors, Hand, int]()
-	rngs := randx.NewPCGs(2)
+	rngs, err := randx.NewPCGs(2)
+	if err != nil {
+		panic(err)
+	}
 
 	n := 20
 	inits := make([]RockPaperScissors, n)
@@ -198,9 +204,12 @@ func TestEnginePlayouts_MaxSteps(t *testing.T) {
 	endlessEngine.SetStandardResultScoreByAgentFunc()
 
 	accr := simultaneous.NewRandomActorCritic[int, int, string]()
-	rngs := randx.NewPCGs(1)
+	rngs, err := randx.NewPCGs(1)
+	if err != nil {
+		panic(err)
+	}
 
-	_, err := endlessEngine.Playouts([]int{0}, accr, rngs)
+	_, err = endlessEngine.Playouts([]int{0}, accr, rngs)
 	if err == nil {
 		t.Fatal("エラーを期待したが、nilが返された")
 	}

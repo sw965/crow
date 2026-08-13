@@ -46,7 +46,11 @@ func TestSearchFindsWinningMove(t *testing.T) {
 		t.Fatalf("予期せぬエラー: %v", err)
 	}
 
-	rngs := randx.NewPCGs(4)
+	rngs, err := randx.NewPCGs(4)
+	if err != nil {
+		panic(err)
+	}
+
 	_, err = mcts.Search(rootNode, 5000, rngs)
 	if err != nil {
 		t.Fatalf("予期せぬエラー: %v", err)
@@ -82,7 +86,10 @@ func TestSearchFindsWinningMove(t *testing.T) {
 
 func TestNewPolicyValueFunc(t *testing.T) {
 	mcts := newTTTMCTS()
-	rngs := randx.NewPCGs(2)
+	rngs, err := randx.NewPCGs(2)
+	if err != nil {
+		panic(err)
+	}
 	pvFunc := mcts.NewPolicyValueFunc(1000, rngs)
 
 	state := ttt.NewInitialState()
@@ -201,7 +208,12 @@ func TestSearchMaxDepth(t *testing.T) {
 	}
 
 	// Searchも問題なく完了する
-	if _, err := mcts.Search(rootNode, 1000, randx.NewPCGs(4)); err != nil {
+	rngs, err := randx.NewPCGs(4)
+	if err != nil {
+		panic(err)
+	}
+
+	if _, err := mcts.Search(rootNode, 1000, rngs); err != nil {
 		t.Fatalf("予期せぬエラー: %v", err)
 	}
 }
