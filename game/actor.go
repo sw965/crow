@@ -88,7 +88,7 @@ func WeightedRandomSelectFunc[Ac, Ag comparable](policy Policy[Ac], agent Ag, rn
 		ws = append(ws, p)
 	}
 
-	idx, err := randx.IntByWeights(ws, rng)
+	idx, err := randx.IndexByWeights(ws, rng)
 	if err != nil {
 		var zero Ac
 		return zero, err

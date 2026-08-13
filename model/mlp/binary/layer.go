@@ -138,7 +138,7 @@ func (d *Dense) Forward(x *bitsx.Matrix, rng *rand.Rand) (*bitsx.Matrix, Backwar
 	if isNoisy {
 		for i, count := range u {
 			zi := 2*count - maxZi
-			noise, err := randx.NormalInt(minZi, maxZi, 0, noiseStd, rng)
+			noise, err := randx.IntNorm(minZi, maxZi, 0, noiseStd, rng)
 			if err != nil {
 				return nil, nil, err
 			}
