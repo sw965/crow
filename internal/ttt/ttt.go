@@ -154,7 +154,7 @@ func rankByAgent(s State) (game.RankByAgent[Mark], error) {
 // NewEngine は、三目並べのゲームエンジンを返す。
 func NewEngine() sequential.Engine[State, Action, Mark] {
 	e := sequential.Engine[State, Action, Mark]{
-		Logic: sequential.Logic[State, Action, Mark]{
+		Rule: sequential.Rule[State, Action, Mark]{
 			LegalActionsFunc: legalActions,
 			TransitionFunc:   transition,
 			EqualFunc:        func(s1, s2 State) bool { return s1 == s2 },

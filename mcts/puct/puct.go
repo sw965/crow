@@ -178,7 +178,7 @@ func (e *Engine[S, Ac, Ag]) SetPlayout(accr sequential.ActorCritic[S, Ac, Ag]) {
 }
 
 func (e Engine[S, Ac, Ag]) NewNode(state S) (*Node[S, Ac, Ag], error) {
-	legalActions := e.Game.Logic.LegalActionsFunc(state)
+	legalActions := e.Game.Rule.LegalActionsFunc(state)
 
 	// policy.ValidateForLegalActionsでもlegalActionsの空チェックはするが、PolicyFuncを安全に呼ぶ為に、ここでもチェックする
 	if len(legalActions) == 0 {
@@ -201,7 +201,7 @@ func (e Engine[S, Ac, Ag]) NewNode(state S) (*Node[S, Ac, Ag], error) {
 		s[action] = &pucb.Calculator{Func: e.PUCBFunc, P: p, VirtualValue: e.VirtualValue}
 	}
 
-	agent := e.Game.Logic.CurrentAgentFunc(state)
+	agent := e.Game.Rule.CurrentAgentFunc(state)
 
 	found := slices.Contains(e.Game.Agents, agent)
 
@@ -248,7 +248,7 @@ func (e Engine[S, Ac, Ag]) SelectExpansionBackward(node *Node[S, Ac, Ag], capaci
 		node.mu.Unlock()
 		buffers = append(buffers, selectBuffer[S, Ac, Ag]{node: node, action: action})
 
-		state, err = e.Game.Logic.TransitionFunc(state, action)
+		state, err = e.Game.Rule.TransitionFunc(state, action)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -272,7 +272,7 @@ func (e Engine[S, Ac, Ag]) SelectExpansionBackward(node *Node[S, Ac, Ag], capaci
 		// node.nextNodesByActionはmap型 node.nextNodesByAction[action]はslice型
 		// この処理はデータを読むだけだが、他のワーカーが、書き込む処理をすると、破綻する為、Lockが必要
 		node.mu.Lock()
-		nextNode, ok := node.nextNodesByAction[action].FindByState(state, e.Game.Logic.EqualFunc)
+		nextNode, ok := node.nextNodesByAction[action].FindByState(state, e.Game.Rule.EqualFunc)
 		node.mu.Unlock()
 
 		if ok {
@@ -288,7 +288,7 @@ func (e Engine[S, Ac, Ag]) SelectExpansionBackward(node *Node[S, Ac, Ag], capaci
 			// Unlockして NewNodeを作ってる間に、別のワーカーがノードを追加した可能性がある為、再度Lockして調べる
 			node.mu.Lock()
 			// nextNodesの中に、一致するstateが見つかれば、それを次のノードとする
-			if nn, ok := node.nextNodesByAction[action].FindByState(state, e.Game.Logic.EqualFunc); ok {
+			if nn, ok := node.nextNodesByAction[action].FindByState(state, e.Game.Rule.EqualFunc); ok {
 				nextNode = nn
 				expand = false
 				// nextNodesの中に、一致するstateが見つからなければ、newNodeをnextNodesに追加し、selectを終了する

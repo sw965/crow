@@ -43,7 +43,7 @@ func (e *Engine[S, Ac, Ag]) Playouts(inits []S, accr ActorCritic[S, Ac, Ag], rng
 				return fmt.Errorf("手数がMaxSteps(%d)に達してもゲームが終了しませんでした", e.MaxSteps)
 			}
 
-			legalActions := e.Logic.LegalActionsFunc(state)
+			legalActions := e.Rule.LegalActionsFunc(state)
 			// policy.ValidateForLegalActionsでもlegalActionsの空チェックをするが、PolicyFuncを安全に呼ぶ為に、ここでもチェックする
 			if len(legalActions) == 0 {
 				return errors.New("ゲームが終了していないのに合法手がありません")
@@ -61,13 +61,13 @@ func (e *Engine[S, Ac, Ag]) Playouts(inits []S, accr ActorCritic[S, Ac, Ag], rng
 				return err
 			}
 
-			agent := e.Logic.CurrentAgentFunc(state)
+			agent := e.Rule.CurrentAgentFunc(state)
 			action, err := accr.SelectFunc(policy, agent, rng)
 			if err != nil {
 				return err
 			}
 
-			state, err = e.Logic.TransitionFunc(state, action)
+			state, err = e.Rule.TransitionFunc(state, action)
 			if err != nil {
 				return err
 			}
@@ -106,7 +106,7 @@ func (e *Engine[S, Ac, Ag]) RecordPlayouts(inits []S, accr ActorCritic[S, Ac, Ag
 				return fmt.Errorf("手数がMaxSteps(%d)に達してもゲームが終了しませんでした", e.MaxSteps)
 			}
 
-			legalActions := e.Logic.LegalActionsFunc(state)
+			legalActions := e.Rule.LegalActionsFunc(state)
 			if len(legalActions) == 0 {
 				return errors.New("ゲームが終了していないのに合法手がありません")
 			}
@@ -120,7 +120,7 @@ func (e *Engine[S, Ac, Ag]) RecordPlayouts(inits []S, accr ActorCritic[S, Ac, Ag
 				return err
 			}
 
-			agent := e.Logic.CurrentAgentFunc(state)
+			agent := e.Rule.CurrentAgentFunc(state)
 			action, err := accr.SelectFunc(policy, agent, rng)
 			if err != nil {
 				return err
@@ -134,7 +134,7 @@ func (e *Engine[S, Ac, Ag]) RecordPlayouts(inits []S, accr ActorCritic[S, Ac, Ag
 				Value:  value,
 			})
 
-			state, err = e.Logic.TransitionFunc(state, action)
+			state, err = e.Rule.TransitionFunc(state, action)
 			if err != nil {
 				return err
 			}
@@ -190,7 +190,7 @@ func (e *Engine[S, Ac, Ag]) NewCrossPlayoutRecorder(inits []S, accrs []ActorCrit
 		}
 
 		pvFunc := func(state S, legalActions []Ac) (game.Policy[Ac], float32, error) {
-			agent := e.Logic.CurrentAgentFunc(state)
+			agent := e.Rule.CurrentAgentFunc(state)
 			return pvFuncByAgent[agent](state, legalActions)
 		}
 

@@ -33,7 +33,7 @@ const (
 
 func newRPSEngine() simultaneous.Engine[RockPaperScissors, Hand, int] {
 	engine := simultaneous.Engine[RockPaperScissors, Hand, int]{
-		Logic: simultaneous.Logic[RockPaperScissors, Hand, int]{
+		Rule: simultaneous.Rule[RockPaperScissors, Hand, int]{
 			LegalActionsByAgentFunc: func(rps RockPaperScissors) simultaneous.LegalActionsByAgent[Hand, int] {
 				if rps.Finished {
 					return simultaneous.LegalActionsByAgent[Hand, int]{}
@@ -188,7 +188,7 @@ func TestEngineRecordPlayouts(t *testing.T) {
 // 終了しないゲームでも、MaxStepsを設定すればプレイアウトがエラーで止まる事を確認する
 func TestEnginePlayouts_MaxSteps(t *testing.T) {
 	endlessEngine := simultaneous.Engine[int, int, string]{
-		Logic: simultaneous.Logic[int, int, string]{
+		Rule: simultaneous.Rule[int, int, string]{
 			LegalActionsByAgentFunc: func(int) simultaneous.LegalActionsByAgent[int, string] {
 				return simultaneous.LegalActionsByAgent[int, string]{"A": {0}}
 			},

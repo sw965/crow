@@ -189,7 +189,7 @@ func (e *Engine[S, Ac, Ag]) SetPlayout(accr simultaneous.ActorCritic[S, Ac, Ag])
 }
 
 func (e Engine[S, Ac, Ag]) NewNode(state S) (*Node[S, Ac, Ag], error) {
-	legalActionsByAgent := e.Game.Logic.LegalActionsByAgentFunc(state)
+	legalActionsByAgent := e.Game.Rule.LegalActionsByAgentFunc(state)
 	if len(legalActionsByAgent) == 0 {
 		return nil, errors.New("ゲームが終了していないのに合法手がありません")
 	}
@@ -269,7 +269,7 @@ func (e Engine[S, Ac, Ag]) SelectExpansionBackward(node *Node[S, Ac, Ag], capaci
 
 		buffers = append(buffers, selectBuffer[S, Ac, Ag]{node: node, actionByAgent: actionByAgent})
 
-		state, err = e.Game.Logic.TransitionFunc(state, actionByAgent)
+		state, err = e.Game.Rule.TransitionFunc(state, actionByAgent)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -291,7 +291,7 @@ func (e Engine[S, Ac, Ag]) SelectExpansionBackward(node *Node[S, Ac, Ag], capaci
 		var expand bool
 
 		node.mu.Lock()
-		nextNode, ok := node.nextNodes.FindByState(state, e.Game.Logic.EqualFunc)
+		nextNode, ok := node.nextNodes.FindByState(state, e.Game.Rule.EqualFunc)
 		node.mu.Unlock()
 
 		if ok {
@@ -306,7 +306,7 @@ func (e Engine[S, Ac, Ag]) SelectExpansionBackward(node *Node[S, Ac, Ag], capaci
 
 			node.mu.Lock()
 			// 生成中に他のスレッドが追加した可能性があるため再度確認
-			if nn, ok := node.nextNodes.FindByState(state, e.Game.Logic.EqualFunc); ok {
+			if nn, ok := node.nextNodes.FindByState(state, e.Game.Rule.EqualFunc); ok {
 				nextNode = nn
 				expand = false
 			} else {

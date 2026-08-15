@@ -93,7 +93,7 @@ func TestNewPolicyValueFunc(t *testing.T) {
 	pvFunc := mcts.NewPolicyValueFunc(1000, rngs)
 
 	state := ttt.NewInitialState()
-	legalActions := mcts.Game.Logic.LegalActionsFunc(state)
+	legalActions := mcts.Game.Rule.LegalActionsFunc(state)
 
 	policy, value, err := pvFunc(state, legalActions)
 	if err != nil {
@@ -152,7 +152,7 @@ type endlessState struct {
 func newEndlessMCTS(maxDepth int) puct.Engine[endlessState, int, string] {
 	// 2つの状態を行き来し続ける、終了しないゲーム
 	gameEngine := sequential.Engine[endlessState, int, string]{
-		Logic: sequential.Logic[endlessState, int, string]{
+		Rule: sequential.Rule[endlessState, int, string]{
 			LegalActionsFunc: func(endlessState) []int { return []int{0, 1} },
 			TransitionFunc: func(s endlessState, a int) (endlessState, error) {
 				return endlessState{Pos: (s.Pos + 1) % 2}, nil

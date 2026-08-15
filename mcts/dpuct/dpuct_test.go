@@ -78,7 +78,7 @@ func newRPSEngine(agent1, agent2 int) simultaneous.Engine[RockPaperScissors, Han
 	}
 
 	engine := simultaneous.Engine[RockPaperScissors, Hand, int]{
-		Logic: simultaneous.Logic[RockPaperScissors, Hand, int]{
+		Rule: simultaneous.Rule[RockPaperScissors, Hand, int]{
 			LegalActionsByAgentFunc: legalActionsByAgentFunc,
 			TransitionFunc:          transitionFunc,
 			EqualFunc:               equalFunc,
@@ -210,7 +210,7 @@ func TestDPUCTNewPolicyValueFunc(t *testing.T) {
 	pvFunc := mcts.NewPolicyValueFunc(3000, rngs)
 
 	rootState := RockPaperScissors{}
-	legalActionsByAgent := gameEngine.Logic.LegalActionsByAgentFunc(rootState)
+	legalActionsByAgent := gameEngine.Rule.LegalActionsByAgentFunc(rootState)
 	policyByAgent, valueByAgent, err := pvFunc(rootState, legalActionsByAgent)
 	if err != nil {
 		t.Fatalf("予期せぬエラー: %v", err)

@@ -189,15 +189,15 @@ func TestEngineRecordPlayouts(t *testing.T) {
 		// 記録された遷移を辿ると、最終状態に到達するはず
 		state := inits[i]
 		for stepIdx, step := range record.Steps {
-			if !engine.Logic.EqualFunc(state, step.State) {
+			if !engine.Rule.EqualFunc(state, step.State) {
 				t.Fatalf("records[%d].Steps[%d].Stateが遷移と一致しない", i, stepIdx)
 			}
-			state, err = engine.Logic.TransitionFunc(state, step.Action)
+			state, err = engine.Rule.TransitionFunc(state, step.Action)
 			if err != nil {
 				t.Fatalf("予期せぬエラー: %v", err)
 			}
 		}
-		if !engine.Logic.EqualFunc(state, record.FinalState) {
+		if !engine.Rule.EqualFunc(state, record.FinalState) {
 			t.Errorf("records[%d]: 遷移を辿った結果がFinalStateと一致しない", i)
 		}
 	}
@@ -243,7 +243,7 @@ func TestEngineRecordElmoSteps(t *testing.T) {
 func TestEnginePlayouts_MaxSteps(t *testing.T) {
 	// 常に同じ状態に戻る、終了しないゲーム
 	endlessEngine := sequential.Engine[int, int, string]{
-		Logic: sequential.Logic[int, int, string]{
+		Rule: sequential.Rule[int, int, string]{
 			LegalActionsFunc: func(int) []int { return []int{0} },
 			TransitionFunc:   func(s int, a int) (int, error) { return s, nil },
 			EqualFunc:        func(a, b int) bool { return a == b },

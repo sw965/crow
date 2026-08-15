@@ -86,7 +86,7 @@ func TestTransition(t *testing.T) {
 	state := ttt.NewInitialState()
 
 	t.Run("正常_マークが置かれ手番が替わる", func(t *testing.T) {
-		next, err := engine.Logic.TransitionFunc(state, ttt.Action{Row: 1, Col: 1})
+		next, err := engine.Rule.TransitionFunc(state, ttt.Action{Row: 1, Col: 1})
 		if err != nil {
 			t.Fatalf("予期せぬエラー: %v", err)
 		}
@@ -99,18 +99,18 @@ func TestTransition(t *testing.T) {
 	})
 
 	t.Run("異常_置かれているマスに置く", func(t *testing.T) {
-		next, err := engine.Logic.TransitionFunc(state, ttt.Action{Row: 1, Col: 1})
+		next, err := engine.Rule.TransitionFunc(state, ttt.Action{Row: 1, Col: 1})
 		if err != nil {
 			t.Fatalf("予期せぬエラー: %v", err)
 		}
-		_, err = engine.Logic.TransitionFunc(next, ttt.Action{Row: 1, Col: 1})
+		_, err = engine.Rule.TransitionFunc(next, ttt.Action{Row: 1, Col: 1})
 		if err == nil {
 			t.Fatal("エラーを期待したが、nilが返された")
 		}
 	})
 
 	t.Run("異常_範囲外", func(t *testing.T) {
-		_, err := engine.Logic.TransitionFunc(state, ttt.Action{Row: 3, Col: 0})
+		_, err := engine.Rule.TransitionFunc(state, ttt.Action{Row: 3, Col: 0})
 		if err == nil {
 			t.Fatal("エラーを期待したが、nilが返された")
 		}
@@ -121,7 +121,7 @@ func TestLegalActions(t *testing.T) {
 	engine := ttt.NewEngine()
 
 	t.Run("正常_初期局面は9手", func(t *testing.T) {
-		got := engine.Logic.LegalActionsFunc(ttt.NewInitialState())
+		got := engine.Rule.LegalActionsFunc(ttt.NewInitialState())
 		if len(got) != 9 {
 			t.Errorf("合法手の数の不一致: got = %d, want = 9", len(got))
 		}
@@ -135,7 +135,7 @@ func TestLegalActions(t *testing.T) {
 				{ttt.EmptyMark, ttt.EmptyMark, ttt.EmptyMark},
 			},
 		}
-		got := engine.Logic.LegalActionsFunc(state)
+		got := engine.Rule.LegalActionsFunc(state)
 		if len(got) != 0 {
 			t.Errorf("合法手の数の不一致: got = %d, want = 0", len(got))
 		}

@@ -43,7 +43,7 @@ func (e *Engine[S, Ac, Ag]) Playouts(inits []S, accr ActorCritic[S, Ac, Ag], rng
 				return fmt.Errorf("手数がMaxSteps(%d)に達してもゲームが終了しませんでした", e.MaxSteps)
 			}
 
-			legalActionsByAgent := e.Logic.LegalActionsByAgentFunc(state)
+			legalActionsByAgent := e.Rule.LegalActionsByAgentFunc(state)
 			if len(legalActionsByAgent) == 0 {
 				return errors.New("ゲームが終了していないのに合法手がありません")
 			}
@@ -70,7 +70,7 @@ func (e *Engine[S, Ac, Ag]) Playouts(inits []S, accr ActorCritic[S, Ac, Ag], rng
 				jointAction[agent] = action
 			}
 
-			state, err = e.Logic.TransitionFunc(state, jointAction)
+			state, err = e.Rule.TransitionFunc(state, jointAction)
 			if err != nil {
 				return err
 			}
@@ -109,7 +109,7 @@ func (e *Engine[S, Ac, Ag]) RecordPlayouts(inits []S, accr ActorCritic[S, Ac, Ag
 				return fmt.Errorf("手数がMaxSteps(%d)に達してもゲームが終了しませんでした", e.MaxSteps)
 			}
 
-			legalActionsByAgent := e.Logic.LegalActionsByAgentFunc(state)
+			legalActionsByAgent := e.Rule.LegalActionsByAgentFunc(state)
 			if len(legalActionsByAgent) == 0 {
 				return errors.New("ゲームが終了していないのに合法手がありません")
 			}
@@ -142,7 +142,7 @@ func (e *Engine[S, Ac, Ag]) RecordPlayouts(inits []S, accr ActorCritic[S, Ac, Ag
 				ValueByAgent:  valueByAgent,
 			})
 
-			state, err = e.Logic.TransitionFunc(state, jointAction)
+			state, err = e.Rule.TransitionFunc(state, jointAction)
 			if err != nil {
 				return err
 			}

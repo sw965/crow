@@ -11,31 +11,31 @@ type TransitionFunc[S any, Ac comparable] func(S, Ac) (S, error)
 type EqualFunc[S any] func(S, S) bool
 type CurrentAgentFunc[S any, Ag comparable] func(S) Ag
 
-type Logic[S any, Ac, Ag comparable] struct {
+type Rule[S any, Ac, Ag comparable] struct {
 	LegalActionsFunc LegalActionsFunc[S, Ac]
 	TransitionFunc   TransitionFunc[S, Ac]
 	EqualFunc        EqualFunc[S]
 	CurrentAgentFunc CurrentAgentFunc[S, Ag]
 }
 
-func (l Logic[S, Ac, Ag]) Validate() error {
-	if l.LegalActionsFunc == nil {
+func (r Rule[S, Ac, Ag]) Validate() error {
+	if r.LegalActionsFunc == nil {
 		return errors.New("LegalActionsFuncがnilです")
 	}
-	if l.TransitionFunc == nil {
+	if r.TransitionFunc == nil {
 		return errors.New("TransitionFuncがnilです")
 	}
-	if l.EqualFunc == nil {
+	if r.EqualFunc == nil {
 		return errors.New("EqualFuncがnilです")
 	}
-	if l.CurrentAgentFunc == nil {
+	if r.CurrentAgentFunc == nil {
 		return errors.New("CurrentAgentFuncがnilです")
 	}
 	return nil
 }
 
 type Engine[S any, Ac, Ag comparable] struct {
-	Logic                  Logic[S, Ac, Ag]
+	Rule                   Rule[S, Ac, Ag]
 	RankByAgentFunc        game.RankByAgentFunc[S, Ag]
 	ResultScoreByAgentFunc game.ResultScoreByAgentFunc[Ag]
 	Agents                 []Ag
@@ -46,7 +46,7 @@ type Engine[S any, Ac, Ag comparable] struct {
 }
 
 func (e Engine[S, Ac, Ag]) Validate() error {
-	if err := e.Logic.Validate(); err != nil {
+	if err := e.Rule.Validate(); err != nil {
 		return err
 	}
 
