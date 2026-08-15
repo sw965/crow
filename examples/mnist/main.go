@@ -56,7 +56,7 @@ func main() {
 	// 論文スケール(r)。旧実装スケールの 0.25 と同じ実効マージン
 	trainer.Margin = 0.5
 
-	acc, err := model.Accuracy(mnist.TestImages, mnist.TestLabels, p)
+	acc, err := model.Accuracy(mnist.TestInputs, mnist.TestLabels, p)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -64,11 +64,11 @@ func main() {
 
 	epochs := 50
 	for i := range epochs {
-		if err := trainer.Train(mnist.TrainImages, mnist.TrainLabels); err != nil {
+		if err := trainer.Train(mnist.TrainInputs, mnist.TrainLabels); err != nil {
 			log.Fatal(err)
 		}
 
-		acc, err := model.Accuracy(mnist.TestImages, mnist.TestLabels, p)
+		acc, err := model.Accuracy(mnist.TestInputs, mnist.TestLabels, p)
 		if err != nil {
 			log.Fatal(err)
 		}

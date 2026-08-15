@@ -70,20 +70,7 @@ func (m *Model) SetClassPrototypes(numClasses int, rng *rand.Rand) error {
 	return nil
 }
 
-func (m *Model) SetRegressionHighPrototypes(n int, sigma float32, rng *rand.Rand) error {
-	yRows, yCols, err := m.Backbone.OutputShape(m.XRows, m.XCols)
-	if err != nil {
-		return err
-	}
-	protos, err := bitsx.NewRFFMatrices(n, yRows, yCols, sigma, rng)
-	if err != nil {
-		return err
-	}
-	m.Prototypes = protos
-	return nil
-}
-
-func (m *Model) SetRegressionLowPrototypes(n int) error {
+func (m *Model) SetRegressionPrototypes(n int) error {
 	yRows, yCols, err := m.Backbone.OutputShape(m.XRows, m.XCols)
 	if err != nil {
 		return err

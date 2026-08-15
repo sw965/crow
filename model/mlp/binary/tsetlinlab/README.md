@@ -34,7 +34,7 @@ Fashion-MNIST 87.44±0.11%(BEP実装 83.78%、論文報告 85〜87%)を実測し
 **`loadDataset` を丸ごと `dataset.LoadMNIST` / `dataset.LoadFashionMNIST` の
 呼び出しに置き換えること**。この2関数のシグネチャ(引数・戻り値の型)は
 今回の修正で変えていないため、呼び出し側のインターフェースはそのまま使える。
-戻り値 `BinaryDataset.TrainImages` 等は `bitsx.Matrices`(`[]*bitsx.Matrix`)であり、
+戻り値 `Binary.TrainInputs` 等は `bitsx.Matrices`(`[]*bitsx.Matrix`)であり、
 `packSamples` が直接触っている `img.Rows`/`img.Cols`/`img.Data[w]` は
 非公開フィールドになっているため、`img.Rows()`/`img.Cols()`/`img.Word(w)`
 (公開API、`omw/mathx/bitsx/matrix.go`)に置き換える必要がある。

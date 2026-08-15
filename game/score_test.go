@@ -64,9 +64,9 @@ func TestNewRankByAgent(t *testing.T) {
 			name: "異常_エージェント重複",
 			// チームCが重複
 			agentsPerRank: [][]string{
-				[]string{"チームC"},
-				[]string{"チームA", "チームB"},
-				[]string{"チームD", "チームC"},
+				{"チームC"},
+				{"チームA", "チームB"},
+				{"チームD", "チームC"},
 			},
 			wantErr: true,
 			wantErrMsgSubs: []string{
@@ -78,12 +78,12 @@ func TestNewRankByAgent(t *testing.T) {
 			name: "異常_空の順位",
 			agentsPerRank: [][]string{
 				// 1位
-				[]string{"チームA"},
+				{"チームA"},
 				// 2位
-				[]string{"チームB", "チームC"},
+				{"チームB", "チームC"},
 				// 4位
-				[]string{},
-				[]string{"チームF"},
+				{},
+				{"チームF"},
 			},
 			wantErr: true,
 			wantErrMsgSubs: []string{
