@@ -1,9 +1,12 @@
 package dpuct_test
 
 import (
+	"context"
+	"errors"
 	"math"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sw965/crow/game"
 	"github.com/sw965/crow/game/simultaneous"
@@ -276,5 +279,65 @@ func TestDPUCTSelectionErrorReleasesPending(t *testing.T) {
 				t.Errorf("pendingが解放されていない: agent=%d action=%s got=%d", agent, action, got)
 			}
 		}
+	}
+}
+
+func TestSearchContext_Cancellation(t *testing.T) {
+	gameEngine := newRPSEngine(1, 2)
+	mcts := dpuct.Engine[RockPaperScissors, Hand, int]{
+		Game:         gameEngine,
+		PUCBFunc:     pucb.NewAlphaGoFunc(1.25),
+		NextNodesCap: 3,
+		VirtualValue: 0.5,
+	}
+	mcts.SetUniformPolicyFunc()
+	mcts.SetPlayout(simultaneous.NewRandomActorCritic[RockPaperScissors, Hand, int]())
+
+	rootNode, err := mcts.NewNode(RockPaperScissors{})
+	if err != nil {
+		t.Fatalf("NewNode error: %v", err)
+	}
+
+	rngs, err := randx.NewPCGs(4)
+	if err != nil {
+		panic(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err = mcts.SearchContext(ctx, rootNode, 10000, rngs)
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("context.Canceled を期待したが、異なるエラーが返された: %v", err)
+	}
+}
+
+func TestSearchContext_Timeout(t *testing.T) {
+	gameEngine := newRPSEngine(1, 2)
+	mcts := dpuct.Engine[RockPaperScissors, Hand, int]{
+		Game:         gameEngine,
+		PUCBFunc:     pucb.NewAlphaGoFunc(1.25),
+		NextNodesCap: 3,
+		VirtualValue: 0.5,
+	}
+	mcts.SetUniformPolicyFunc()
+	mcts.SetPlayout(simultaneous.NewRandomActorCritic[RockPaperScissors, Hand, int]())
+
+	rootNode, err := mcts.NewNode(RockPaperScissors{})
+	if err != nil {
+		t.Fatalf("NewNode error: %v", err)
+	}
+
+	rngs, err := randx.NewPCGs(4)
+	if err != nil {
+		panic(err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+
+	_, err = mcts.SearchContext(ctx, rootNode, 1000000, rngs)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("context.DeadlineExceeded を期待したが、異なるエラーが返された: %v", err)
 	}
 }

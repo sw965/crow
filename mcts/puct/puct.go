@@ -1,11 +1,11 @@
 package puct
 
 import (
-	"fmt"
-	"math/rand/v2"
-
+	"context"
 	"errors"
+	"fmt"
 	"maps"
+	"math/rand/v2"
 	"slices"
 	"sync"
 
@@ -330,6 +330,10 @@ func (e Engine[S, Ac, Ag]) SelectExpansionBackward(node *Node[S, Ac, Ag], capaci
 }
 
 func (e Engine[S, Ac, Ag]) Search(rootNode *Node[S, Ac, Ag], n int, workerRngs []*rand.Rand) (RootNodeEvalByAgent[Ag], error) {
+	return e.SearchContext(context.Background(), rootNode, n, workerRngs)
+}
+
+func (e Engine[S, Ac, Ag]) SearchContext(ctx context.Context, rootNode *Node[S, Ac, Ag], n int, workerRngs []*rand.Rand) (RootNodeEvalByAgent[Ag], error) {
 	if err := e.Validate(); err != nil {
 		return nil, err
 	}
@@ -349,7 +353,7 @@ func (e Engine[S, Ac, Ag]) Search(rootNode *Node[S, Ac, Ag], n int, workerRngs [
 	}
 
 	workerBuffCaps := make([]int, p)
-	err := parallel.For(n, p, func(workerID, idx int) error {
+	err := parallel.ForContext(ctx, n, p, func(workerID, idx int) error {
 		rng := workerRngs[workerID]
 		leafEvals, depth, err := e.SelectExpansionBackward(rootNode, workerBuffCaps[workerID], rng)
 		if err != nil {

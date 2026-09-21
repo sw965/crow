@@ -1,8 +1,11 @@
 package puct_test
 
 import (
+	"context"
+	"errors"
 	"math"
 	"testing"
+	"time"
 
 	"github.com/sw965/crow/game"
 	"github.com/sw965/crow/game/sequential"
@@ -215,5 +218,47 @@ func TestSearchMaxDepth(t *testing.T) {
 
 	if _, err := mcts.Search(rootNode, 1000, rngs); err != nil {
 		t.Fatalf("予期せぬエラー: %v", err)
+	}
+}
+
+func TestSearchContext_Cancellation(t *testing.T) {
+	mcts := newTTTMCTS()
+	rootNode, err := mcts.NewNode(ttt.NewInitialState())
+	if err != nil {
+		t.Fatalf("予期せぬエラー: %v", err)
+	}
+
+	rngs, err := randx.NewPCGs(4)
+	if err != nil {
+		panic(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err = mcts.SearchContext(ctx, rootNode, 10000, rngs)
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("context.Canceled を期待したが、異なるエラーが返された: %v", err)
+	}
+}
+
+func TestSearchContext_Timeout(t *testing.T) {
+	mcts := newTTTMCTS()
+	rootNode, err := mcts.NewNode(ttt.NewInitialState())
+	if err != nil {
+		t.Fatalf("予期せぬエラー: %v", err)
+	}
+
+	rngs, err := randx.NewPCGs(4)
+	if err != nil {
+		panic(err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+
+	_, err = mcts.SearchContext(ctx, rootNode, 1000000, rngs)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("context.DeadlineExceeded を期待したが、異なるエラーが返された: %v", err)
 	}
 }
