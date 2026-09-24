@@ -10,7 +10,7 @@ import (
 
 func newTestMatrix(t *testing.T, rows, cols int, rng *rand.Rand) *bitsx.Matrix {
 	t.Helper()
-	m, err := bitsx.NewRandMatrix(rows, cols, 0, rng)
+	m, err := bitsx.NewRandMatrix(rows, cols, rng)
 	if err != nil {
 		t.Fatalf("予期せぬエラー: %v", err)
 	}
@@ -281,7 +281,9 @@ func TestSatisfiesUpdateCriterionMatchesCrow(t *testing.T) {
 			}
 			got := satisfiesUpdateCriterion(lg, label, rival(lg, label), c.totalBits(), margin)
 
-			want, err := binary.SatisfiesUpdateCriterion(y, label, c.q, margin)
+			// crow 側は一致ビット数の差を受け取るため、同じ式で比率から変換する。
+			marginBits := int(float32(y.Rows()*y.Cols()) * margin / 2)
+			want, err := binary.SatisfiesUpdateCriterion(y, label, c.q, marginBits)
 			if err != nil {
 				t.Fatalf("予期せぬエラー: %v", err)
 			}

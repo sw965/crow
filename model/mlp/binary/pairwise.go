@@ -106,9 +106,9 @@ func (t *Trainer) TrainPairwise(pairXs RankPairXs) error {
 	var xs bitsx.Matrices
 	var labels []int
 
-	// 並列化対象
+	// TODO 並列化対象
 	for _, pairX := range pairXs {
-		pairLabel, shouldUpdate, err := t.model.PairwiseLabels(pairX, t.Margin)
+		pairLabel, shouldUpdate, err := t.model.PairwiseLabels(pairX, t.PairwiseMargin)
 		if err != nil {
 			return err
 		}

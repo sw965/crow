@@ -13,16 +13,29 @@ import (
 )
 
 const (
-	defaultLR     float32 = 0.1
-	defaultMargin float32 = 0.5
+	// defaultLRHalfPow は、更新確率 (1/2)^3 = 1/8。旧既定値 LR = 0.1 と比べ、
+	// MNIST / Fashion-MNIST の3シードで精度が誤差の範囲で変わらなかった。
+	defaultLRHalfPow = 3
+	// defaultLogitMargin は、10クラスのETF(出力1024ビット)で旧方式(総ビット数/2 基準の 0.5 = 256ビット)と
+	// ほぼ同じ厳しさになる値。0.5 のままだと約281ビットになり、3シードの実測で精度がわずかに下がった。
+	defaultLogitMargin    float32 = 0.45
+	defaultPairwiseMargin float32 = 0.5
 )
 
 type Trainer struct {
 	MiniBatchSize int
-	LR            float32
-	// Margin は論文(BEP)の r に相当(±1内積スケール、推奨 r ∈ (0,1])。
+	LRHalfPow     int
+
+	// LogitMargin は更新判定のマージンで、プロトタイプ間の最小距離に対する比率(0.0〜1.0)。
+	// 出力の総ビット数ではなく最小距離を基準にするのは、達成しうるリードの上限が
+	// 最小距離で決まるため。総ビット数を基準にすると、隣接プロトタイプが近い順序符号
+	// (回帰の温度計)では小さな値でも上限を超え、判定が常に true になる。
 	// 0 だと同点ロジットが更新対象にならないため、正の値を推奨。
-	Margin float32
+	LogitMargin float32
+
+	// PairwiseMargin は TrainPairwise が使う、値域に対する比率(0.0〜1.0)。
+	// 復号した値の差を測るため、LogitMargin とは単位が異なる。
+	PairwiseMargin float32
 
 	model           Model
 	workerRNGs      []*rand.Rand
@@ -60,14 +73,34 @@ func NewTrainer(model Model, p int) *Trainer {
 
 	return &Trainer{
 		MiniBatchSize:   128,
-		LR:              defaultLR,
-		Margin:          defaultMargin,
+		LRHalfPow:       defaultLRHalfPow,
+		LogitMargin:     defaultLogitMargin,
+		PairwiseMargin:  defaultPairwiseMargin,
 		model:           model,
 		workerRNGs:      workerRNGs,
 		shuffleRNG:      randx.NewPCG(),
 		workerDeltas:    workerDeltas,
 		aggregatedDelta: aggregatedDelta,
 	}
+}
+
+// minPrototypeHammingDistance は、プロトタイプ同士のハミング距離の最小値を返す。
+// プロトタイプが2個未満のときは比べる相手が無いため 0 を返す。
+func minPrototypeHammingDistance(prototypes bitsx.Matrices) (int, error) {
+	if len(prototypes) < 2 {
+		return 0, nil
+	}
+	minDist := math.MaxInt
+	for i := range prototypes {
+		for j := i + 1; j < len(prototypes); j++ {
+			d, err := prototypes[i].HammingDistance(prototypes[j])
+			if err != nil {
+				return 0, err
+			}
+			minDist = min(minDist, d)
+		}
+	}
+	return minDist, nil
 }
 
 func (t *Trainer) Train(xs bitsx.Matrices, labels []int) error {
@@ -106,7 +139,7 @@ func (t *Trainer) Train(xs bitsx.Matrices, labels []int) error {
 			return err
 		}
 
-		err = t.model.Backbone.Update(seqDelta, t.LR, t.workerRNGs)
+		err = t.model.Backbone.Update(seqDelta, t.LRHalfPow, t.workerRNGs)
 		if err != nil {
 			return err
 		}
@@ -129,7 +162,13 @@ func (t *Trainer) ComputeSeqSignDelta(xs bitsx.Matrices, labels []int) (SeqDelta
 	backbone := t.model.Backbone
 	prototypes := t.model.Prototypes
 
-	err := parallel.For(n, p, func(workerID, idx int) error {
+	minDist, err := minPrototypeHammingDistance(prototypes)
+	if err != nil {
+		return nil, err
+	}
+	marginBits := int(t.LogitMargin * float32(minDist))
+
+	err = parallel.For(n, p, func(workerID, idx int) error {
 		rng := t.workerRNGs[workerID]
 		x := xs[idx]
 		label := labels[idx]
@@ -139,7 +178,7 @@ func (t *Trainer) ComputeSeqSignDelta(xs bitsx.Matrices, labels []int) (SeqDelta
 			return err
 		}
 
-		shouldUpdate, err := SatisfiesUpdateCriterion(y, label, prototypes, t.Margin)
+		shouldUpdate, err := SatisfiesUpdateCriterion(y, label, prototypes, marginBits)
 		if err != nil {
 			return err
 		}
@@ -178,8 +217,12 @@ func (t *Trainer) Validate() error {
 		return errors.New("prototypesが未設定です: 学習前にSetClassPrototypes等で設定するべき")
 	}
 
-	if t.LR <= 0.0 {
-		return fmt.Errorf("LRが不正(LR <= 0): LR = %g: LR > 0 であるべき", t.LR)
+	if t.LogitMargin < 0.0 || t.LogitMargin > 1.0 {
+		return fmt.Errorf("LogitMarginが不正: LogitMargin = %g: 0.0 <= LogitMargin <= 1.0 であるべき", t.LogitMargin)
+	}
+
+	if t.LRHalfPow < 0 {
+		return fmt.Errorf("LRHalfPowが不正(LRHalfPow < 0): LRHalfPow = %d: LRHalfPow >= 0 であるべき", t.LRHalfPow)
 	}
 
 	if len(t.workerRNGs) == 0 {
@@ -192,15 +235,23 @@ func (t *Trainer) Validate() error {
 
 	// gobロード後に SetSharedHyperparameters を忘れると学習時にnilパニックになるため、ここで弾く
 	for i, layer := range t.model.Backbone {
-		if d, ok := layer.(*Dense); ok && d.sharedHyperparameters == nil {
+		d, ok := layer.(*Dense)
+		if !ok {
+			continue
+		}
+		if d.sharedHyperparameters == nil {
 			return fmt.Errorf("layer %d: sharedHyperparameters が未設定です。学習前に Backbone.SetSharedHyperparameters を呼んでください", i)
+		}
+		// cols を超えると最も確信の強いニューロンまで反転しうるようになり、出力が無作為に近づくだけなので弾く
+		if d.MaxAbsNoise < 0 || d.MaxAbsNoise > d.W.Cols() {
+			return fmt.Errorf("layer %d: MaxAbsNoiseが不正: MaxAbsNoise = %d: 0 <= MaxAbsNoise <= %d (入力数) であるべき", i, d.MaxAbsNoise, d.W.Cols())
 		}
 	}
 
 	return nil
 }
 
-func SatisfiesUpdateCriterion(y *bitsx.Matrix, label int, prototypes bitsx.Matrices, margin float32) (bool, error) {
+func SatisfiesUpdateCriterion(y *bitsx.Matrix, label int, prototypes bitsx.Matrices, marginBits int) (bool, error) {
 	if y == nil {
 		return false, errors.New("yがnilです")
 	}
@@ -217,11 +268,6 @@ func SatisfiesUpdateCriterion(y *bitsx.Matrix, label int, prototypes bitsx.Matri
 		return false, err
 	}
 
-	totalBits := y.Rows() * y.Cols()
-	// margin は論文(BEP)の r と同じ ±1内積スケール。
-	// ここでのロジットは一致ビット数(0..K)で、±1内積 = 2*一致数 - K だから、
-	// 論文の r*K は一致数の差では r*K/2 に相当する。
-	marginBits := int(float32(totalBits) * margin / 2)
 	for i, proto := range prototypes {
 		if i == label {
 			continue

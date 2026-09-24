@@ -16,7 +16,7 @@ func newTestModel(t *testing.T, seed uint64) *model {
 	}
 	protos := make(bitsx.Matrices, numClasses)
 	for i := range protos {
-		p, err := bitsx.NewRandMatrix(1, 64, 0, rng)
+		p, err := bitsx.NewRandMatrix(1, 64, rng)
 		if err != nil {
 			t.Fatalf("予期せぬエラー: %v", err)
 		}

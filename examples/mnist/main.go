@@ -53,8 +53,8 @@ func main() {
 	trainer := binary.NewTrainer(model, p)
 	trainer.MiniBatchSize = 1024
 	fmt.Println("ミニバッチサイズ", trainer.MiniBatchSize)
-	// 論文スケール(r)。旧実装スケールの 0.25 と同じ実効マージン
-	trainer.Margin = 0.5
+	// プロトタイプ間の最小距離に対する比率。10クラスでは旧実装の論文スケール r = 0.5 とほぼ同じ厳しさになる
+	trainer.LogitMargin = 0.45
 
 	acc, err := model.Accuracy(mnist.TestInputs, mnist.TestLabels, p)
 	if err != nil {

@@ -11,7 +11,7 @@ import (
 
 func newTestMatrix(t *testing.T, rows, cols int, rng *rand.Rand) *bitsx.Matrix {
 	t.Helper()
-	m, err := bitsx.NewRandMatrix(rows, cols, 0, rng)
+	m, err := bitsx.NewRandMatrix(rows, cols, rng)
 	if err != nil {
 		t.Fatalf("予期せぬエラー: %v", err)
 	}
@@ -36,7 +36,9 @@ func TestSatisfiesUpdateCriterionMatchesCrow(t *testing.T) {
 			if err != nil {
 				t.Fatalf("予期せぬエラー: %v", err)
 			}
-			want, err := binary.SatisfiesUpdateCriterion(y, label, protos, margin)
+			// crow 側は一致ビット数の差を受け取るため、同じ式で比率から変換する。
+			marginBits := int(float32(y.Rows()*y.Cols()) * margin / 2)
+			want, err := binary.SatisfiesUpdateCriterion(y, label, protos, marginBits)
 			if err != nil {
 				t.Fatalf("予期せぬエラー: %v", err)
 			}
@@ -121,7 +123,7 @@ func TestUpdateMovesOnlyOneOfBiasOrWeights(t *testing.T) {
 		biasBefore := make([]int32, len(d.bias))
 		copy(biasBefore, d.bias)
 
-		if err := d.update(newFilledDelta(d), 1.0, rng); err != nil {
+		if err := d.update(newFilledDelta(d), 0, rng); err != nil {
 			t.Fatalf("予期せぬエラー: %v", err)
 		}
 
@@ -150,7 +152,7 @@ func TestUpdateMovesOnlyOneOfBiasOrWeights(t *testing.T) {
 		hBefore := make([]int8, len(d.h))
 		copy(hBefore, d.h)
 
-		if err := d.update(newFilledDelta(d), 1.0, rng); err != nil {
+		if err := d.update(newFilledDelta(d), 0, rng); err != nil {
 			t.Fatalf("予期せぬエラー: %v", err)
 		}
 
@@ -188,7 +190,7 @@ func TestUpdateKeepsVisibleWeightConsistentWithHidden(t *testing.T) {
 		for i := range dl.w {
 			dl.w[i] = int16(rng.IntN(3) - 1)
 		}
-		if err := d.update(dl, 1.0, rng); err != nil {
+		if err := d.update(dl, 0, rng); err != nil {
 			t.Fatalf("予期せぬエラー: %v", err)
 		}
 		for row := range wRows {
@@ -341,10 +343,10 @@ func newPairedDenses(t *testing.T, wRows, wCols int, seed uint64) (*binary.Dense
 	if err != nil {
 		t.Fatalf("予期せぬエラー: %v", err)
 	}
-	// 共有ハイパーパラメータ(ノイズ0で決定的にする)
+	// ノイズ0で決定的にする
+	crowDense.MaxAbsNoise = 0
 	seq := binary.Sequence{crowDense}
 	ctx := binary.NewSharedHyperparameters()
-	ctx.NoiseStdScale = 0
 	if err := seq.SetSharedHyperparameters(&ctx); err != nil {
 		t.Fatalf("予期せぬエラー: %v", err)
 	}
@@ -359,7 +361,6 @@ func newPairedDenses(t *testing.T, wRows, wCols int, seed uint64) (*binary.Dense
 	mine.h = make([]int8, len(crowDense.H))
 	copy(mine.h, crowDense.H)
 	mine.groupSize = ctx.GroupSize
-	mine.gateScale = ctx.GateDropThresholdScale
 	return crowDense, mine
 }
 
@@ -453,10 +454,10 @@ func TestUpdateMatchesCrow(t *testing.T) {
 			}
 
 			seed := uint64(1000 + step)
-			if err := crowDense.Update(crowDeltas, 0.5, rand.New(rand.NewPCG(seed, seed+1))); err != nil {
+			if err := crowDense.Update(crowDeltas, 1, rand.New(rand.NewPCG(seed, seed+1))); err != nil {
 				t.Fatalf("予期せぬエラー: %v", err)
 			}
-			if err := mine.update(myDelta, 0.5, rand.New(rand.NewPCG(seed, seed+1))); err != nil {
+			if err := mine.update(myDelta, 1, rand.New(rand.NewPCG(seed, seed+1))); err != nil {
 				t.Fatalf("予期せぬエラー: %v", err)
 			}
 

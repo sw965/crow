@@ -266,7 +266,7 @@ func main() {
 
 	trainer := binary.NewTrainer(model, workers)
 	trainer.MiniBatchSize = 1024
-	trainer.Margin = 0.5
+	trainer.LogitMargin = 0.45
 
 	fmt.Printf("dataset=%s BEP構成 784->%d->%d BEPエポック=%d 読み出しエポック=%d margin=%d\n",
 		*dsName, *h1, *h2, *bepEpoch, *roEpoch, *margin)

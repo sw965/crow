@@ -5,12 +5,13 @@ import (
 	"encoding/gob"
 	"fmt"
 	"math"
+	"math/big"
+	"math/bits"
 	"math/rand/v2"
 	"slices"
 
 	"github.com/sw965/omw/encoding/gobx"
 	"github.com/sw965/omw/mathx/bitsx"
-	"github.com/sw965/omw/mathx/randx"
 	"github.com/sw965/omw/parallel"
 )
 
@@ -21,16 +22,12 @@ type H []int8
 const hInitAbs = 4
 
 type SharedHyperparameters struct {
-	GateDropThresholdScale float32
-	NoiseStdScale          float32
-	GroupSize              int
+	GroupSize int
 }
 
 func NewSharedHyperparameters() SharedHyperparameters {
 	return SharedHyperparameters{
-		GateDropThresholdScale: 1.0,
-		NoiseStdScale:          0.5,
-		GroupSize:              4,
+		GroupSize: 4,
 	}
 }
 
@@ -39,7 +36,7 @@ type Layer interface {
 	Predict(*bitsx.Matrix) (*bitsx.Matrix, error)
 	NewZerosDeltas() Deltas
 	OutputShape(xRows, xCols int) (int, int, error)
-	Update(Deltas, float32, *rand.Rand) error
+	Update(Deltas, int, *rand.Rand) error
 	setSharedHyperparameters(*SharedHyperparameters) error
 }
 
@@ -62,13 +59,36 @@ type Dense struct {
 	WT *bitsx.Matrix
 	H  H
 
-	GateDropThresholdBase int
-	NoiseStdBase          float32
+	MaxAbsNoise           int
 	sharedHyperparameters *SharedHyperparameters
 }
 
+func isqrt(n int) int {
+	r := 0
+	for (r+1)*(r+1) <= n {
+		r++
+	}
+	return r
+}
+
+// 倍率 num/denom は、ノイズの標準偏差を z の自然なばらつき √fanIn の何倍にするかを表す。
+// 一様分布 [-w, w] の標準偏差は約 w/√3 なので、w = (num/denom) × √3 × √fanIn とする(√3 ≈ 1732/1000)。
+// 極端な num で掛け算が桁あふれしないよう big.Int で計算する。
+func maxAbsNoiseForScale(fanIn, num, denom int) (int, error) {
+	if num < 0 || denom <= 0 {
+		return 0, fmt.Errorf("ノイズの倍率が不正: num = %d, denom = %d: num >= 0 かつ denom > 0 であるべき", num, denom)
+	}
+	w := new(big.Int).Mul(big.NewInt(int64(isqrt(fanIn))*1732), big.NewInt(int64(num)))
+	w.Quo(w, big.NewInt(1000))
+	w.Quo(w, big.NewInt(int64(denom)))
+	if !w.IsInt64() || w.Int64() > int64(fanIn) {
+		return 0, fmt.Errorf("ノイズの倍率が大きすぎる: num/denom = %d/%d: MaxAbsNoise が入力数 %d を超える", num, denom, fanIn)
+	}
+	return int(w.Int64()), nil
+}
+
 func NewDense(wRows, wCols int, rng *rand.Rand) (*Dense, error) {
-	w, err := bitsx.NewRandMatrix(wRows, wCols, 0, rng)
+	w, err := bitsx.NewRandMatrix(wRows, wCols, rng)
 	if err != nil {
 		return nil, fmt.Errorf("重み行列の生成に失敗: %w", err)
 	}
@@ -99,24 +119,27 @@ func NewDense(wRows, wCols int, rng *rand.Rand) (*Dense, error) {
 		return nil, err
 	}
 
-	noiseStdBase := float32(math.Sqrt(float64(w.Cols())))
-	gateDropThresholdBase := int(noiseStdBase)
+	// 倍率 1/2 は旧実装のガウスノイズの既定値で、1/2・3/4・1 の実測で最も精度が良かった
+	maxAbsNoise, err := maxAbsNoiseForScale(w.Cols(), 1, 2)
+	if err != nil {
+		return nil, err
+	}
 
 	return &Dense{
-		W:                     w,
-		WT:                    wt,
-		H:                     h,
-		GateDropThresholdBase: gateDropThresholdBase,
-		NoiseStdBase:          noiseStdBase,
+		W:           w,
+		WT:          wt,
+		H:           h,
+		MaxAbsNoise: maxAbsNoise,
 	}, nil
 }
 
-func (d *Dense) GateDropThreshold() int {
-	return int(d.sharedHyperparameters.GateDropThresholdScale * float32(d.GateDropThresholdBase))
-}
-
-func (d *Dense) NoiseStd() float32 {
-	return d.sharedHyperparameters.NoiseStdScale * d.NoiseStdBase
+func (d *Dense) SetNoiseScale(num, denom int) error {
+	maxAbsNoise, err := maxAbsNoiseForScale(d.W.Cols(), num, denom)
+	if err != nil {
+		return err
+	}
+	d.MaxAbsNoise = maxAbsNoise
+	return nil
 }
 
 func (d *Dense) Forward(x *bitsx.Matrix, rng *rand.Rand) (*bitsx.Matrix, Backward, error) {
@@ -126,10 +149,9 @@ func (d *Dense) Forward(x *bitsx.Matrix, rng *rand.Rand) (*bitsx.Matrix, Backwar
 	}
 
 	maxZi := d.W.Cols()
-	minZi := -maxZi
 
-	noiseStd := d.NoiseStd()
-	isNoisy := noiseStd > 0.0
+	maxAbsNoise := d.MaxAbsNoise
+	isNoisy := maxAbsNoise > 0
 
 	yRows := x.Rows()
 	yCols := d.W.Rows()
@@ -138,11 +160,7 @@ func (d *Dense) Forward(x *bitsx.Matrix, rng *rand.Rand) (*bitsx.Matrix, Backwar
 	if isNoisy {
 		for i, count := range u {
 			zi := 2*count - maxZi
-			noise, err := randx.IntNorm(minZi, maxZi, 0, noiseStd, rng)
-			if err != nil {
-				return nil, nil, err
-			}
-			z[i] = zi + noise
+			z[i] = zi + rng.IntN(2*maxAbsNoise+1) - maxAbsNoise
 		}
 	} else {
 		for i, count := range u {
@@ -160,14 +178,8 @@ func (d *Dense) Forward(x *bitsx.Matrix, rng *rand.Rand) (*bitsx.Matrix, Backwar
 			return nil, err
 		}
 
-		keepGate, err := bitsx.NewZerosMatrix(yRows, yCols)
-		if err != nil {
-			return nil, err
-		}
-		gateDropThreshold := d.GateDropThreshold()
-
 		wordSize := 64
-		err = t.ScanRowsWord(nil, func(tCtx bitsx.MatrixWordContext) error {
+		err := t.ScanRowsWord(nil, func(tCtx bitsx.MatrixWordContext) error {
 			// 64ビット毎に操作するための宣言
 			zWord := z[tCtx.GlobalStart:tCtx.GlobalEnd]
 			type wordMismatch struct {
@@ -181,16 +193,14 @@ func (d *Dense) Forward(x *bitsx.Matrix, rng *rand.Rand) (*bitsx.Matrix, Backwar
 			if err != nil {
 				return err
 			}
-			var keepGateWord uint64
 
 			// ScanBitsで上記の64ビット(Word)に対して操作する
 			// 引数iに代入される値は、100ビットの場合、一週目は0～63、二週目は64～99
 			err = tCtx.ScanBits(func(i, col, colT int) error {
 				zi := zWord[i]
-				absZi := int(math.Abs(float64(zi)))
-
-				if absZi <= gateDropThreshold {
-					keepGateWord |= (1 << uint64(i))
+				absZi := zi
+				if absZi < 0 {
+					absZi = -absZi
 				}
 
 				tBit := (tWord >> uint64(i)) & 1
@@ -207,10 +217,6 @@ func (d *Dense) Forward(x *bitsx.Matrix, rng *rand.Rand) (*bitsx.Matrix, Backwar
 			})
 
 			if err != nil {
-				return err
-			}
-
-			if err := keepGate.SetWord(tCtx.WordIndex, keepGateWord); err != nil {
 				return err
 			}
 
@@ -256,10 +262,11 @@ func (d *Dense) Forward(x *bitsx.Matrix, rng *rand.Rand) (*bitsx.Matrix, Backwar
 			return nil, err
 		}
 
-		rawNextTT, err := d.WT.DotTernary(t, keepGate)
+		rawNextTT, err := d.WT.Dot(t)
 		if err != nil {
 			return nil, err
 		}
+		tCols := t.Cols()
 
 		nextT, err := bitsx.NewZerosMatrix(yRows, d.W.Cols())
 		if err != nil {
@@ -269,7 +276,8 @@ func (d *Dense) Forward(x *bitsx.Matrix, rng *rand.Rand) (*bitsx.Matrix, Backwar
 		err = nextT.ScanRowsWord(nil, func(ctx bitsx.MatrixWordContext) error {
 			var word uint64
 			err := ctx.ScanBits(func(i, col, colT int) error {
-				if rawNextTT[colT] >= 0 {
+				// 一致数 u が過半数かを見る。u >= tCols/2 と書くと、tCols が奇数のとき切り捨てで境界の符号が反転する
+				if 2*rawNextTT[colT] >= tCols {
 					word |= (1 << uint(i))
 				}
 				return nil
@@ -321,7 +329,7 @@ func (d *Dense) OutputShape(xRows, xCols int) (int, int, error) {
 	return xRows, d.W.Rows(), nil
 }
 
-func (d *Dense) Update(deltas Deltas, lr float32, rng *rand.Rand) error {
+func (d *Dense) Update(deltas Deltas, lrHalfPow int, rng *rand.Rand) error {
 	if len(deltas) != 1 {
 		return fmt.Errorf("deltasの数が不正: len(deltas) = %d: Dense層は1つのDeltaを持つべき", len(deltas))
 	}
@@ -330,11 +338,21 @@ func (d *Dense) Update(deltas Deltas, lr float32, rng *rand.Rand) error {
 	err := d.W.ScanRowsWord(nil, func(ctx bitsx.MatrixWordContext) error {
 		hWord := d.H[ctx.GlobalStart:ctx.GlobalEnd]
 		deltaWord := delta[ctx.GlobalStart:ctx.GlobalEnd]
+
+		// 要素ごとに乱数を引くより、1ワード分の更新対象をマスクでまとめて決める方が速いため。
+		mask, err := bitsx.RandHalfPow[uint64](lrHalfPow, rng)
+		if err != nil {
+			return err
+		}
+		n := ctx.ColEnd - ctx.ColStart
+		if n < 64 {
+			mask &= (uint64(1) << uint(n)) - 1
+		}
+
 		var flips uint64
-		err := ctx.ScanBits(func(i, col, colT int) error {
-			if rng.Float32() > lr {
-				return nil
-			}
+		for mask != 0 {
+			i := bits.TrailingZeros64(mask)
+			mask &= mask - 1
 
 			old := hWord[i]
 			// オーバーフロー対策に一旦intにする
@@ -346,16 +364,11 @@ func (d *Dense) Update(deltas Deltas, lr float32, rng *rand.Rand) error {
 			newIsNonNegative := clipped >= 0
 			if oldIsNonNegative != newIsNonNegative {
 				flips |= (1 << uint64(i))
-				err := d.WT.Toggle(col, ctx.Row)
+				err := d.WT.Toggle(ctx.ColStart+i, ctx.Row)
 				if err != nil {
 					return err
 				}
 			}
-			return nil
-		})
-
-		if err != nil {
-			return err
 		}
 
 		old, err := d.W.Word(ctx.WordIndex)
@@ -419,7 +432,7 @@ func (s Sequence) OutputShape(xRows, xCols int) (int, int, error) {
 	return yRows, yCols, nil
 }
 
-func (s Sequence) Update(seqDelta SeqDelta, lr float32, rngs []*rand.Rand) error {
+func (s Sequence) Update(seqDelta SeqDelta, lrHalfPow int, rngs []*rand.Rand) error {
 	if len(s) != len(seqDelta) {
 		return fmt.Errorf("sequence and delta length mismatch: %d != %d", len(s), len(seqDelta))
 	}
@@ -434,9 +447,31 @@ func (s Sequence) Update(seqDelta SeqDelta, lr float32, rngs []*rand.Rand) error
 		layer := s[idx]
 		layerDelta := seqDelta[idx]
 		rng := rngs[workerID]
-		return layer.Update(layerDelta, lr, rng)
+		return layer.Update(layerDelta, lrHalfPow, rng)
 	})
 	return err
+}
+
+// 途中の層でエラーになったときに一部の層だけ変わるのを防ぐため、全層の値を計算してから代入する。
+func (s Sequence) SetNoiseScale(num, denom int) error {
+	maxAbsNoises := make([]int, len(s))
+	for i, layer := range s {
+		d, ok := layer.(*Dense)
+		if !ok {
+			continue
+		}
+		maxAbsNoise, err := maxAbsNoiseForScale(d.W.Cols(), num, denom)
+		if err != nil {
+			return fmt.Errorf("layer %d: %w", i, err)
+		}
+		maxAbsNoises[i] = maxAbsNoise
+	}
+	for i, layer := range s {
+		if d, ok := layer.(*Dense); ok {
+			d.MaxAbsNoise = maxAbsNoises[i]
+		}
+	}
+	return nil
 }
 
 func (s Sequence) SetSharedHyperparameters(ctx *SharedHyperparameters) error {

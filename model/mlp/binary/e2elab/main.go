@@ -106,7 +106,7 @@ type dense struct {
 }
 
 func newDense(wRows, wCols int, rng *rand.Rand) (*dense, error) {
-	w, err := bitsx.NewRandMatrix(wRows, wCols, 0, rng)
+	w, err := bitsx.NewRandMatrix(wRows, wCols, rng)
 	if err != nil {
 		return nil, err
 	}

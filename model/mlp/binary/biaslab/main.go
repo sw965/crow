@@ -5,7 +5,7 @@
 //   - Update のたびに、ニューロンごとに「バイアスを動かす」か「重みを動かす」かを
 //     乱数で選び、**両方は動かさない**
 //   - バイアスが選ばれたら ±1 動かす
-//   - 重みが選ばれたら crow の従来どおり(確率 LR で隠れ重み H に集約デルタを加算し、
+//   - 重みが選ばれたら crow の従来どおり(確率 (1/2)^lrHalfPow で隠れ重み H に集約デルタを加算し、
 //     H の符号が変わったら可視重み W のビットを反転)
 //
 // これに加えて、見本(プロトタイプ)へのセルマスクの有無も比較する。
@@ -33,6 +33,7 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"math/bits"
 	"math/rand/v2"
 	"runtime"
 	"slices"
@@ -98,17 +99,15 @@ type dense struct {
 	bias    []int32
 	biasMax int32
 
-	gateBase int
 	noiseStd float32
 
-	gateScale  float32
 	groupSize  int
 	useBias    bool
 	biasChoice float32 // Update時にバイアス側が選ばれる確率
 }
 
 func newDense(wRows, wCols int, useBias bool, biasChoice float32, rng *rand.Rand) (*dense, error) {
-	w, err := bitsx.NewRandMatrix(wRows, wCols, 0, rng)
+	w, err := bitsx.NewRandMatrix(wRows, wCols, rng)
 	if err != nil {
 		return nil, err
 	}
@@ -141,9 +140,7 @@ func newDense(wRows, wCols int, useBias bool, biasChoice float32, rng *rand.Rand
 		w: w, wt: wt, h: h,
 		bias:       make([]int32, wRows),
 		biasMax:    int32(wCols), // |bias| + fanIn がアキュムレータ幅を超えない範囲
-		gateBase:   int(noiseStdBase),
 		noiseStd:   noiseStdBase,
-		gateScale:  1.0,
 		groupSize:  4,
 		useBias:    useBias,
 		biasChoice: biasChoice,
@@ -203,13 +200,7 @@ func (d *dense) forward(x *bitsx.Matrix, noiseScale float32, rng *rand.Rand) (*b
 		if err := t.ValidateSameShape(y); err != nil {
 			return nil, err
 		}
-		keepGate, err := bitsx.NewZerosMatrix(yRows, yCols)
-		if err != nil {
-			return nil, err
-		}
-		gate := int(d.gateScale * float32(d.gateBase))
-
-		err = t.ScanRowsWord(nil, func(tCtx bitsx.MatrixWordContext) error {
+		err := t.ScanRowsWord(nil, func(tCtx bitsx.MatrixWordContext) error {
 			zWord := z[tCtx.GlobalStart:tCtx.GlobalEnd]
 			type wordMismatch struct {
 				absZi int
@@ -222,16 +213,11 @@ func (d *dense) forward(x *bitsx.Matrix, noiseScale float32, rng *rand.Rand) (*b
 			if err != nil {
 				return err
 			}
-			var keepGateWord uint64
-
 			if err := tCtx.ScanBits(func(i, col, colT int) error {
 				zi := zWord[i]
 				absZi := zi
 				if absZi < 0 {
 					absZi = -absZi
-				}
-				if absZi <= gate {
-					keepGateWord |= 1 << uint64(i)
 				}
 				tBit := tWord >> uint64(i) & 1
 				yBit := uint64(0)
@@ -243,10 +229,6 @@ func (d *dense) forward(x *bitsx.Matrix, noiseScale float32, rng *rand.Rand) (*b
 				}
 				return nil
 			}); err != nil {
-				return err
-			}
-
-			if err := keepGate.SetWord(tCtx.WordIndex, keepGateWord); err != nil {
 				return err
 			}
 
@@ -290,10 +272,11 @@ func (d *dense) forward(x *bitsx.Matrix, noiseScale float32, rng *rand.Rand) (*b
 			return nil, err
 		}
 
-		rawNextT, err := d.wt.DotTernary(t, keepGate)
+		rawNextT, err := d.wt.Dot(t)
 		if err != nil {
 			return nil, err
 		}
+		tCols := t.Cols()
 		nextT, err := bitsx.NewZerosMatrix(yRows, d.w.Cols())
 		if err != nil {
 			return nil, err
@@ -301,7 +284,8 @@ func (d *dense) forward(x *bitsx.Matrix, noiseScale float32, rng *rand.Rand) (*b
 		if err := nextT.ScanRowsWord(nil, func(ctx bitsx.MatrixWordContext) error {
 			var word uint64
 			if err := ctx.ScanBits(func(i, col, colT int) error {
-				if rawNextT[colT] >= 0 {
+				// ../layer.go と同じ。u >= tCols/2 では奇数 tCols のとき境界の符号が反転する
+				if 2*rawNextT[colT] >= tCols {
 					word |= 1 << uint(i)
 				}
 				return nil
@@ -332,7 +316,7 @@ func (d *dense) predict(x *bitsx.Matrix) (*bitsx.Matrix, error) {
 // useBias=false のときは「バイアス側が選ばれたニューロンは何も更新しない」となり、
 // バイアス有りと**重みの更新機会が揃った対照条件**になる。
 // biasChoice=0 なら従来のBEP(全ニューロンで重みを更新)と同じ。
-func (d *dense) update(dl *delta, lr float32, rng *rand.Rand) error {
+func (d *dense) update(dl *delta, lrHalfPow int, rng *rand.Rand) error {
 	wRows := d.w.Rows()
 
 	// ニューロン単位で更新対象を決める(1行が複数ワードにまたがるため、事前に決めておく)。
@@ -363,22 +347,28 @@ func (d *dense) update(dl *delta, lr float32, rng *rand.Rand) error {
 		}
 		hWord := d.h[ctx.GlobalStart:ctx.GlobalEnd]
 		dWord := dl.w[ctx.GlobalStart:ctx.GlobalEnd]
+		mask, err := bitsx.RandHalfPow[uint64](lrHalfPow, rng)
+		if err != nil {
+			return err
+		}
+		n := ctx.ColEnd - ctx.ColStart
+		if n < 64 {
+			mask &= (uint64(1) << uint(n)) - 1
+		}
 		var flips uint64
-		if err := ctx.ScanBits(func(i, col, colT int) error {
-			if rng.Float32() > lr {
-				return nil
-			}
+		for mask != 0 {
+			i := bits.TrailingZeros64(mask)
+			mask &= mask - 1
 			old := hWord[i]
 			newVal := int(old) + int(dWord[i])
 			clipped := int8(max(math.MinInt8, min(newVal, math.MaxInt8)))
 			hWord[i] = clipped
 			if (old >= 0) != (clipped >= 0) {
 				flips |= 1 << uint64(i)
-				return d.wt.Toggle(col, ctx.Row)
+				if err := d.wt.Toggle(ctx.ColStart+i, ctx.Row); err != nil {
+					return err
+				}
 			}
-			return nil
-		}); err != nil {
-			return err
 		}
 		old, err := d.w.Word(ctx.WordIndex)
 		if err != nil {
@@ -476,7 +466,7 @@ func applyCellMask(protos bitsx.Matrices, rng *rand.Rand) error {
 	if len(protos) == 0 {
 		return errors.New("prototypesが空です")
 	}
-	mask, err := bitsx.NewRandMatrix(protos[0].Rows(), protos[0].Cols(), 0, rng)
+	mask, err := bitsx.NewRandMatrix(protos[0].Rows(), protos[0].Cols(), rng)
 	if err != nil {
 		return err
 	}
@@ -497,7 +487,7 @@ func applyCellMask(protos bitsx.Matrices, rng *rand.Rand) error {
 type trainer struct {
 	model         *model
 	miniBatchSize int
-	lr            float32
+	lrHalfPow     int
 	margin        float32
 	noiseScale    float32
 	workerRNGs    []*rand.Rand
@@ -538,7 +528,7 @@ func newTrainer(m *model, p int, seed uint64) (*trainer, error) {
 		agg[l] = layer.newDelta()
 	}
 	return &trainer{
-		model: m, miniBatchSize: 128, lr: 0.1, margin: 0.5, noiseScale: 0.5,
+		model: m, miniBatchSize: 128, lrHalfPow: 3, margin: 0.5, noiseScale: 0.5,
 		workerRNGs:   rngs,
 		shuffleRNG:   rand.New(rand.NewPCG(seed, 0xD1B54A32D192ED03)),
 		updateRNG:    rand.New(rand.NewPCG(seed, 0xA24BAED4963EE407)),
@@ -629,7 +619,7 @@ func (t *trainer) trainEpoch(xs bitsx.Matrices, labels []int) error {
 		}
 
 		for li, layer := range t.model.layers {
-			if err := layer.update(t.aggregated[li], t.lr, t.updateRNG); err != nil {
+			if err := layer.update(t.aggregated[li], t.lrHalfPow, t.updateRNG); err != nil {
 				return err
 			}
 		}
@@ -863,10 +853,9 @@ type config struct {
 	useBias    bool
 	cellMask   bool
 	biasChoice float32
-	lr         float32
+	lrHalfPow  int
 	margin     float32
 	groupSize  int
-	gateScale  float32
 	noiseScale float32
 	epochs     int
 	batch      int
@@ -912,7 +901,6 @@ func runClassification(dsName string, cfg config, workers int) error {
 	}
 	for _, l := range m.layers {
 		l.groupSize = cfg.groupSize
-		l.gateScale = cfg.gateScale
 	}
 
 	tr, err := newTrainer(m, workers, cfg.seed)
@@ -920,7 +908,7 @@ func runClassification(dsName string, cfg config, workers int) error {
 		return err
 	}
 	tr.miniBatchSize = cfg.batch
-	tr.lr = cfg.lr
+	tr.lrHalfPow = cfg.lrHalfPow
 	tr.margin = cfg.margin
 	tr.noiseScale = cfg.noiseScale
 
@@ -932,9 +920,9 @@ func runClassification(dsName string, cfg config, workers int) error {
 		return err
 	}
 
-	fmt.Printf("task=classify dataset=%s bias=%t cellmask=%t biaschoice=%g lr=%g margin=%g gsize=%d gate=%g noise=%g epochs=%d valratio=%g seed=%d train=%d val=%d test=%d\n",
-		dsName, cfg.useBias, cfg.cellMask, cfg.biasChoice, cfg.lr, cfg.margin,
-		cfg.groupSize, cfg.gateScale, cfg.noiseScale, cfg.epochs, cfg.valRatio, cfg.seed,
+	fmt.Printf("task=classify dataset=%s bias=%t cellmask=%t biaschoice=%g lrhalfpow=%d margin=%g gsize=%d noise=%g epochs=%d valratio=%g seed=%d train=%d val=%d test=%d\n",
+		dsName, cfg.useBias, cfg.cellMask, cfg.biasChoice, cfg.lrHalfPow, cfg.margin,
+		cfg.groupSize, cfg.noiseScale, cfg.epochs, cfg.valRatio, cfg.seed,
 		len(trainXs), len(valXs), len(ds.TestInputs))
 
 	bestVal, testAtBestVal, bestEpoch := -1.0, 0.0, 0
@@ -978,7 +966,7 @@ func runRegression(cfg config, workers int) error {
 	)
 
 	rng := rand.New(rand.NewPCG(cfg.seed, cfg.seed+1))
-	d, err := bitsx.NewRandMatrix(xRows, xCols, 0, rng)
+	d, err := bitsx.NewRandMatrix(xRows, xCols, rng)
 	if err != nil {
 		return err
 	}
@@ -1018,7 +1006,6 @@ func runRegression(cfg config, workers int) error {
 	}
 	for _, l := range m.layers {
 		l.groupSize = cfg.groupSize
-		l.gateScale = cfg.gateScale
 	}
 
 	tr, err := newTrainer(m, workers, cfg.seed)
@@ -1026,7 +1013,7 @@ func runRegression(cfg config, workers int) error {
 		return err
 	}
 	tr.miniBatchSize = cfg.batch
-	tr.lr = cfg.lr
+	tr.lrHalfPow = cfg.lrHalfPow
 	tr.margin = cfg.margin
 	tr.noiseScale = cfg.noiseScale
 
@@ -1037,9 +1024,9 @@ func runRegression(cfg config, workers int) error {
 		return err
 	}
 
-	fmt.Printf("task=regress levels=%d bias=%t cellmask=%t biaschoice=%g lr=%g margin=%g gsize=%d gate=%g noise=%g epochs=%d valratio=%g seed=%d train=%d val=%d test=%d\n",
-		levels, cfg.useBias, cfg.cellMask, cfg.biasChoice, cfg.lr, cfg.margin,
-		cfg.groupSize, cfg.gateScale, cfg.noiseScale, cfg.epochs, cfg.valRatio, cfg.seed,
+	fmt.Printf("task=regress levels=%d bias=%t cellmask=%t biaschoice=%g lrhalfpow=%d margin=%g gsize=%d noise=%g epochs=%d valratio=%g seed=%d train=%d val=%d test=%d\n",
+		levels, cfg.useBias, cfg.cellMask, cfg.biasChoice, cfg.lrHalfPow, cfg.margin,
+		cfg.groupSize, cfg.noiseScale, cfg.epochs, cfg.valRatio, cfg.seed,
 		len(trXs), len(valXs), len(testXs))
 
 	bestVal, testAtBestVal, bestT, bestEpoch := math.Inf(1), 0.0, 0.0, 0
@@ -1129,10 +1116,9 @@ func main() {
 		useBias    = flag.Bool("bias", true, "学習する整数バイアスを使う")
 		cellMask   = flag.Bool("cellmask", false, "見本にセルマスクを適用する")
 		biasChoice = flag.Float64("biaschoice", 0.5, "Update時にバイアス側が選ばれる確率")
-		lr         = flag.Float64("lr", 0.1, "重み側の確率的学習率")
+		lrHalfPow  = flag.Int("lrhalfpow", 3, "重み側の更新確率 (1/2)^lrhalfpow")
 		margin     = flag.Float64("margin", 0.5, "更新判定のマージン(論文のrスケール)")
 		groupSize  = flag.Int("gsize", 4, "GroupSize")
-		gateScale  = flag.Float64("gate", 1.0, "GateDropThresholdScale")
 		noiseScale = flag.Float64("noise", 0.5, "NoiseStdScale")
 		epochs     = flag.Int("epochs", 20, "エポック数")
 		batch      = flag.Int("batch", 1024, "ミニバッチサイズ")
@@ -1151,10 +1137,9 @@ func main() {
 		useBias:    *useBias,
 		cellMask:   *cellMask,
 		biasChoice: float32(*biasChoice),
-		lr:         float32(*lr),
+		lrHalfPow:  *lrHalfPow,
 		margin:     float32(*margin),
 		groupSize:  *groupSize,
-		gateScale:  float32(*gateScale),
 		noiseScale: float32(*noiseScale),
 		epochs:     *epochs,
 		batch:      *batch,

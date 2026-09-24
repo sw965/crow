@@ -83,7 +83,7 @@ type dense struct {
 }
 
 func newDense(rows, cols int, useBias bool, biasChoice float32, rng *rand.Rand) (*dense, error) {
-	w, err := bitsx.NewRandMatrix(rows, cols, 0, rng)
+	w, err := bitsx.NewRandMatrix(rows, cols, rng)
 	if err != nil {
 		return nil, err
 	}

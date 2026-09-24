@@ -83,16 +83,23 @@
 
 ```sh
 # 回帰: 3条件(従来BEP / 対照 / バイアス有り)
-go run . -task regress -bias=false -biaschoice 0   -cellmask -epochs 30 -lr 0.3 -margin 0.01 -gsize 16 -gate 4
-go run . -task regress -bias=false -biaschoice 0.5 -cellmask -epochs 30 -lr 0.3 -margin 0.01 -gsize 16 -gate 4
-go run . -task regress -bias       -biaschoice 0.5 -cellmask -epochs 30 -lr 0.3 -margin 0.01 -gsize 16 -gate 4
+go run . -task regress -bias=false -biaschoice 0   -cellmask -epochs 30 -lrhalfpow 2 -margin 0.01 -gsize 16
+go run . -task regress -bias=false -biaschoice 0.5 -cellmask -epochs 30 -lrhalfpow 2 -margin 0.01 -gsize 16
+go run . -task regress -bias       -biaschoice 0.5 -cellmask -epochs 30 -lrhalfpow 2 -margin 0.01 -gsize 16
 
 # 分類
 go run . -task classify -dataset mnist -bias -biaschoice 0.5 -cellmask=false -epochs 20 -seed 1
 ```
 
+重み側の更新確率は `-lrhalfpow n` で (1/2)^n を指定する(既定値 3 = 1/8)。crow 本体に合わせて
+小数の `-lr` から置き換えたもので、`REPORT.md` / `LOGS.md` の結果は旧 `-lr`(0.1 / 0.3)で測定している。
+上の回帰コマンドの `-lrhalfpow 2`(1/4)は旧 `-lr 0.3` に近い値で、結果はビット単位では再現しない。
+逆伝播のゲート(旧 `-gate`)も crow 本体に合わせて廃止した。記録の結果はゲート有りで測定している。
+
 `-biaschoice 0` かつ `-bias=false` にすると crow の BEP と完全に同じ計算になる
 (乱数消費も含めて一致することを差分テストで確認済み)。
+ただし crow 本体のノイズは整数一様分布に置き換えたため、本実験(ガウスのまま)と一致するのは
+`-noise 0` のときだけ。差分テストもノイズ0で比べている。
 
 ## 注意
 
