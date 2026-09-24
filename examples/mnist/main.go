@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/sw965/crow/dataset"
-	"github.com/sw965/crow/model/mlp/binary"
+	"github.com/sw965/crow/model/bep"
 	"github.com/sw965/omw/mathx/randx"
 )
 
@@ -32,7 +32,7 @@ func main() {
 	outputSize := 1024
 	rng := randx.NewPCG()
 
-	model := binary.Model{XRows: 1, XCols: 784}
+	model := bep.Model{XRows: 1, XCols: 784}
 	if err := model.AppendDenseLayer(512, rng); err != nil {
 		log.Fatal(err)
 	}
@@ -45,12 +45,10 @@ func main() {
 		log.Fatal(err)
 	}
 
-	sharedHyperparameters := binary.NewSharedHyperparameters()
-	if err := model.Backbone.SetSharedHyperparameters(&sharedHyperparameters); err != nil {
+	trainer, err := bep.NewTrainer(&model, p)
+	if err != nil {
 		log.Fatal(err)
 	}
-
-	trainer := binary.NewTrainer(model, p)
 	trainer.MiniBatchSize = 1024
 	fmt.Println("ミニバッチサイズ", trainer.MiniBatchSize)
 	// プロトタイプ間の最小距離に対する比率。10クラスでは旧実装の論文スケール r = 0.5 とほぼ同じ厳しさになる
