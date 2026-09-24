@@ -204,31 +204,41 @@ func (m *Model) PredictLabel(x *bitsx.Matrix) (int, error) {
 	return argmax(logits), nil
 }
 
+// 最も近いプロトタイプを1つ選ぶのではなく、出力の点灯数から値を読む。温度計のレベル i は先頭の
+// ⌊i·L/(n−1)⌋ ビットが 1 なので、点灯数はそのままレベルの連続値になり、全ビットの票を使える。
+// 連続量の回帰で MAE が 27〜44% 小さかった(PROTOTYPES.md B-13)。
+// 温度計であることの確認は、推論のたびに行うと重いため Trainer.Validate で行う。
 func (m *Model) PredictValue(x *bitsx.Matrix) (float32, error) {
-	logits, err := m.PredictLogits(x)
+	n := len(m.Prototypes)
+	if n == 0 {
+		return 0.0, errors.New("Prototypesが未設定です")
+	}
+	if n != len(m.Values) {
+		return 0.0, fmt.Errorf("PrototypesとValuesの数が不一致: len(Prototypes) = %d, len(Values) = %d", n, len(m.Values))
+	}
+
+	y, err := m.Backbone.Predict(x)
 	if err != nil {
 		return 0.0, err
 	}
-
-	if len(logits) == 0 {
-		return 0.0, errors.New("logitsが空です")
+	if err := y.ValidateSameShape(m.Prototypes[0]); err != nil {
+		return 0.0, fmt.Errorf("prototypes[0]と出力の形状が不一致: %w", err)
 	}
+	return valueFromOnesCount(y.OnesCount(), y.Rows()*y.Cols(), m.Values), nil
+}
 
-	if len(logits) != len(m.Values) {
-		return 0.0, fmt.Errorf("logitsとValuesの数が不一致: len(logits) = %d, len(Values) = %d", len(logits), len(m.Values))
+func valueFromOnesCount(ones, totalBits int, values []float32) float32 {
+	n := len(values)
+	if n == 1 {
+		return values[0]
 	}
-
-	maxLogit := slices.Max(logits)
-	var sum float32
-	var count int
-
-	for i, logit := range logits {
-		if logit == maxLogit {
-			sum += m.Values[i]
-			count++
-		}
+	level := float32(ones) * float32(n-1) / float32(totalBits)
+	lower := int(level)
+	if lower >= n-1 {
+		return values[n-1]
 	}
-	return sum / float32(count), nil
+	frac := level - float32(lower)
+	return values[lower] + frac*(values[lower+1]-values[lower])
 }
 
 func validateEvaluationSize(name string, n, p int) error {
@@ -335,4 +345,21 @@ func (m *Model) Loss(xs bitsx.Matrices, labels []int, p int) (float32, error) {
 // TODO これだと「ローカルのファイルパス」に固定されてしまい、メモリ上のバッファに書きたい、ネットワーク越しに送りたい、テストでbytes.Bufferに対して検証したい、みたいな時に使えません。標準ライブラリの流儀に寄せるなら、io.Writer/io.Readerを受け取る形にして、「パスを開いてWriterを渡す」部分は呼び出し側(今回で言えばatomicfile寄りの薄い関数)に任せる方が、gobx自体の再利用性は上がります。
 func (m *Model) Save(path string) error {
 	return gobx.Save(m, path)
+}
+
+// PredictValue は点灯数から値を読むため、回帰(Values あり)のプロトタイプは温度計である必要がある。
+func validateThermometer(prototypes bitsx.Matrices) error {
+	if len(prototypes) < 2 {
+		return fmt.Errorf("回帰のPrototypesが不足: len(Prototypes) = %d: 2つ以上であるべき", len(prototypes))
+	}
+	want, err := bitsx.NewThermometerMatrices(len(prototypes), prototypes[0].Rows(), prototypes[0].Cols())
+	if err != nil {
+		return err
+	}
+	for i, p := range prototypes {
+		if !p.Equal(want[i]) {
+			return fmt.Errorf("prototypes[%d]が温度計ではありません: Valuesを使う回帰では SetRegressionPrototypes で設定するべき", i)
+		}
+	}
+	return nil
 }

@@ -2,7 +2,6 @@ package bep
 
 import (
 	"cmp"
-	"errors"
 	"fmt"
 )
 
@@ -75,26 +74,4 @@ func (sd SeqDelta) Clear() {
 	for _, d := range sd {
 		d.Clear()
 	}
-}
-
-type SeqDeltas []SeqDelta
-
-func (sds SeqDeltas) Clear() {
-	for i := range sds {
-		sds[i].Clear()
-	}
-}
-
-func (sds SeqDeltas) Aggregate(dst SeqDelta) error {
-	if len(sds) == 0 {
-		return errors.New("SeqDeltasが空です")
-	}
-	dst.Clear()
-
-	for _, sd := range sds {
-		if err := dst.Add(sd); err != nil {
-			return err
-		}
-	}
-	return nil
 }

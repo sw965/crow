@@ -57,7 +57,7 @@ z = 2 * count - fanIn
 
 一方、現行実装には以下の制約がある。
 
-- Dense層に明示的なバイアスがない
+- ~~Dense層に明示的なバイアスがない~~(2026-09-24 に `Dense.Bias []int32` を追加。重みと同じ確率で ±1 更新し、|Bias| ≤ fanIn に切り詰める)
 - 入力符号長 `XRows * XCols` はモデルごとに固定
 - 回帰値 `Values` は有限個の `float32`
 - `PredictValue` は最大logitに対応する `Values` を返し、同点時は該当する複数値の平均を返すため、出力集合は有限だが `Values` にない値も返し得る

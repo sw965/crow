@@ -37,11 +37,11 @@ type Trainer struct {
 	// 復号した値の差を測るため、LogitMargin とは単位が異なる。
 	PairwiseMargin float32
 
-	model           *Model
-	workerRNGs      []*rand.Rand
-	shuffleRNG      *rand.Rand
-	workerDeltas    SeqDeltas
-	aggregatedDelta SeqDelta
+	model          *Model
+	workerRNGs     []*rand.Rand
+	shuffleRNG     *rand.Rand
+	records        []BatchRecord
+	recordCapacity int
 }
 
 func NewTrainer(model *Model, p int) (*Trainer, error) {
@@ -51,41 +51,19 @@ func NewTrainer(model *Model, p int) (*Trainer, error) {
 	if p <= 0 {
 		return nil, fmt.Errorf("ワーカー数が不正: p = %d: p > 0 であるべき", p)
 	}
-	workerCount := p
-	workerDeltas := make(SeqDeltas, workerCount)
-	backbone := model.Backbone
-	numLayers := len(backbone)
-
-	// ワーカーごとのバッファの初期化
-	for i := range workerCount {
-		sd := make(SeqDelta, numLayers)
-		for l, layer := range backbone {
-			sd[l] = layer.NewZerosDeltas()
-		}
-		workerDeltas[i] = sd
-	}
-
-	// 集約用バッファの初期化
-	aggregatedDelta := make(SeqDelta, numLayers)
-	for l, layer := range backbone {
-		aggregatedDelta[l] = layer.NewZerosDeltas()
-	}
-
-	workerRNGs, err := randx.NewPCGs(workerCount)
+	workerRNGs, err := randx.NewPCGs(p)
 	if err != nil {
 		return nil, err
 	}
 
 	return &Trainer{
-		MiniBatchSize:   128,
-		LRHalfPow:       defaultLRHalfPow,
-		LogitMargin:     defaultLogitMargin,
-		PairwiseMargin:  defaultPairwiseMargin,
-		model:           model,
-		workerRNGs:      workerRNGs,
-		shuffleRNG:      randx.NewPCG(),
-		workerDeltas:    workerDeltas,
-		aggregatedDelta: aggregatedDelta,
+		MiniBatchSize:  128,
+		LRHalfPow:      defaultLRHalfPow,
+		LogitMargin:    defaultLogitMargin,
+		PairwiseMargin: defaultPairwiseMargin,
+		model:          model,
+		workerRNGs:     workerRNGs,
+		shuffleRNG:     randx.NewPCG(),
 	}, nil
 }
 
@@ -168,18 +146,16 @@ func (t *Trainer) ComputeSeqSignDelta(xs bitsx.Matrices, labels []int) (SeqDelta
 
 func (t *Trainer) computeSeqSignDelta(xs bitsx.Matrices, labels []int, marginBits int) (SeqDelta, error) {
 	n := len(xs)
-	if n > math.MaxInt16 {
-		return nil, fmt.Errorf("サンプル数が多すぎます: n = %d: Deltaの要素はint16の為、%d 以下であるべき", n, math.MaxInt16)
-	}
-
 	if n != len(labels) {
 		return nil, fmt.Errorf("長さが不一致: len(xs) = %d, len(labels) = %d", n, len(labels))
 	}
 
 	p := len(t.workerRNGs)
-	t.workerDeltas.Clear()
 	backbone := t.model.Backbone
 	prototypes := t.model.Prototypes
+	if err := t.prepareRecords(n); err != nil {
+		return nil, err
+	}
 
 	err := parallel.For(n, p, func(workerID, idx int) error {
 		rng := t.workerRNGs[workerID]
@@ -201,7 +177,7 @@ func (t *Trainer) computeSeqSignDelta(xs bitsx.Matrices, labels []int, marginBit
 		}
 
 		target := prototypes[label]
-		_, err = backwards.Propagate(target, t.workerDeltas[workerID])
+		_, err = backwards.Propagate(target, t.records, idx)
 		if err != nil {
 			return err
 		}
@@ -212,13 +188,40 @@ func (t *Trainer) computeSeqSignDelta(xs bitsx.Matrices, labels []int, marginBit
 		return nil, err
 	}
 
-	err = t.workerDeltas.Aggregate(t.aggregatedDelta)
-	if err != nil {
-		return nil, err
+	seqDelta := make(SeqDelta, len(backbone))
+	for l, layer := range backbone {
+		deltas, err := layer.BatchDeltas(t.records[l])
+		if err != nil {
+			return nil, err
+		}
+		seqDelta[l] = deltas
 	}
+	seqDelta.Sign()
+	return seqDelta, nil
+}
 
-	t.aggregatedDelta.Sign()
-	return t.aggregatedDelta, nil
+// 記録領域はバッチの大きさに依存するので、NewTrainer ではなく初めて必要になった時点で確保し、足りなければ作り直す
+func (t *Trainer) prepareRecords(n int) error {
+	backbone := t.model.Backbone
+	if len(t.records) != len(backbone) || t.recordCapacity < n {
+		capacity := max(n, t.MiniBatchSize, 1)
+		records := make([]BatchRecord, len(backbone))
+		for l, layer := range backbone {
+			rec, err := layer.NewBatchRecord(capacity, t.model.XRows)
+			if err != nil {
+				return fmt.Errorf("layer %d: %w", l, err)
+			}
+			records[l] = rec
+		}
+		t.records = records
+		t.recordCapacity = capacity
+	}
+	for _, rec := range t.records {
+		if err := rec.Clear(); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (t *Trainer) Validate() error {
@@ -254,10 +257,26 @@ func (t *Trainer) Validate() error {
 		return err
 	}
 
+	if len(t.model.Values) > 0 {
+		if err := validateThermometer(t.model.Prototypes); err != nil {
+			return err
+		}
+	}
+
 	for i, layer := range t.model.Backbone {
 		d, ok := layer.(*Dense)
 		if !ok {
 			continue
+		}
+		if d.Bias != nil {
+			if len(d.Bias) != d.W.Rows() {
+				return fmt.Errorf("layer %d: Biasの長さが不正: len(Bias) = %d: 出力数 %d であるべき", i, len(d.Bias), d.W.Rows())
+			}
+			for j, b := range d.Bias {
+				if b < -int32(d.W.Cols()) || b > int32(d.W.Cols()) {
+					return fmt.Errorf("layer %d: Bias[%d]が不正: Bias = %d: |Bias| <= %d (入力数) であるべき", i, j, b, d.W.Cols())
+				}
+			}
 		}
 		// 0 以下だと逆伝播の updateK の計算で 0 除算になるため
 		if d.GroupSize < 1 {

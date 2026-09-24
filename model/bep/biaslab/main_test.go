@@ -407,8 +407,15 @@ func TestForwardBackwardDeltaMatchesCrow(t *testing.T) {
 			}
 			assertSameMatrix(t, "Forward出力", myY, crowY)
 
-			crowDeltas := crowDense.NewZerosDeltas()
-			crowNext, err := crowBw(target, crowDeltas)
+			rec, err := crowDense.NewBatchRecord(1, x.Rows())
+			if err != nil {
+				t.Fatalf("予期せぬエラー: %v", err)
+			}
+			crowNext, err := crowBw(target, rec, 0)
+			if err != nil {
+				t.Fatalf("予期せぬエラー: %v", err)
+			}
+			crowDeltas, err := crowDense.BatchDeltas(rec)
 			if err != nil {
 				t.Fatalf("予期せぬエラー: %v", err)
 			}
@@ -440,7 +447,7 @@ func TestUpdateMatchesCrow(t *testing.T) {
 		crowDense, mine := newPairedDenses(t, shape[0], shape[1], 300+uint64(shape[0]))
 
 		for step := range 10 {
-			crowDeltas := crowDense.NewZerosDeltas()
+			crowDeltas := bep.Deltas{make(bep.Delta, shape[0]*shape[1]), make(bep.Delta, shape[0])}
 			myDelta := mine.newDelta()
 			for i := range crowDeltas[0] {
 				v := int16(rng.IntN(5) - 2)

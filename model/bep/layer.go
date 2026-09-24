@@ -25,18 +25,24 @@ const defaultGroupSize = 4
 type Layer interface {
 	Forward(x *bitsx.Matrix, rng *rand.Rand) (*bitsx.Matrix, Backward, error)
 	Predict(x *bitsx.Matrix) (*bitsx.Matrix, error)
-	NewZerosDeltas() Deltas
 	OutputShape(xRows, xCols int) (int, int, error)
+	NewBatchRecord(batchSize, xRows int) (BatchRecord, error)
+	BatchDeltas(rec BatchRecord) (Deltas, error)
 	Update(deltas Deltas, lrHalfPow int, rng *rand.Rand) error
 }
 
-type Backward func(*bitsx.Matrix, Deltas) (*bitsx.Matrix, error)
+// サンプルごとにデルタを足し込む代わりに記録だけしておき、バッチの最後に BatchDeltas でまとめて計算するため。
+type BatchRecord interface {
+	Clear() error
+}
+
+type Backward func(t *bitsx.Matrix, rec BatchRecord, sampleIdx int) (*bitsx.Matrix, error)
 type Backwards []Backward
 
-func (bs Backwards) Propagate(t *bitsx.Matrix, seqDelta SeqDelta) (*bitsx.Matrix, error) {
+func (bs Backwards) Propagate(t *bitsx.Matrix, recs []BatchRecord, sampleIdx int) (*bitsx.Matrix, error) {
 	var err error
 	for layerIdx := range slices.Backward(bs) {
-		t, err = bs[layerIdx](t, seqDelta[layerIdx])
+		t, err = bs[layerIdx](t, recs[layerIdx], sampleIdx)
 		if err != nil {
 			return nil, err
 		}
@@ -49,6 +55,7 @@ type Dense struct {
 	WT *bitsx.Matrix
 	H  H
 
+	Bias        []int32
 	GroupSize   int
 	MaxAbsNoise int
 }
@@ -119,6 +126,7 @@ func NewDense(wRows, wCols int, rng *rand.Rand) (*Dense, error) {
 		W:           w,
 		WT:          wt,
 		H:           h,
+		Bias:        make([]int32, wRows),
 		GroupSize:   defaultGroupSize,
 		MaxAbsNoise: maxAbsNoise,
 	}, nil
@@ -144,6 +152,13 @@ func (d *Dense) preActivation(x *bitsx.Matrix) ([]int, error) {
 	for i, count := range u {
 		z[i] = 2*count - maxZi
 	}
+	// Bias が nil なのは、バイアス導入前に gob で保存したモデルを読み込んだ場合で、0 と同じに扱う
+	if d.Bias != nil {
+		yCols := d.W.Rows()
+		for i := range z {
+			z[i] += int(d.Bias[i%yCols])
+		}
+	}
 	return z, nil
 }
 
@@ -166,11 +181,15 @@ func (d *Dense) Forward(x *bitsx.Matrix, rng *rand.Rand) (*bitsx.Matrix, Backwar
 		return nil, nil, err
 	}
 
-	backward := func(t *bitsx.Matrix, deltas Deltas) (*bitsx.Matrix, error) {
+	backward := func(t *bitsx.Matrix, rec BatchRecord, sampleIdx int) (*bitsx.Matrix, error) {
 		if err := t.ValidateSameShape(y); err != nil {
 			return nil, err
 		}
-		if err := d.accumulateDelta(x, z, t, deltas[0]); err != nil {
+		r, ok := rec.(*denseBatchRecord)
+		if !ok {
+			return nil, fmt.Errorf("BatchRecordの型が不正: %T: Dense.NewBatchRecordで作成するべき", rec)
+		}
+		if err := d.recordSelection(x, z, t, r, sampleIdx); err != nil {
 			return nil, err
 		}
 		return d.inputTarget(t)
@@ -178,7 +197,16 @@ func (d *Dense) Forward(x *bitsx.Matrix, rng *rand.Rand) (*bitsx.Matrix, Backwar
 	return y, backward, nil
 }
 
-func (d *Dense) accumulateDelta(x *bitsx.Matrix, z []int, t *bitsx.Matrix, delta Delta) error {
+func (d *Dense) recordSelection(x *bitsx.Matrix, z []int, t *bitsx.Matrix, rec *denseBatchRecord, sampleIdx int) error {
+	rowOffset := sampleIdx * x.Rows()
+	if sampleIdx < 0 || rowOffset+x.Rows() > rec.x.Rows() {
+		return fmt.Errorf("sampleIdxが範囲外: sampleIdx = %d: 記録できるのは %d 行まで", sampleIdx, rec.x.Rows())
+	}
+	if err := copyRows(rec.x, rowOffset, x); err != nil {
+		return err
+	}
+
+	tStride := t.Stride()
 	return t.ScanRowsWord(nil, func(tCtx bitsx.MatrixWordContext) error {
 		// 64ビット毎に操作するための宣言
 		zWord := z[tCtx.GlobalStart:tCtx.GlobalEnd]
@@ -225,30 +253,138 @@ func (d *Dense) accumulateDelta(x *bitsx.Matrix, z []int, t *bitsx.Matrix, delta
 		})
 
 		updateK := min(max(len(zWord)/d.GroupSize, 1), len(wordMismatches))
+		var nonZeroWord, signWord uint64
 		for _, mismatch := range wordMismatches[:updateK] {
-			tBit := mismatch.tBit
-			col := mismatch.col
-			deltaRow := delta[col*d.W.Cols() : (col+1)*d.W.Cols()]
-
-			err = x.ScanRowsWord([]int{tCtx.Row}, func(xCtx bitsx.MatrixWordContext) error {
-				xWord, err := x.Word(xCtx.WordIndex)
-				if err != nil {
-					return err
-				}
-				deltaWord := deltaRow[xCtx.ColStart:xCtx.ColEnd]
-				for b := range deltaWord {
-					xBit := (xWord >> uint(b)) & 1
-					deltaWord[b] += int16(1 - 2*int(xBit^tBit))
-				}
-				return nil
-			})
-
-			if err != nil {
-				return err
-			}
+			i := uint(mismatch.col - tCtx.ColStart)
+			nonZeroWord |= 1 << i
+			signWord |= mismatch.tBit << i
 		}
-		return nil
+		idx := (rowOffset+tCtx.Row)*tStride + tCtx.ColStart/64
+		if err := rec.nonZero.SetWord(idx, nonZeroWord); err != nil {
+			return err
+		}
+		return rec.sign.SetWord(idx, signWord)
 	})
+}
+
+// dst と src の列数(= ストライド)が同じである事を前提とする。
+func copyRows(dst *bitsx.Matrix, dstRow int, src *bitsx.Matrix) error {
+	stride := src.Stride()
+	if dst.Stride() != stride {
+		return fmt.Errorf("ストライドが不一致: dst = %d, src = %d", dst.Stride(), stride)
+	}
+	for i := range src.Rows() * stride {
+		word, err := src.Word(i)
+		if err != nil {
+			return err
+		}
+		if err := dst.SetWord(dstRow*stride+i, word); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func clearMatrix(m *bitsx.Matrix) error {
+	for i := range m.Rows() * m.Stride() {
+		if err := m.SetWord(i, 0); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// 行は「サンプル番号 × 入力の行数 + 行」。
+type denseBatchRecord struct {
+	x       *bitsx.Matrix
+	sign    *bitsx.Matrix
+	nonZero *bitsx.Matrix
+	ones    *bitsx.Matrix
+	deltas  Deltas
+}
+
+func (r *denseBatchRecord) Clear() error {
+	if err := clearMatrix(r.sign); err != nil {
+		return err
+	}
+	return clearMatrix(r.nonZero)
+}
+
+func (d *Dense) NewBatchRecord(batchSize, xRows int) (BatchRecord, error) {
+	rows := batchSize * xRows
+	x, err := bitsx.NewZerosMatrix(rows, d.W.Cols())
+	if err != nil {
+		return nil, err
+	}
+	sign, err := bitsx.NewZerosMatrix(rows, d.W.Rows())
+	if err != nil {
+		return nil, err
+	}
+	nonZero, err := bitsx.NewZerosMatrix(rows, d.W.Rows())
+	if err != nil {
+		return nil, err
+	}
+	ones, err := bitsx.NewOnesMatrix(1, rows)
+	if err != nil {
+		return nil, err
+	}
+	return &denseBatchRecord{
+		x:       x,
+		sign:    sign,
+		nonZero: nonZero,
+		ones:    ones,
+		deltas:  Deltas{make(Delta, d.W.Rows()*d.W.Cols()), make(Delta, d.W.Rows())},
+	}, nil
+}
+
+// デルタ[j][b] = Σ_選択 (x_b と希望出力 t_j が一致なら +1、不一致なら −1) は、バッチ方向を内積の軸にした
+// 三値(選択と向き)×二値(入力)の行列積なので、サンプルごとに int16 へ足し込む代わりに DotTernary 1回で求まる。
+func (d *Dense) BatchDeltas(rec BatchRecord) (Deltas, error) {
+	r, ok := rec.(*denseBatchRecord)
+	if !ok {
+		return nil, fmt.Errorf("BatchRecordの型が不正: %T: Dense.NewBatchRecordで作成するべき", rec)
+	}
+	xT, err := r.x.Transpose()
+	if err != nil {
+		return nil, err
+	}
+	signT, err := r.sign.Transpose()
+	if err != nil {
+		return nil, err
+	}
+	nonZeroT, err := r.nonZero.Transpose()
+	if err != nil {
+		return nil, err
+	}
+
+	sums, err := xT.DotTernary(signT, nonZeroT)
+	if err != nil {
+		return nil, err
+	}
+	fanIn := d.W.Cols()
+	yCols := d.W.Rows()
+	weightDelta := r.deltas[0]
+	for b := range fanIn {
+		for j := range yCols {
+			weightDelta[j*fanIn+b] = clampInt16(sums[b*yCols+j])
+		}
+	}
+
+	// 全ビット1の値と比べると、選んだ位置の (希望出力が1なら+1、0なら−1) の合計になる
+	biasSums, err := r.ones.DotTernary(signT, nonZeroT)
+	if err != nil {
+		return nil, err
+	}
+	biasDelta := r.deltas[1]
+	for j := range yCols {
+		biasDelta[j] = clampInt16(biasSums[j])
+	}
+	return r.deltas, nil
+}
+
+// デルタは最終的に符号しか使わないため、int16 に収まらない大きさは符号を保ったまま切り詰める
+func clampInt16(v int) int16 {
+	return int16(max(math.MinInt16, min(v, math.MaxInt16)))
 }
 
 func (d *Dense) inputTarget(t *bitsx.Matrix) (*bitsx.Matrix, error) {
@@ -292,11 +428,6 @@ func (d *Dense) Predict(x *bitsx.Matrix) (*bitsx.Matrix, error) {
 	return bitsx.NewSignMatrix(x.Rows(), d.W.Rows(), z)
 }
 
-func (d *Dense) NewZerosDeltas() Deltas {
-	n := d.W.Rows() * d.W.Cols()
-	return Deltas{make(Delta, n)}
-}
-
 func (d *Dense) OutputShape(xRows, xCols int) (int, int, error) {
 	if xCols != d.W.Cols() {
 		return 0, 0, fmt.Errorf("入力の列数が不一致: xCols = %d, W.Cols = %d", xCols, d.W.Cols())
@@ -305,8 +436,8 @@ func (d *Dense) OutputShape(xRows, xCols int) (int, int, error) {
 }
 
 func (d *Dense) Update(deltas Deltas, lrHalfPow int, rng *rand.Rand) error {
-	if len(deltas) != 1 {
-		return fmt.Errorf("deltasの数が不正: len(deltas) = %d: Dense層は1つのDeltaを持つべき", len(deltas))
+	if len(deltas) != 2 {
+		return fmt.Errorf("deltasの数が不正: len(deltas) = %d: Dense層は重みとバイアスの2つのDeltaを持つべき", len(deltas))
 	}
 
 	delta := deltas[0]
@@ -351,7 +482,34 @@ func (d *Dense) Update(deltas Deltas, lrHalfPow int, rng *rand.Rand) error {
 		}
 		return d.W.SetWord(ctx.WordIndex, old^flips)
 	})
-	return err
+	if err != nil {
+		return err
+	}
+	// 重みの後に更新するのは、Bias が 0 のままなら重みの更新が乱数の消費まで導入前と一致するようにするため
+	return d.updateBias(deltas[1], lrHalfPow, rng)
+}
+
+func (d *Dense) updateBias(biasDelta Delta, lrHalfPow int, rng *rand.Rand) error {
+	if d.Bias == nil {
+		d.Bias = make([]int32, d.W.Rows())
+	}
+	// |Bias| が fanIn を超えると、入力によらず出力が一定になり、それ以上動かしても意味がないため
+	maxAbsBias := int32(d.W.Cols())
+	for start := 0; start < len(d.Bias); start += 64 {
+		mask, err := bitsx.RandHalfPow[uint64](lrHalfPow, rng)
+		if err != nil {
+			return err
+		}
+		if n := len(d.Bias) - start; n < 64 {
+			mask &= (uint64(1) << uint(n)) - 1
+		}
+		for mask != 0 {
+			j := start + bits.TrailingZeros64(mask)
+			mask &= mask - 1
+			d.Bias[j] = max(-maxAbsBias, min(d.Bias[j]+int32(biasDelta[j]), maxAbsBias))
+		}
+	}
+	return nil
 }
 
 type Sequence []Layer

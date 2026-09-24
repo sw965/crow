@@ -114,6 +114,38 @@ func TestTrainerValidate(t *testing.T) {
 		}
 	})
 
+	for _, tt := range []struct {
+		name    string
+		setBias func(d *bep.Dense)
+	}{
+		{name: "異常_Biasの長さが出力数と違う", setBias: func(d *bep.Dense) { d.Bias = d.Bias[:1] }},
+		{name: "異常_Biasが入力数を超える", setBias: func(d *bep.Dense) { d.Bias[0] = int32(d.W.Cols() + 1) }},
+		{name: "異常_Biasが負の入力数を下回る", setBias: func(d *bep.Dense) { d.Bias[0] = -int32(d.W.Cols() + 1) }},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			model, _ := newTestModel(t)
+			d := model.Backbone[0].(*bep.Dense)
+			tt.setBias(d)
+			err := newTestTrainer(t, &model).Validate()
+			if err == nil {
+				t.Fatal("エラーを期待したが、nilが返された")
+			}
+			if !strings.Contains(err.Error(), "Bias") {
+				t.Errorf("エラーメッセージが不十分: %s", err.Error())
+			}
+		})
+	}
+
+	t.Run("正常_Biasが入力数ちょうど", func(t *testing.T) {
+		model, _ := newTestModel(t)
+		d := model.Backbone[0].(*bep.Dense)
+		d.Bias[0] = int32(d.W.Cols())
+		d.Bias[1] = -int32(d.W.Cols())
+		if err := newTestTrainer(t, &model).Validate(); err != nil {
+			t.Errorf("予期せぬエラー: %v", err)
+		}
+	})
+
 	t.Run("異常_MiniBatchSizeが0以下", func(t *testing.T) {
 		model, _ := newTestModel(t)
 		trainer := newTestTrainer(t, &model)
@@ -184,6 +216,33 @@ func TestTrainerValidate(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("異常_Valuesがあるのに温度計ではない", func(t *testing.T) {
+		model, _ := newTestModel(t)
+		if err := model.SetSigmoidValues(); err != nil {
+			t.Fatalf("予期せぬエラー: %v", err)
+		}
+		err := newTestTrainer(t, &model).Validate()
+		if err == nil {
+			t.Fatal("エラーを期待したが、nilが返された")
+		}
+		if !strings.Contains(err.Error(), "温度計") {
+			t.Errorf("エラーメッセージが不十分: %s", err.Error())
+		}
+	})
+
+	t.Run("正常_温度計の回帰モデル", func(t *testing.T) {
+		model, _ := newTestModel(t)
+		if err := model.SetRegressionPrototypes(11); err != nil {
+			t.Fatalf("予期せぬエラー: %v", err)
+		}
+		if err := model.SetSigmoidValues(); err != nil {
+			t.Fatalf("予期せぬエラー: %v", err)
+		}
+		if err := newTestTrainer(t, &model).Validate(); err != nil {
+			t.Errorf("予期せぬエラー: %v", err)
+		}
+	})
 
 	t.Run("異常_Valuesが昇順ではない", func(t *testing.T) {
 		model, _ := newTestModel(t)

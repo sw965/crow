@@ -255,6 +255,7 @@ func TestModelSaveLoadKeepsLayerSettings(t *testing.T) {
 	}
 	d.GroupSize = 3
 	d.MaxAbsNoise = 5
+	d.Bias[0] = -7
 
 	path := filepath.Join(t.TempDir(), "model.gob")
 	if err := model.Save(path); err != nil {
@@ -269,8 +270,9 @@ func TestModelSaveLoadKeepsLayerSettings(t *testing.T) {
 	if !ok {
 		t.Fatal("読み込んだ先頭の層が *bep.Dense ではない")
 	}
-	if got.GroupSize != 3 || got.MaxAbsNoise != 5 {
-		t.Errorf("層の設定が保存されていない: got = (GroupSize %d, MaxAbsNoise %d), want = (3, 5)", got.GroupSize, got.MaxAbsNoise)
+	if got.GroupSize != 3 || got.MaxAbsNoise != 5 || got.Bias[0] != -7 {
+		t.Errorf("層の設定が保存されていない: got = (GroupSize %d, MaxAbsNoise %d, Bias[0] %d), want = (3, 5, -7)",
+			got.GroupSize, got.MaxAbsNoise, got.Bias[0])
 	}
 	// 読み込んだ直後に、追加の設定なしで学習を始められる事
 	if err := newTestTrainer(t, &loaded).Validate(); err != nil {

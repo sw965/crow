@@ -13,7 +13,7 @@ import (
 // ロジットは「一致ビット数」なので、一致率 = ロジット / 総ビット数。
 // どの方式も既に計算済みのロジットを使うだけで、追加の推論コストは無い。
 
-// decodeTie は現行の PredictValue と同じ同点平均。
+// decodeTie は旧 PredictValue(2026-09-24 に点灯数の復号へ置き換えるまで)と同じ同点平均。
 // 最大ロジットのラベルだけを使い、残りを捨てる。
 func decodeTie(logits []int, values []float64) float64 {
 	maxLogit := slices.Max(logits)
