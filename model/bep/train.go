@@ -188,15 +188,20 @@ func (t *Trainer) computeSeqSignDelta(xs bitsx.Matrices, labels []int, marginBit
 		return nil, err
 	}
 
+	// 層ごとの集計は互いに独立なので並列に行う(バッチごとの直列部分が並列度を下げていたため)
 	seqDelta := make(SeqDelta, len(backbone))
-	for l, layer := range backbone {
-		deltas, err := layer.BatchDeltas(t.records[l])
+	err = parallel.For(len(backbone), min(p, len(backbone)), func(_, l int) error {
+		deltas, err := backbone[l].BatchDeltas(t.records[l])
 		if err != nil {
-			return nil, err
+			return err
 		}
+		deltas.Sign()
 		seqDelta[l] = deltas
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
-	seqDelta.Sign()
 	return seqDelta, nil
 }
 

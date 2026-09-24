@@ -148,7 +148,8 @@ func (d *Dense) preActivation(x *bitsx.Matrix) ([]int, error) {
 	}
 
 	maxZi := d.W.Cols()
-	z := make([]int, len(u))
+	// u はここでしか使わないので、新しく確保せずそのまま z として書き換える(学習中はサンプルごとに呼ばれるため)
+	z := u
 	for i, count := range u {
 		z[i] = 2*count - maxZi
 	}
