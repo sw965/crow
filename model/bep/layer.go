@@ -75,6 +75,11 @@ func absZForScale(fanIn, num, denom int) (int, error) {
 	}
 	v := new(big.Int).Mul(big.NewInt(int64(isqrt(fanIn))), big.NewInt(int64(num)))
 	v.Quo(v, big.NewInt(int64(denom)))
+	// 入力数が小さいと切り捨てで 0 になり、MaxUpdateAbsZ は Validate を通らず、MarginAbsZ はマージンが効かなくなる
+	// (入力数 49 の畳み込みで、マージンが 0 になり学習できなかった。CNN.md §2)。正の倍率なら最低 1 にする
+	if num > 0 && v.Sign() == 0 {
+		v.SetInt64(1)
+	}
 	if !v.IsInt64() || v.Int64() > int64(2*fanIn) {
 		return 0, fmt.Errorf("倍率が大きすぎる: num/denom = %d/%d: |z| の最大値 %d を超える", num, denom, 2*fanIn)
 	}

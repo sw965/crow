@@ -250,6 +250,38 @@ func TestDenseUpdate(t *testing.T) {
 	})
 }
 
+func TestSmallFanInDefaults(t *testing.T) {
+	t.Run("正常_Denseは入力数9でも既定値が1以上で学習を始められる", func(t *testing.T) {
+		model := bep.Model{XRows: 1, XCols: 9}
+		rng := rand.New(rand.NewPCG(1, 2))
+		if err := model.AppendDenseLayer(8, rng); err != nil {
+			t.Fatalf("予期せぬエラー: %v", err)
+		}
+		if err := model.SetClassPrototypes(2, rng); err != nil {
+			t.Fatalf("予期せぬエラー: %v", err)
+		}
+		d := model.Backbone[0].(*bep.Dense)
+		// 入力数 9 → isqrt 3 × 1/4 は切り捨てで 0 になるが、最低 1
+		if d.MaxUpdateAbsZ != 1 || d.MarginAbsZ != 1 {
+			t.Errorf("既定値の不一致: got = (MaxUpdateAbsZ %d, MarginAbsZ %d), want = (1, 1)", d.MaxUpdateAbsZ, d.MarginAbsZ)
+		}
+		if err := newTestTrainer(t, &model).Validate(); err != nil {
+			t.Errorf("予期せぬエラー: %v", err)
+		}
+	})
+
+	t.Run("正常_ProductDenseは入力数20でもマージンが1以上", func(t *testing.T) {
+		p, err := bep.NewProductDense(10, 20, 2, rand.New(rand.NewPCG(1, 2)))
+		if err != nil {
+			t.Fatalf("予期せぬエラー: %v", err)
+		}
+		// 入力数 20 → isqrt 4 × 1/8 は切り捨てで 0 になるが、最低 1
+		if p.MarginAbsZ != 1 {
+			t.Errorf("MarginAbsZ の不一致: got = %d, want = 1", p.MarginAbsZ)
+		}
+	})
+}
+
 func TestDenseForwardMatchesPredict(t *testing.T) {
 	rng := rand.New(rand.NewPCG(11, 12))
 	d, err := bep.NewDense(300, 100, rng)
