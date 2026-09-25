@@ -541,22 +541,6 @@ func TestDenseBias(t *testing.T) {
 			}
 		}
 	})
-
-	t.Run("正常_Biasがnilなら0として扱う", func(t *testing.T) {
-		d, x, _ := newDenseAndInput(t)
-		want, err := d.Predict(x)
-		if err != nil {
-			t.Fatalf("予期せぬエラー: %v", err)
-		}
-		d.Bias = nil
-		got, err := d.Predict(x)
-		if err != nil {
-			t.Fatalf("予期せぬエラー: %v", err)
-		}
-		if !got.Equal(want) {
-			t.Error("Bias が nil と 0 で結果が異なる")
-		}
-	})
 }
 
 func mustBit(t *testing.T, m *bitsx.Matrix, r, c int) uint64 {

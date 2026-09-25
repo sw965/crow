@@ -482,8 +482,12 @@ func TestProductDenseBackward(t *testing.T) {
 				for _, dl := range singleDeltas {
 					want = append(want, slices.Clone(dl))
 				}
-			} else if err := want.Add(singleDeltas); err != nil {
-				t.Fatalf("予期せぬエラー: %v", err)
+			} else {
+				for k, dl := range singleDeltas {
+					for i, v := range dl {
+						want[k][i] += v
+					}
+				}
 			}
 			if _, err := bw(tgt, batch, s); err != nil {
 				t.Fatalf("予期せぬエラー: %v", err)

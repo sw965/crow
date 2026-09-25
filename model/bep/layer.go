@@ -140,22 +140,21 @@ func NewDense(wRows, wCols int, rng *rand.Rand) (*Dense, error) {
 	}, nil
 }
 
-func (d *Dense) SetMaxUpdateAbsZScale(num, denom int) error {
-	maxUpdateAbsZ, err := absZForScale(d.W.Cols(), num, denom)
+func setAbsZScale(dst *int, name string, fanIn, num, denom int) error {
+	absZ, err := absZForScale(fanIn, num, denom)
 	if err != nil {
-		return fmt.Errorf("MaxUpdateAbsZ: %w", err)
+		return fmt.Errorf("%s: %w", name, err)
 	}
-	d.MaxUpdateAbsZ = maxUpdateAbsZ
+	*dst = absZ
 	return nil
 }
 
+func (d *Dense) SetMaxUpdateAbsZScale(num, denom int) error {
+	return setAbsZScale(&d.MaxUpdateAbsZ, "MaxUpdateAbsZ", d.W.Cols(), num, denom)
+}
+
 func (d *Dense) SetMarginAbsZScale(num, denom int) error {
-	marginAbsZ, err := absZForScale(d.W.Cols(), num, denom)
-	if err != nil {
-		return fmt.Errorf("MarginAbsZ: %w", err)
-	}
-	d.MarginAbsZ = marginAbsZ
-	return nil
+	return setAbsZScale(&d.MarginAbsZ, "MarginAbsZ", d.W.Cols(), num, denom)
 }
 
 func (d *Dense) preActivation(x *bitsx.Matrix) ([]int, error) {
@@ -170,14 +169,11 @@ func (d *Dense) preActivation(x *bitsx.Matrix) ([]int, error) {
 	for i, count := range u {
 		z[i] = 2*count - maxZi
 	}
-	// Bias が nil なのは、バイアス導入前に gob で保存したモデルを読み込んだ場合で、0 と同じに扱う
-	if d.Bias != nil {
-		yCols := d.W.Rows()
-		for rowStart := 0; rowStart < len(z); rowStart += yCols {
-			zRow := z[rowStart : rowStart+yCols]
-			for j := range zRow {
-				zRow[j] += int(d.Bias[j])
-			}
+	yCols := d.W.Rows()
+	for rowStart := 0; rowStart < len(z); rowStart += yCols {
+		zRow := z[rowStart : rowStart+yCols]
+		for j := range zRow {
+			zRow[j] += int(d.Bias[j])
 		}
 	}
 	return z, nil
@@ -508,9 +504,6 @@ func (d *Dense) Update(deltas Deltas, lrHalfPow int, rng *rand.Rand) error {
 }
 
 func (d *Dense) updateBias(biasDelta Delta, lrHalfPow int, rng *rand.Rand) error {
-	if d.Bias == nil {
-		d.Bias = make([]int32, d.W.Rows())
-	}
 	// |Bias| が fanIn を超えると、入力によらず出力が一定になり、それ以上動かしても意味がないため
 	maxAbsBias := int32(d.W.Cols())
 	for start := 0; start < len(d.Bias); start += 64 {
@@ -531,22 +524,24 @@ func (d *Dense) updateBias(biasDelta Delta, lrHalfPow int, rng *rand.Rand) error
 }
 
 func (d *Dense) Validate() error {
-	if d.Bias != nil {
-		if len(d.Bias) != d.W.Rows() {
-			return fmt.Errorf("biasの長さが不正: len(Bias) = %d: 出力数 %d であるべき", len(d.Bias), d.W.Rows())
-		}
-		for j, b := range d.Bias {
-			if b < -int32(d.W.Cols()) || b > int32(d.W.Cols()) {
-				return fmt.Errorf("bias[%d]が不正: Bias = %d: |Bias| <= %d (入力数) であるべき", j, b, d.W.Cols())
-			}
+	if len(d.Bias) != d.W.Rows() {
+		return fmt.Errorf("biasの長さが不正: len(Bias) = %d: 出力数 %d であるべき", len(d.Bias), d.W.Rows())
+	}
+	for j, b := range d.Bias {
+		if b < -int32(d.W.Cols()) || b > int32(d.W.Cols()) {
+			return fmt.Errorf("bias[%d]が不正: Bias = %d: |Bias| <= %d (入力数) であるべき", j, b, d.W.Cols())
 		}
 	}
+	return validateAbsZ(d.MaxUpdateAbsZ, d.MarginAbsZ, d.W.Cols())
+}
+
+func validateAbsZ(maxUpdateAbsZ, marginAbsZ, fanIn int) error {
 	// 0 だと |z| = 0 のニューロンしか直さず、学習がほぼ止まるため
-	if d.MaxUpdateAbsZ < 1 || d.MaxUpdateAbsZ > 2*d.W.Cols() {
-		return fmt.Errorf("MaxUpdateAbsZが不正: MaxUpdateAbsZ = %d: 1 <= MaxUpdateAbsZ <= %d (|z| の最大値) であるべき", d.MaxUpdateAbsZ, 2*d.W.Cols())
+	if maxUpdateAbsZ < 1 || maxUpdateAbsZ > 2*fanIn {
+		return fmt.Errorf("MaxUpdateAbsZが不正: MaxUpdateAbsZ = %d: 1 <= MaxUpdateAbsZ <= %d (|z| の最大値) であるべき", maxUpdateAbsZ, 2*fanIn)
 	}
-	if d.MarginAbsZ < 0 || d.MarginAbsZ > 2*d.W.Cols() {
-		return fmt.Errorf("MarginAbsZが不正: MarginAbsZ = %d: 0 <= MarginAbsZ <= %d (|z| の最大値) であるべき", d.MarginAbsZ, 2*d.W.Cols())
+	if marginAbsZ < 0 || marginAbsZ > 2*fanIn {
+		return fmt.Errorf("MarginAbsZが不正: MarginAbsZ = %d: 0 <= MarginAbsZ <= %d (|z| の最大値) であるべき", marginAbsZ, 2*fanIn)
 	}
 	return nil
 }
@@ -590,21 +585,11 @@ func NewProductDense(wRows, wCols, numBranches int, rng *rand.Rand) (*ProductDen
 }
 
 func (p *ProductDense) SetMaxUpdateAbsZScale(num, denom int) error {
-	maxUpdateAbsZ, err := absZForScale(p.Branches[0].W.Cols(), num, denom)
-	if err != nil {
-		return fmt.Errorf("MaxUpdateAbsZ: %w", err)
-	}
-	p.MaxUpdateAbsZ = maxUpdateAbsZ
-	return nil
+	return setAbsZScale(&p.MaxUpdateAbsZ, "MaxUpdateAbsZ", p.Branches[0].W.Cols(), num, denom)
 }
 
 func (p *ProductDense) SetMarginAbsZScale(num, denom int) error {
-	marginAbsZ, err := absZForScale(p.Branches[0].W.Cols(), num, denom)
-	if err != nil {
-		return fmt.Errorf("MarginAbsZ: %w", err)
-	}
-	p.MarginAbsZ = marginAbsZ
-	return nil
+	return setAbsZScale(&p.MarginAbsZ, "MarginAbsZ", p.Branches[0].W.Cols(), num, denom)
 }
 
 func (p *ProductDense) preActivations(x *bitsx.Matrix) ([][]int, error) {
@@ -874,14 +859,7 @@ func (p *ProductDense) Validate() error {
 			return fmt.Errorf("branches[%d]: %w", b, err)
 		}
 	}
-	// 0 だと |z| = 0 のニューロンしか直さず、学習がほぼ止まるため
-	if p.MaxUpdateAbsZ < 1 || p.MaxUpdateAbsZ > 2*first.W.Cols() {
-		return fmt.Errorf("MaxUpdateAbsZが不正: MaxUpdateAbsZ = %d: 1 <= MaxUpdateAbsZ <= %d (|z| の最大値) であるべき", p.MaxUpdateAbsZ, 2*first.W.Cols())
-	}
-	if p.MarginAbsZ < 0 || p.MarginAbsZ > 2*first.W.Cols() {
-		return fmt.Errorf("MarginAbsZが不正: MarginAbsZ = %d: 0 <= MarginAbsZ <= %d (|z| の最大値) であるべき", p.MarginAbsZ, 2*first.W.Cols())
-	}
-	return nil
+	return validateAbsZ(p.MaxUpdateAbsZ, p.MarginAbsZ, first.W.Cols())
 }
 
 type Sequence []Layer
@@ -942,64 +920,44 @@ func (s Sequence) Update(seqDelta SeqDelta, lrHalfPow int, rngs []*rand.Rand) er
 	return err
 }
 
-// 途中の層でエラーになったときに一部の層だけ変わるのを防ぐため、全層の値を計算してから代入する。
 func (s Sequence) SetMaxUpdateAbsZScale(num, denom int) error {
-	maxUpdateAbsZs := make([]int, len(s))
+	return s.setAbsZScale("MaxUpdateAbsZ", num, denom, func(maxUpdateAbsZ, _ *int) *int { return maxUpdateAbsZ })
+}
+
+func (s Sequence) SetMarginAbsZScale(num, denom int) error {
+	return s.setAbsZScale("MarginAbsZ", num, denom, func(_, marginAbsZ *int) *int { return marginAbsZ })
+}
+
+// 途中の層でエラーになったときに一部の層だけ変わるのを防ぐため、全層の値を計算してから代入する。
+func (s Sequence) setAbsZScale(name string, num, denom int, field func(maxUpdateAbsZ, marginAbsZ *int) *int) error {
+	absZs := make([]int, len(s))
 	for i, layer := range s {
-		var fanIn int
-		switch l := layer.(type) {
-		case *Dense:
-			fanIn = l.W.Cols()
-		case *ProductDense:
-			fanIn = l.Branches[0].W.Cols()
-		default:
+		fanIn, _, _, ok := absZFields(layer)
+		if !ok {
 			continue
 		}
-		maxUpdateAbsZ, err := absZForScale(fanIn, num, denom)
+		absZ, err := absZForScale(fanIn, num, denom)
 		if err != nil {
-			return fmt.Errorf("layer %d: MaxUpdateAbsZ: %w", i, err)
+			return fmt.Errorf("layer %d: %s: %w", i, name, err)
 		}
-		maxUpdateAbsZs[i] = maxUpdateAbsZ
+		absZs[i] = absZ
 	}
 	for i, layer := range s {
-		switch l := layer.(type) {
-		case *Dense:
-			l.MaxUpdateAbsZ = maxUpdateAbsZs[i]
-		case *ProductDense:
-			l.MaxUpdateAbsZ = maxUpdateAbsZs[i]
+		if _, maxUpdateAbsZ, marginAbsZ, ok := absZFields(layer); ok {
+			*field(maxUpdateAbsZ, marginAbsZ) = absZs[i]
 		}
 	}
 	return nil
 }
 
-// 途中の層でエラーになったときに一部の層だけ変わるのを防ぐため、全層の値を計算してから代入する。
-func (s Sequence) SetMarginAbsZScale(num, denom int) error {
-	marginAbsZs := make([]int, len(s))
-	for i, layer := range s {
-		var fanIn int
-		switch l := layer.(type) {
-		case *Dense:
-			fanIn = l.W.Cols()
-		case *ProductDense:
-			fanIn = l.Branches[0].W.Cols()
-		default:
-			continue
-		}
-		marginAbsZ, err := absZForScale(fanIn, num, denom)
-		if err != nil {
-			return fmt.Errorf("layer %d: MarginAbsZ: %w", i, err)
-		}
-		marginAbsZs[i] = marginAbsZ
+func absZFields(layer Layer) (fanIn int, maxUpdateAbsZ, marginAbsZ *int, ok bool) {
+	switch l := layer.(type) {
+	case *Dense:
+		return l.W.Cols(), &l.MaxUpdateAbsZ, &l.MarginAbsZ, true
+	case *ProductDense:
+		return l.Branches[0].W.Cols(), &l.MaxUpdateAbsZ, &l.MarginAbsZ, true
 	}
-	for i, layer := range s {
-		switch l := layer.(type) {
-		case *Dense:
-			l.MarginAbsZ = marginAbsZs[i]
-		case *ProductDense:
-			l.MarginAbsZ = marginAbsZs[i]
-		}
-	}
-	return nil
+	return 0, nil, nil, false
 }
 
 func init() {

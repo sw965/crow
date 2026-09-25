@@ -2,20 +2,9 @@ package bep
 
 import (
 	"cmp"
-	"fmt"
 )
 
 type Delta []int16
-
-func (d Delta) Add(other Delta) error {
-	if len(d) != len(other) {
-		return fmt.Errorf("deltaの長さが不一致: len(d) = %d, len(other) = %d", len(d), len(other))
-	}
-	for i, v := range other {
-		d[i] += v
-	}
-	return nil
-}
 
 func (d Delta) Sign() {
 	for i, v := range d {
@@ -25,53 +14,16 @@ func (d Delta) Sign() {
 
 type Deltas []Delta
 
-func (ds Deltas) Add(other Deltas) error {
-	if len(ds) != len(other) {
-		return fmt.Errorf("deltasの数が不一致: len(ds) = %d, len(other) = %d", len(ds), len(other))
-	}
-	for i, d := range other {
-		err := ds[i].Add(d)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 func (ds Deltas) Sign() {
 	for _, d := range ds {
 		d.Sign()
 	}
 }
 
-func (ds Deltas) Clear() {
-	for i := range ds {
-		clear(ds[i])
-	}
-}
-
 type SeqDelta []Deltas
-
-func (sd SeqDelta) Add(other SeqDelta) error {
-	if len(sd) != len(other) {
-		return fmt.Errorf("SeqDeltaの数が不一致: len(sd) = %d, len(other) = %d", len(sd), len(other))
-	}
-	for i := range sd {
-		if err := sd[i].Add(other[i]); err != nil {
-			return err
-		}
-	}
-	return nil
-}
 
 func (sd SeqDelta) Sign() {
 	for i := range sd {
 		sd[i].Sign()
-	}
-}
-
-func (sd SeqDelta) Clear() {
-	for _, d := range sd {
-		d.Clear()
 	}
 }
