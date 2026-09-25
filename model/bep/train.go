@@ -157,12 +157,11 @@ func (t *Trainer) computeSeqSignDelta(xs bitsx.Matrices, labels []int, marginBit
 		return nil, err
 	}
 
-	err := parallel.For(n, p, func(workerID, idx int) error {
-		rng := t.workerRNGs[workerID]
+	err := parallel.For(n, p, func(_, idx int) error {
 		x := xs[idx]
 		label := labels[idx]
 
-		y, backwards, err := backbone.Forward(x, rng)
+		y, backwards, err := backbone.Forward(x)
 		if err != nil {
 			return err
 		}
@@ -269,27 +268,8 @@ func (t *Trainer) Validate() error {
 	}
 
 	for i, layer := range t.model.Backbone {
-		d, ok := layer.(*Dense)
-		if !ok {
-			continue
-		}
-		if d.Bias != nil {
-			if len(d.Bias) != d.W.Rows() {
-				return fmt.Errorf("layer %d: Biasの長さが不正: len(Bias) = %d: 出力数 %d であるべき", i, len(d.Bias), d.W.Rows())
-			}
-			for j, b := range d.Bias {
-				if b < -int32(d.W.Cols()) || b > int32(d.W.Cols()) {
-					return fmt.Errorf("layer %d: Bias[%d]が不正: Bias = %d: |Bias| <= %d (入力数) であるべき", i, j, b, d.W.Cols())
-				}
-			}
-		}
-		// 0 以下だと逆伝播の updateK の計算で 0 除算になるため
-		if d.GroupSize < 1 {
-			return fmt.Errorf("layer %d: GroupSizeが不正: GroupSize = %d: 1以上であるべき", i, d.GroupSize)
-		}
-		// cols を超えると最も確信の強いニューロンまで反転しうるようになり、出力が無作為に近づくだけなので弾く
-		if d.MaxAbsNoise < 0 || d.MaxAbsNoise > d.W.Cols() {
-			return fmt.Errorf("layer %d: MaxAbsNoiseが不正: MaxAbsNoise = %d: 0 <= MaxAbsNoise <= %d (入力数) であるべき", i, d.MaxAbsNoise, d.W.Cols())
+		if err := layer.Validate(); err != nil {
+			return fmt.Errorf("layer %d: %w", i, err)
 		}
 	}
 

@@ -343,8 +343,10 @@ func newPairedDenses(t *testing.T, wRows, wCols int, seed uint64) (*bep.Dense, *
 	if err != nil {
 		t.Fatalf("予期せぬエラー: %v", err)
 	}
-	// ノイズ0で決定的にする
-	crowDense.MaxAbsNoise = 0
+	// 本実験の再実装にはマージンが無いので、マージンを無効にして比べる(マージンは crow 側のテストで確かめている)
+	crowDense.MarginAbsZ = 0
+	// 既定値(isqrt(入力数) の 1/4)では直すニューロンが少なく、選び方の食い違いを検出しにくいため広げる
+	crowDense.MaxUpdateAbsZ = 8
 
 	mine, err := newDense(wRows, wCols, false, 0, rand.New(rand.NewPCG(seed, seed+1)))
 	if err != nil {
@@ -355,7 +357,7 @@ func newPairedDenses(t *testing.T, wRows, wCols int, seed uint64) (*bep.Dense, *
 	mine.wt = crowDense.WT.Clone()
 	mine.h = make([]int8, len(crowDense.H))
 	copy(mine.h, crowDense.H)
-	mine.groupSize = crowDense.GroupSize
+	mine.maxUpdateAbsZ = crowDense.MaxUpdateAbsZ
 	return crowDense, mine
 }
 
@@ -397,7 +399,7 @@ func TestForwardBackwardDeltaMatchesCrow(t *testing.T) {
 			x := newTestMatrix(t, 3, shape[1], rng)
 			target := newTestMatrix(t, 3, shape[0], rng)
 
-			crowY, crowBw, err := crowDense.Forward(x, rand.New(rand.NewPCG(1, 1)))
+			crowY, crowBw, err := crowDense.Forward(x)
 			if err != nil {
 				t.Fatalf("予期せぬエラー: %v", err)
 			}

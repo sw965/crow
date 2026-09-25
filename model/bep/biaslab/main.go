@@ -17,7 +17,8 @@
 //
 // crow / omw のライブラリコードは変更していない。BEP の順伝播・逆伝播・更新は
 // ../layer.go ../train.go と同じ手順を bitsx の公開APIで再実装したもので、
-// バイアスを無効(-bias=false)にすると crow の BEP と同じ計算になる。
+// バイアスを無効(-bias=false)にすると、実験当時の crow の BEP(直すニューロンを GroupSize で選ぶ方式)と
+// 同じ計算になる。現在の crow の固定しきい値方式とは、maxUpdateAbsZ を設定した差分テストで一致を確かめている。
 //
 // 実行例:
 //
@@ -101,9 +102,12 @@ type dense struct {
 
 	noiseStd float32
 
-	groupSize  int
-	useBias    bool
-	biasChoice float32 // Update時にバイアス側が選ばれる確率
+	groupSize int
+	// maxUpdateAbsZ が正なら、crow の固定しきい値方式(|z| <= maxUpdateAbsZ の食い違いを全て直す)で選ぶ。
+	// 本実験は GroupSize 方式で行ったため既定は 0 で、crow との差分テストでだけ使う。
+	maxUpdateAbsZ int
+	useBias       bool
+	biasChoice    float32 // Update時にバイアス側が選ばれる確率
 }
 
 func newDense(wRows, wCols int, useBias bool, biasChoice float32, rng *rand.Rand) (*dense, error) {
@@ -232,14 +236,25 @@ func (d *dense) forward(x *bitsx.Matrix, noiseScale float32, rng *rand.Rand) (*b
 				return err
 			}
 
-			slices.SortFunc(mismatches, func(a, b wordMismatch) int {
-				return cmp.Compare(a.absZi, b.absZi)
-			})
+			selected := mismatches
+			if d.maxUpdateAbsZ > 0 {
+				selected = selected[:0]
+				for _, mm := range mismatches {
+					if mm.absZi <= d.maxUpdateAbsZ {
+						selected = append(selected, mm)
+					}
+				}
+			} else {
+				slices.SortFunc(mismatches, func(a, b wordMismatch) int {
+					return cmp.Compare(a.absZi, b.absZi)
+				})
 
-			updateK := max(len(zWord)/d.groupSize, 1)
-			updateK = min(updateK, len(mismatches))
+				updateK := max(len(zWord)/d.groupSize, 1)
+				updateK = min(updateK, len(mismatches))
+				selected = mismatches[:updateK]
+			}
 
-			for _, mm := range mismatches[:updateK] {
+			for _, mm := range selected {
 				// 希望活性の±1表現。バイアスのデルタはこれをそのまま使う
 				// (../UNIVERSAL_APPROXIMATION.md §5.2 の sampleDeltaBias = a*)。
 				if mm.tBit == 1 {

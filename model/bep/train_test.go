@@ -98,21 +98,38 @@ func TestTrainerValidate(t *testing.T) {
 		}
 	})
 
-	t.Run("異常_GroupSizeが0以下", func(t *testing.T) {
-		model, _ := newTestModel(t)
-		d, ok := model.Backbone[0].(*bep.Dense)
-		if !ok {
-			t.Fatal("先頭の層が *bep.Dense ではない")
-		}
-		d.GroupSize = 0
-		err := newTestTrainer(t, &model).Validate()
-		if err == nil {
-			t.Fatal("エラーを期待したが、nilが返された")
-		}
-		if !strings.Contains(err.Error(), "GroupSize") {
-			t.Errorf("エラーメッセージが不十分: %s", err.Error())
-		}
-	})
+	for _, tt := range []struct {
+		name          string
+		maxUpdateAbsZ func(cols int) int
+		wantErr       bool
+	}{
+		{name: "異常_MaxUpdateAbsZが0", maxUpdateAbsZ: func(int) int { return 0 }, wantErr: true},
+		{name: "正常_MaxUpdateAbsZが1", maxUpdateAbsZ: func(int) int { return 1 }},
+		{name: "正常_MaxUpdateAbsZが|z|の最大値", maxUpdateAbsZ: func(cols int) int { return 2 * cols }},
+		{name: "異常_MaxUpdateAbsZが|z|の最大値を超える", maxUpdateAbsZ: func(cols int) int { return 2*cols + 1 }, wantErr: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			model, _ := newTestModel(t)
+			d, ok := model.Backbone[0].(*bep.Dense)
+			if !ok {
+				t.Fatal("先頭の層が *bep.Dense ではない")
+			}
+			d.MaxUpdateAbsZ = tt.maxUpdateAbsZ(d.W.Cols())
+			err := newTestTrainer(t, &model).Validate()
+			if !tt.wantErr {
+				if err != nil {
+					t.Errorf("予期せぬエラー: %v", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatal("エラーを期待したが、nilが返された")
+			}
+			if !strings.Contains(err.Error(), "MaxUpdateAbsZ") {
+				t.Errorf("エラーメッセージが不十分: %s", err.Error())
+			}
+		})
+	}
 
 	for _, tt := range []struct {
 		name    string
@@ -160,14 +177,14 @@ func TestTrainerValidate(t *testing.T) {
 	})
 
 	for _, tt := range []struct {
-		name        string
-		maxAbsNoise func(cols int) int
-		wantErr     bool
+		name       string
+		marginAbsZ func(cols int) int
+		wantErr    bool
 	}{
-		{name: "異常_MaxAbsNoiseが負", maxAbsNoise: func(int) int { return -1 }, wantErr: true},
-		{name: "正常_MaxAbsNoiseが0", maxAbsNoise: func(int) int { return 0 }},
-		{name: "正常_MaxAbsNoiseが入力数", maxAbsNoise: func(cols int) int { return cols }},
-		{name: "異常_MaxAbsNoiseが入力数を超える", maxAbsNoise: func(cols int) int { return cols + 1 }, wantErr: true},
+		{name: "異常_MarginAbsZが負", marginAbsZ: func(int) int { return -1 }, wantErr: true},
+		{name: "正常_MarginAbsZが0", marginAbsZ: func(int) int { return 0 }},
+		{name: "正常_MarginAbsZが|z|の最大値", marginAbsZ: func(cols int) int { return 2 * cols }},
+		{name: "異常_MarginAbsZが|z|の最大値を超える", marginAbsZ: func(cols int) int { return 2*cols + 1 }, wantErr: true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			model, _ := newTestModel(t)
@@ -175,7 +192,7 @@ func TestTrainerValidate(t *testing.T) {
 			if !ok {
 				t.Fatal("先頭の層が *bep.Dense ではない")
 			}
-			d.MaxAbsNoise = tt.maxAbsNoise(d.W.Cols())
+			d.MarginAbsZ = tt.marginAbsZ(d.W.Cols())
 			err := newTestTrainer(t, &model).Validate()
 			if tt.wantErr && err == nil {
 				t.Fatal("エラーを期待したが、nilが返された")
@@ -183,7 +200,7 @@ func TestTrainerValidate(t *testing.T) {
 			if !tt.wantErr && err != nil {
 				t.Fatalf("nilを期待したが、エラーが返された: %v", err)
 			}
-			if tt.wantErr && !strings.Contains(err.Error(), "MaxAbsNoise") {
+			if tt.wantErr && !strings.Contains(err.Error(), "MarginAbsZ") {
 				t.Errorf("エラーメッセージが不十分: %s", err.Error())
 			}
 		})

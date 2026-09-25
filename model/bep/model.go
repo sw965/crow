@@ -28,19 +28,9 @@ func LoadModel(path string) (Model, error) {
 }
 
 func (m *Model) AppendDenseLayer(wRows int, rng *rand.Rand) error {
-	if m.XRows <= 0 || m.XCols <= 0 {
-		return fmt.Errorf("XRowsとXColsが未設定です: XRows = %d, XCols = %d: 層を追加する前に、どちらも正の値を設定するべき", m.XRows, m.XCols)
-	}
-
-	var wCols int
-	var err error
-	if len(m.Backbone) == 0 {
-		wCols = m.XCols
-	} else {
-		_, wCols, err = m.Backbone.OutputShape(m.XRows, m.XCols)
-		if err != nil {
-			return err
-		}
+	wCols, err := m.nextLayerInputCols()
+	if err != nil {
+		return err
 	}
 
 	denseLayer, err := NewDense(wRows, wCols, rng)
@@ -50,6 +40,35 @@ func (m *Model) AppendDenseLayer(wRows int, rng *rand.Rand) error {
 
 	m.Backbone = append(m.Backbone, denseLayer)
 	return nil
+}
+
+func (m *Model) AppendProductDenseLayer(wRows, numBranches int, rng *rand.Rand) error {
+	wCols, err := m.nextLayerInputCols()
+	if err != nil {
+		return err
+	}
+
+	productLayer, err := NewProductDense(wRows, wCols, numBranches, rng)
+	if err != nil {
+		return err
+	}
+
+	m.Backbone = append(m.Backbone, productLayer)
+	return nil
+}
+
+func (m *Model) nextLayerInputCols() (int, error) {
+	if m.XRows <= 0 || m.XCols <= 0 {
+		return 0, fmt.Errorf("XRowsとXColsが未設定です: XRows = %d, XCols = %d: 層を追加する前に、どちらも正の値を設定するべき", m.XRows, m.XCols)
+	}
+	if len(m.Backbone) == 0 {
+		return m.XCols, nil
+	}
+	_, wCols, err := m.Backbone.OutputShape(m.XRows, m.XCols)
+	if err != nil {
+		return 0, err
+	}
+	return wCols, nil
 }
 
 func (m *Model) SetClassPrototypes(numClasses int, rng *rand.Rand) error {

@@ -1,7 +1,6 @@
 package bep
 
 import (
-	"cmp"
 	"encoding/gob"
 	"fmt"
 	"math"
@@ -20,15 +19,14 @@ type H []int8
 // bep_report 実験3: ±31では3〜4エポック完全沈黙、±4なら1エポック目から立ち上がる。
 const hInitAbs = 4
 
-const defaultGroupSize = 4
-
 type Layer interface {
-	Forward(x *bitsx.Matrix, rng *rand.Rand) (*bitsx.Matrix, Backward, error)
+	Forward(x *bitsx.Matrix) (*bitsx.Matrix, Backward, error)
 	Predict(x *bitsx.Matrix) (*bitsx.Matrix, error)
 	OutputShape(xRows, xCols int) (int, int, error)
 	NewBatchRecord(batchSize, xRows int) (BatchRecord, error)
 	BatchDeltas(rec BatchRecord) (Deltas, error)
 	Update(deltas Deltas, lrHalfPow int, rng *rand.Rand) error
+	Validate() error
 }
 
 // サンプルごとにデルタを足し込む代わりに記録だけしておき、バッチの最後に BatchDeltas でまとめて計算するため。
@@ -55,9 +53,9 @@ type Dense struct {
 	WT *bitsx.Matrix
 	H  H
 
-	Bias        []int32
-	GroupSize   int
-	MaxAbsNoise int
+	Bias          []int32
+	MaxUpdateAbsZ int
+	MarginAbsZ    int
 }
 
 func isqrt(n int) int {
@@ -68,20 +66,19 @@ func isqrt(n int) int {
 	return r
 }
 
-// 倍率 num/denom は、ノイズの標準偏差を z の自然なばらつき √fanIn の何倍にするかを表す。
-// 一様分布 [-w, w] の標準偏差は約 w/√3 なので、w = (num/denom) × √3 × √fanIn とする(√3 ≈ 1732/1000)。
+// 倍率 num/denom は、z の自然なばらつき √fanIn の何倍にするかを表す。
+// 上限は |z| の最大値 2 × fanIn(Bias の上限 fanIn を含む)。これを超えても最大値と変わらない。
 // 極端な num で掛け算が桁あふれしないよう big.Int で計算する。
-func maxAbsNoiseForScale(fanIn, num, denom int) (int, error) {
+func absZForScale(fanIn, num, denom int) (int, error) {
 	if num < 0 || denom <= 0 {
-		return 0, fmt.Errorf("ノイズの倍率が不正: num = %d, denom = %d: num >= 0 かつ denom > 0 であるべき", num, denom)
+		return 0, fmt.Errorf("倍率が不正: num = %d, denom = %d: num >= 0 かつ denom > 0 であるべき", num, denom)
 	}
-	w := new(big.Int).Mul(big.NewInt(int64(isqrt(fanIn))*1732), big.NewInt(int64(num)))
-	w.Quo(w, big.NewInt(1000))
-	w.Quo(w, big.NewInt(int64(denom)))
-	if !w.IsInt64() || w.Int64() > int64(fanIn) {
-		return 0, fmt.Errorf("ノイズの倍率が大きすぎる: num/denom = %d/%d: MaxAbsNoise が入力数 %d を超える", num, denom, fanIn)
+	v := new(big.Int).Mul(big.NewInt(int64(isqrt(fanIn))), big.NewInt(int64(num)))
+	v.Quo(v, big.NewInt(int64(denom)))
+	if !v.IsInt64() || v.Int64() > int64(2*fanIn) {
+		return 0, fmt.Errorf("倍率が大きすぎる: num/denom = %d/%d: |z| の最大値 %d を超える", num, denom, 2*fanIn)
 	}
-	return int(w.Int64()), nil
+	return int(v.Int64()), nil
 }
 
 func NewDense(wRows, wCols int, rng *rand.Rand) (*Dense, error) {
@@ -116,28 +113,43 @@ func NewDense(wRows, wCols int, rng *rand.Rand) (*Dense, error) {
 		return nil, err
 	}
 
-	// 倍率 1/2 は旧実装のガウスノイズの既定値で、1/2・3/4・1 の実測で最も精度が良かった
-	maxAbsNoise, err := maxAbsNoiseForScale(w.Cols(), 1, 2)
+	// 倍率は MaxUpdateAbsZ・MarginAbsZ とも 1/4。旧方式(64 個ごとに |z| で並べ替えて上位 16 個を直し、z にノイズを加える)より
+	// MNIST で +2.8pt(90.8 → 93.6%)、Fashion-MNIST で +1.8pt(83.1 → 84.8%)良かった(30エポック・3シード)。
+	// MarginAbsZ は 3/4 以上にすると正解側を直しすぎて崩れた(MNIST で 89.5%)。
+	maxUpdateAbsZ, err := absZForScale(w.Cols(), 1, 4)
+	if err != nil {
+		return nil, err
+	}
+	marginAbsZ, err := absZForScale(w.Cols(), 1, 4)
 	if err != nil {
 		return nil, err
 	}
 
 	return &Dense{
-		W:           w,
-		WT:          wt,
-		H:           h,
-		Bias:        make([]int32, wRows),
-		GroupSize:   defaultGroupSize,
-		MaxAbsNoise: maxAbsNoise,
+		W:             w,
+		WT:            wt,
+		H:             h,
+		Bias:          make([]int32, wRows),
+		MaxUpdateAbsZ: maxUpdateAbsZ,
+		MarginAbsZ:    marginAbsZ,
 	}, nil
 }
 
-func (d *Dense) SetNoiseScale(num, denom int) error {
-	maxAbsNoise, err := maxAbsNoiseForScale(d.W.Cols(), num, denom)
+func (d *Dense) SetMaxUpdateAbsZScale(num, denom int) error {
+	maxUpdateAbsZ, err := absZForScale(d.W.Cols(), num, denom)
 	if err != nil {
-		return err
+		return fmt.Errorf("MaxUpdateAbsZ: %w", err)
 	}
-	d.MaxAbsNoise = maxAbsNoise
+	d.MaxUpdateAbsZ = maxUpdateAbsZ
+	return nil
+}
+
+func (d *Dense) SetMarginAbsZScale(num, denom int) error {
+	marginAbsZ, err := absZForScale(d.W.Cols(), num, denom)
+	if err != nil {
+		return fmt.Errorf("MarginAbsZ: %w", err)
+	}
+	d.MarginAbsZ = marginAbsZ
 	return nil
 }
 
@@ -156,25 +168,20 @@ func (d *Dense) preActivation(x *bitsx.Matrix) ([]int, error) {
 	// Bias が nil なのは、バイアス導入前に gob で保存したモデルを読み込んだ場合で、0 と同じに扱う
 	if d.Bias != nil {
 		yCols := d.W.Rows()
-		for i := range z {
-			z[i] += int(d.Bias[i%yCols])
+		for rowStart := 0; rowStart < len(z); rowStart += yCols {
+			zRow := z[rowStart : rowStart+yCols]
+			for j := range zRow {
+				zRow[j] += int(d.Bias[j])
+			}
 		}
 	}
 	return z, nil
 }
 
-func (d *Dense) Forward(x *bitsx.Matrix, rng *rand.Rand) (*bitsx.Matrix, Backward, error) {
+func (d *Dense) Forward(x *bitsx.Matrix) (*bitsx.Matrix, Backward, error) {
 	z, err := d.preActivation(x)
 	if err != nil {
 		return nil, nil, err
-	}
-
-	maxAbsNoise := d.MaxAbsNoise
-	isNoisy := maxAbsNoise > 0
-	if isNoisy {
-		for i := range z {
-			z[i] += rng.IntN(2*maxAbsNoise+1) - maxAbsNoise
-		}
 	}
 
 	y, err := bitsx.NewSignMatrix(x.Rows(), d.W.Rows(), z)
@@ -190,81 +197,51 @@ func (d *Dense) Forward(x *bitsx.Matrix, rng *rand.Rand) (*bitsx.Matrix, Backwar
 		if !ok {
 			return nil, fmt.Errorf("BatchRecordの型が不正: %T: Dense.NewBatchRecordで作成するべき", rec)
 		}
-		if err := d.recordSelection(x, z, t, r, sampleIdx); err != nil {
+		rowOffset, err := r.recordInput(x, sampleIdx)
+		if err != nil {
 			return nil, err
 		}
-		return d.inputTarget(t)
+		if err := d.recordSelection(z, y, t, r, rowOffset); err != nil {
+			return nil, err
+		}
+		votes, err := d.inputVotes(t)
+		if err != nil {
+			return nil, err
+		}
+		return targetFromVotes(t.Rows(), d.W.Cols(), votes)
 	}
 	return y, backward, nil
 }
 
-func (d *Dense) recordSelection(x *bitsx.Matrix, z []int, t *bitsx.Matrix, rec *denseBatchRecord, sampleIdx int) error {
-	rowOffset := sampleIdx * x.Rows()
-	if sampleIdx < 0 || rowOffset+x.Rows() > rec.x.Rows() {
-		return fmt.Errorf("sampleIdxが範囲外: sampleIdx = %d: 記録できるのは %d 行まで", sampleIdx, rec.x.Rows())
-	}
-	if err := copyRows(rec.x, rowOffset, x); err != nil {
-		return err
-	}
-
-	tStride := t.Stride()
+func (d *Dense) recordSelection(z []int, y, t *bitsx.Matrix, rec *denseBatchRecord, rowOffset int) error {
 	return t.ScanRowsWord(nil, func(tCtx bitsx.MatrixWordContext) error {
 		// 64ビット毎に操作するための宣言
 		zWord := z[tCtx.GlobalStart:tCtx.GlobalEnd]
-		type wordMismatch struct {
-			absZi int
-			tBit  uint64
-			col   int
-		}
-		wordMismatches := make([]wordMismatch, 0, 64)
 
 		tWord, err := t.Word(tCtx.WordIndex)
 		if err != nil {
 			return err
 		}
-
-		// ScanBitsで上記の64ビット(Word)に対して操作する
-		// 引数iに代入される値は、100ビットの場合、一週目は0～63、二週目は64～99
-		err = tCtx.ScanBits(func(i, col, colT int) error {
-			zi := zWord[i]
-			absZi := zi
-			if absZi < 0 {
-				absZi = -absZi
-			}
-
-			tBit := (tWord >> uint64(i)) & 1
-			yBit := uint64(0)
-			if zi >= 0 {
-				yBit = 1
-			}
-
-			// 不正解なら更新対象
-			if tBit != yBit {
-				wordMismatches = append(wordMismatches, wordMismatch{absZi: absZi, tBit: tBit, col: col})
-			}
-			return nil
-		})
-
+		yWord, err := y.Word(tCtx.WordIndex)
 		if err != nil {
 			return err
 		}
 
-		slices.SortFunc(wordMismatches, func(a, b wordMismatch) int {
-			return cmp.Compare(a.absZi, b.absZi)
-		})
-
-		updateK := min(max(len(zWord)/d.GroupSize, 1), len(wordMismatches))
-		var nonZeroWord, signWord uint64
-		for _, mismatch := range wordMismatches[:updateK] {
-			i := uint(mismatch.col - tCtx.ColStart)
-			nonZeroWord |= 1 << i
-			signWord |= mismatch.tBit << i
+		mismatchMask := yWord ^ tWord
+		var nonZeroWord uint64
+		for i, zi := range zWord {
+			bit := uint64(1) << uint(i)
+			absZ := max(zi, -zi)
+			// 食い違っていても |z| が大きいニューロンは、反転に大きな修正が要り、他の入力への影響も大きいので直さない。
+			// 正解していても |z| が小さいニューロンは、入力の少しの違いや他の更新ですぐ反転するので、目標の向きへ押して余裕を持たせる
+			// (マージン。旧実装で z に加えていたノイズは、これを確率的に行っていた)。
+			isMismatch := mismatchMask&bit != 0
+			if (isMismatch && absZ <= d.MaxUpdateAbsZ) || (!isMismatch && absZ < d.MarginAbsZ) {
+				nonZeroWord |= bit
+			}
 		}
-		idx := (rowOffset+tCtx.Row)*tStride + tCtx.ColStart/64
-		if err := rec.nonZero.SetWord(idx, nonZeroWord); err != nil {
-			return err
-		}
-		return rec.sign.SetWord(idx, signWord)
+		// 食い違いでもマージンでも、押す向きは目標 t
+		return rec.setSelection(rowOffset+tCtx.Row, tCtx.ColStart, nonZeroWord, tWord&nonZeroWord)
 	})
 }
 
@@ -311,12 +288,39 @@ func (r *denseBatchRecord) Clear() error {
 	return clearMatrix(r.nonZero)
 }
 
+func (r *denseBatchRecord) recordInput(x *bitsx.Matrix, sampleIdx int) (int, error) {
+	rowOffset := sampleIdx * x.Rows()
+	if sampleIdx < 0 || rowOffset+x.Rows() > r.x.Rows() {
+		return 0, fmt.Errorf("sampleIdxが範囲外: sampleIdx = %d: 記録できるのは %d 行まで", sampleIdx, r.x.Rows())
+	}
+	if err := copyRows(r.x, rowOffset, x); err != nil {
+		return 0, err
+	}
+	return rowOffset, nil
+}
+
+func (r *denseBatchRecord) setSelection(row, colStart int, nonZeroWord, signWord uint64) error {
+	idx := row*r.sign.Stride() + colStart/64
+	if err := r.nonZero.SetWord(idx, nonZeroWord); err != nil {
+		return err
+	}
+	return r.sign.SetWord(idx, signWord)
+}
+
 func (d *Dense) NewBatchRecord(batchSize, xRows int) (BatchRecord, error) {
-	rows := batchSize * xRows
-	x, err := bitsx.NewZerosMatrix(rows, d.W.Cols())
+	x, err := bitsx.NewZerosMatrix(batchSize*xRows, d.W.Cols())
 	if err != nil {
 		return nil, err
 	}
+	rec, err := d.newBatchRecord(x)
+	if err != nil {
+		return nil, err
+	}
+	return rec, nil
+}
+
+func (d *Dense) newBatchRecord(x *bitsx.Matrix) (*denseBatchRecord, error) {
+	rows := x.Rows()
 	sign, err := bitsx.NewZerosMatrix(rows, d.W.Rows())
 	if err != nil {
 		return nil, err
@@ -388,14 +392,23 @@ func clampInt16(v int) int16 {
 	return int16(max(math.MinInt16, min(v, math.MaxInt16)))
 }
 
-func (d *Dense) inputTarget(t *bitsx.Matrix) (*bitsx.Matrix, error) {
-	uT, err := d.WT.Dot(t)
+// 票は「一致数 u − 不一致数」= 2u − tCols で表す。u >= tCols/2 と比べると、tCols が奇数のとき
+// 切り捨てで境界の符号が反転するため。また、差の形なら ProductDense で枝ごとの票をそのまま足せる。
+// 並びは WT.Dot の結果のまま(転置の添字 colT)。
+func (d *Dense) inputVotes(t *bitsx.Matrix) ([]int, error) {
+	votes, err := d.WT.Dot(t)
 	if err != nil {
 		return nil, err
 	}
 	tCols := t.Cols()
+	for i, u := range votes {
+		votes[i] = 2*u - tCols
+	}
+	return votes, nil
+}
 
-	xTarget, err := bitsx.NewZerosMatrix(t.Rows(), d.W.Cols())
+func targetFromVotes(rows, cols int, votes []int) (*bitsx.Matrix, error) {
+	xTarget, err := bitsx.NewZerosMatrix(rows, cols)
 	if err != nil {
 		return nil, err
 	}
@@ -403,8 +416,7 @@ func (d *Dense) inputTarget(t *bitsx.Matrix) (*bitsx.Matrix, error) {
 	err = xTarget.ScanRowsWord(nil, func(ctx bitsx.MatrixWordContext) error {
 		var word uint64
 		err := ctx.ScanBits(func(i, col, colT int) error {
-			// 一致数 u が過半数かを見る。u >= tCols/2 と書くと、tCols が奇数のとき切り捨てで境界の符号が反転する
-			if 2*uT[colT] >= tCols {
+			if votes[colT] >= 0 {
 				word |= (1 << uint(i))
 			}
 			return nil
@@ -513,14 +525,368 @@ func (d *Dense) updateBias(biasDelta Delta, lrHalfPow int, rng *rand.Rand) error
 	return nil
 }
 
+func (d *Dense) Validate() error {
+	if d.Bias != nil {
+		if len(d.Bias) != d.W.Rows() {
+			return fmt.Errorf("biasの長さが不正: len(Bias) = %d: 出力数 %d であるべき", len(d.Bias), d.W.Rows())
+		}
+		for j, b := range d.Bias {
+			if b < -int32(d.W.Cols()) || b > int32(d.W.Cols()) {
+				return fmt.Errorf("bias[%d]が不正: Bias = %d: |Bias| <= %d (入力数) であるべき", j, b, d.W.Cols())
+			}
+		}
+	}
+	// 0 だと |z| = 0 のニューロンしか直さず、学習がほぼ止まるため
+	if d.MaxUpdateAbsZ < 1 || d.MaxUpdateAbsZ > 2*d.W.Cols() {
+		return fmt.Errorf("MaxUpdateAbsZが不正: MaxUpdateAbsZ = %d: 1 <= MaxUpdateAbsZ <= %d (|z| の最大値) であるべき", d.MaxUpdateAbsZ, 2*d.W.Cols())
+	}
+	if d.MarginAbsZ < 0 || d.MarginAbsZ > 2*d.W.Cols() {
+		return fmt.Errorf("MarginAbsZが不正: MarginAbsZ = %d: 0 <= MarginAbsZ <= %d (|z| の最大値) であるべき", d.MarginAbsZ, 2*d.W.Cols())
+	}
+	return nil
+}
+
+// 枝の符号の積にするのは、1ユニットで超平面1枚では分けられない関数も表せ、層を重ねずに表現力を稼げるため。
+// 通常の層を深くしても精度が上がらない BEP で、積の層は MNIST の精度を大きく上げた(MULTIPLICATIVE_UNIT.md §5-5)。
+type ProductDense struct {
+	Branches []*Dense
+	// 枝の MaxUpdateAbsZ・MarginAbsZ は使わない。直すかどうかは、どの枝を直すかを選ぶ前に、枝の |z| の最小値で層全体として決まるため。
+	MaxUpdateAbsZ int
+	MarginAbsZ    int
+}
+
+func NewProductDense(wRows, wCols, numBranches int, rng *rand.Rand) (*ProductDense, error) {
+	// 1本では Dense と同じ層になり、3本以上は MNIST の実測で2本より精度が下がった(MULTIPLICATIVE_UNIT.md §5-5)
+	if numBranches < 2 {
+		return nil, fmt.Errorf("枝の数が不正: numBranches = %d: 2以上であるべき", numBranches)
+	}
+	branches := make([]*Dense, numBranches)
+	for b := range branches {
+		d, err := NewDense(wRows, wCols, rng)
+		if err != nil {
+			return nil, err
+		}
+		branches[b] = d
+	}
+	// 倍率 1/2 は、旧方式(GroupSize = 4)より MNIST で +0.4pt(94.8 → 95.3%)、Fashion-MNIST で
+	// +0.5pt(84.2 → 84.7%)良かった(30エポック・3シード)。Dense と同じ 1/4 では MNIST の10エポックで 93.5% に下がった。
+	// Dense より大きいのは、1つの食い違いを枝1本でしか直さず、1回の修正が弱いためと考えられる。
+	maxUpdateAbsZ, err := absZForScale(wCols, 1, 2)
+	if err != nil {
+		return nil, err
+	}
+	// 倍率 1/8 は、マージン無しより MNIST で +0.1pt(95.2 → 95.3%)、Fashion-MNIST で +0.2pt(84.6 → 84.8%)、
+	// 回帰の MAE も全タスクで小さかった(30エポック・3シード)。Dense と同じ 1/4 は MNIST で逆効果(94.9%)だった。
+	marginAbsZ, err := absZForScale(wCols, 1, 8)
+	if err != nil {
+		return nil, err
+	}
+	return &ProductDense{Branches: branches, MaxUpdateAbsZ: maxUpdateAbsZ, MarginAbsZ: marginAbsZ}, nil
+}
+
+func (p *ProductDense) SetMaxUpdateAbsZScale(num, denom int) error {
+	maxUpdateAbsZ, err := absZForScale(p.Branches[0].W.Cols(), num, denom)
+	if err != nil {
+		return fmt.Errorf("MaxUpdateAbsZ: %w", err)
+	}
+	p.MaxUpdateAbsZ = maxUpdateAbsZ
+	return nil
+}
+
+func (p *ProductDense) SetMarginAbsZScale(num, denom int) error {
+	marginAbsZ, err := absZForScale(p.Branches[0].W.Cols(), num, denom)
+	if err != nil {
+		return fmt.Errorf("MarginAbsZ: %w", err)
+	}
+	p.MarginAbsZ = marginAbsZ
+	return nil
+}
+
+func (p *ProductDense) preActivations(x *bitsx.Matrix) ([][]int, error) {
+	zs := make([][]int, len(p.Branches))
+	for b, d := range p.Branches {
+		z, err := d.preActivation(x)
+		if err != nil {
+			return nil, err
+		}
+		zs[b] = z
+	}
+	return zs, nil
+}
+
+func (p *ProductDense) branchSigns(xRows int, zs [][]int) ([]*bitsx.Matrix, error) {
+	signs := make([]*bitsx.Matrix, len(zs))
+	for b, z := range zs {
+		sign, err := bitsx.NewSignMatrix(xRows, p.Branches[b].W.Rows(), z)
+		if err != nil {
+			return nil, err
+		}
+		signs[b] = sign
+	}
+	return signs, nil
+}
+
+// 符号ビット(1 が +1)の XNOR が ±1 の積に当たるので、ニューロンごとに掛けずに 64 個ずつワードでまとめて求める。
+func output(signs []*bitsx.Matrix) (*bitsx.Matrix, error) {
+	y := signs[0].Clone()
+	for _, sign := range signs[1:] {
+		for i := range y.Rows() * y.Stride() {
+			yWord, err := y.Word(i)
+			if err != nil {
+				return nil, err
+			}
+			signWord, err := sign.Word(i)
+			if err != nil {
+				return nil, err
+			}
+			if err := y.SetWord(i, ^(yWord ^ signWord)); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return y, nil
+}
+
+func (p *ProductDense) Forward(x *bitsx.Matrix) (*bitsx.Matrix, Backward, error) {
+	zs, err := p.preActivations(x)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	signs, err := p.branchSigns(x.Rows(), zs)
+	if err != nil {
+		return nil, nil, err
+	}
+	y, err := output(signs)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	backward := func(t *bitsx.Matrix, rec BatchRecord, sampleIdx int) (*bitsx.Matrix, error) {
+		if err := t.ValidateSameShape(y); err != nil {
+			return nil, err
+		}
+		r, ok := rec.(*productBatchRecord)
+		if !ok {
+			return nil, fmt.Errorf("BatchRecordの型が不正: %T: ProductDense.NewBatchRecordで作成するべき", rec)
+		}
+		// 入力は全枝で共有しているので、書き込みは1回でよい
+		rowOffset, err := r.branches[0].recordInput(x, sampleIdx)
+		if err != nil {
+			return nil, err
+		}
+		branchTargets, err := p.recordSelection(zs, signs, y, t, r, rowOffset)
+		if err != nil {
+			return nil, err
+		}
+
+		fanIn := p.Branches[0].W.Cols()
+		var votes []int
+		for b, d := range p.Branches {
+			branchVotes, err := d.inputVotes(branchTargets[b])
+			if err != nil {
+				return nil, err
+			}
+			if votes == nil {
+				votes = branchVotes
+				continue
+			}
+			for i, v := range branchVotes {
+				votes[i] += v
+			}
+		}
+		return targetFromVotes(t.Rows(), fanIn, votes)
+	}
+	return y, backward, nil
+}
+
+// 食い違ったニューロンで反転させる枝を1本に絞るのは、2本以上を反転させると積が元に戻るため(MULTIPLICATIVE_UNIT.md §2-1)。
+// 枝はバッチ単位で交互に選ぶと更新が打ち消し合って学習しないため、ニューロンごとに |z| が最小の(最も直しやすい)枝を選ぶ(§2-2)。
+// signs は Forward の出力と共有しているので、書き換えずに複製してから反転させる(backward は何度でも呼べるため)。
+func (p *ProductDense) recordSelection(zs [][]int, signs []*bitsx.Matrix, y, t *bitsx.Matrix, rec *productBatchRecord, rowOffset int) ([]*bitsx.Matrix, error) {
+	numBranches := len(p.Branches)
+	branchTargets := make([]*bitsx.Matrix, numBranches)
+	for b, sign := range signs {
+		branchTargets[b] = sign.Clone()
+	}
+
+	flipWords := make([]uint64, numBranches)
+	nonZeroWords := make([]uint64, numBranches)
+	signWords := make([]uint64, numBranches)
+	err := t.ScanRowsWord(nil, func(tCtx bitsx.MatrixWordContext) error {
+		tWord, err := t.Word(tCtx.WordIndex)
+		if err != nil {
+			return err
+		}
+		yWord, err := y.Word(tCtx.WordIndex)
+		if err != nil {
+			return err
+		}
+		clear(flipWords)
+		clear(nonZeroWords)
+		clear(signWords)
+
+		mismatchMask := yWord ^ tWord
+		for i := range tCtx.ColEnd - tCtx.ColStart {
+			idx := tCtx.GlobalStart + i
+			cheapest := 0
+			minAbsZ := math.MaxInt
+			for b, z := range zs {
+				if absZ := max(z[idx], -z[idx]); absZ < minAbsZ {
+					cheapest, minAbsZ = b, absZ
+				}
+			}
+
+			bit := uint64(1) << uint(i)
+			isMismatch := mismatchMask&bit != 0
+			if isMismatch {
+				// 枝への希望出力は、直すかどうかに関わらず反転させる。前の層への票は、出力を t に合わせる向きで数えるため
+				flipWords[cheapest] |= bit
+				if minAbsZ > p.MaxUpdateAbsZ {
+					continue
+				}
+			} else if minAbsZ >= p.MarginAbsZ {
+				continue
+			}
+			nonZeroWords[cheapest] |= bit
+			// 食い違いなら枝の今の符号の逆へ直し、マージンなら今の符号のまま境界から遠ざける
+			if (zs[cheapest][idx] >= 0) != isMismatch {
+				signWords[cheapest] |= bit
+			}
+		}
+
+		for b, target := range branchTargets {
+			old, err := target.Word(tCtx.WordIndex)
+			if err != nil {
+				return err
+			}
+			if err := target.SetWord(tCtx.WordIndex, old^flipWords[b]); err != nil {
+				return err
+			}
+		}
+
+		for b, r := range rec.branches {
+			if err := r.setSelection(rowOffset+tCtx.Row, tCtx.ColStart, nonZeroWords[b], signWords[b]); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return branchTargets, nil
+}
+
+// 入力 x は全枝で同じなので、枝ごとの記録に複製せず1つの行列を共有する(書き込みとメモリを枝の数だけ増やさないため)。
+type productBatchRecord struct {
+	branches []*denseBatchRecord
+}
+
+func (r *productBatchRecord) Clear() error {
+	for _, br := range r.branches {
+		if err := br.Clear(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (p *ProductDense) NewBatchRecord(batchSize, xRows int) (BatchRecord, error) {
+	x, err := bitsx.NewZerosMatrix(batchSize*xRows, p.Branches[0].W.Cols())
+	if err != nil {
+		return nil, err
+	}
+	branches := make([]*denseBatchRecord, len(p.Branches))
+	for b, d := range p.Branches {
+		br, err := d.newBatchRecord(x)
+		if err != nil {
+			return nil, err
+		}
+		branches[b] = br
+	}
+	return &productBatchRecord{branches: branches}, nil
+}
+
+func (p *ProductDense) BatchDeltas(rec BatchRecord) (Deltas, error) {
+	r, ok := rec.(*productBatchRecord)
+	if !ok {
+		return nil, fmt.Errorf("BatchRecordの型が不正: %T: ProductDense.NewBatchRecordで作成するべき", rec)
+	}
+	deltas := make(Deltas, 0, 2*len(p.Branches))
+	for b, d := range p.Branches {
+		branchDeltas, err := d.BatchDeltas(r.branches[b])
+		if err != nil {
+			return nil, err
+		}
+		deltas = append(deltas, branchDeltas...)
+	}
+	return deltas, nil
+}
+
+func (p *ProductDense) Update(deltas Deltas, lrHalfPow int, rng *rand.Rand) error {
+	if len(deltas) != 2*len(p.Branches) {
+		return fmt.Errorf("deltasの数が不正: len(deltas) = %d: 枝ごとに重みとバイアスの2つ、計 %d 個であるべき", len(deltas), 2*len(p.Branches))
+	}
+	for b, d := range p.Branches {
+		if err := d.Update(deltas[2*b:2*b+2], lrHalfPow, rng); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (p *ProductDense) Predict(x *bitsx.Matrix) (*bitsx.Matrix, error) {
+	zs, err := p.preActivations(x)
+	if err != nil {
+		return nil, err
+	}
+	signs, err := p.branchSigns(x.Rows(), zs)
+	if err != nil {
+		return nil, err
+	}
+	return output(signs)
+}
+
+func (p *ProductDense) OutputShape(xRows, xCols int) (int, int, error) {
+	return p.Branches[0].OutputShape(xRows, xCols)
+}
+
+func (p *ProductDense) Validate() error {
+	if len(p.Branches) < 2 {
+		return fmt.Errorf("branchesの数が不正: len(Branches) = %d: 2以上であるべき", len(p.Branches))
+	}
+	first := p.Branches[0]
+	for b, d := range p.Branches {
+		if d == nil {
+			return fmt.Errorf("branches[%d]がnilです", b)
+		}
+		if d.W.Rows() != first.W.Rows() || d.W.Cols() != first.W.Cols() {
+			return fmt.Errorf("branches[%d]の形状が不一致: (%d, %d): Branches[0] と同じ (%d, %d) であるべき",
+				b, d.W.Rows(), d.W.Cols(), first.W.Rows(), first.W.Cols())
+		}
+		if err := d.Validate(); err != nil {
+			return fmt.Errorf("branches[%d]: %w", b, err)
+		}
+	}
+	// 0 だと |z| = 0 のニューロンしか直さず、学習がほぼ止まるため
+	if p.MaxUpdateAbsZ < 1 || p.MaxUpdateAbsZ > 2*first.W.Cols() {
+		return fmt.Errorf("MaxUpdateAbsZが不正: MaxUpdateAbsZ = %d: 1 <= MaxUpdateAbsZ <= %d (|z| の最大値) であるべき", p.MaxUpdateAbsZ, 2*first.W.Cols())
+	}
+	if p.MarginAbsZ < 0 || p.MarginAbsZ > 2*first.W.Cols() {
+		return fmt.Errorf("MarginAbsZが不正: MarginAbsZ = %d: 0 <= MarginAbsZ <= %d (|z| の最大値) であるべき", p.MarginAbsZ, 2*first.W.Cols())
+	}
+	return nil
+}
+
 type Sequence []Layer
 
-func (s Sequence) Forward(x *bitsx.Matrix, rng *rand.Rand) (*bitsx.Matrix, Backwards, error) {
+func (s Sequence) Forward(x *bitsx.Matrix) (*bitsx.Matrix, Backwards, error) {
 	var backward Backward
 	var err error
 	backwards := make(Backwards, len(s))
 	for i, layer := range s {
-		x, backward, err = layer.Forward(x, rng)
+		x, backward, err = layer.Forward(x)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -572,34 +938,60 @@ func (s Sequence) Update(seqDelta SeqDelta, lrHalfPow int, rngs []*rand.Rand) er
 }
 
 // 途中の層でエラーになったときに一部の層だけ変わるのを防ぐため、全層の値を計算してから代入する。
-func (s Sequence) SetNoiseScale(num, denom int) error {
-	maxAbsNoises := make([]int, len(s))
+func (s Sequence) SetMaxUpdateAbsZScale(num, denom int) error {
+	maxUpdateAbsZs := make([]int, len(s))
 	for i, layer := range s {
-		d, ok := layer.(*Dense)
-		if !ok {
+		var fanIn int
+		switch l := layer.(type) {
+		case *Dense:
+			fanIn = l.W.Cols()
+		case *ProductDense:
+			fanIn = l.Branches[0].W.Cols()
+		default:
 			continue
 		}
-		maxAbsNoise, err := maxAbsNoiseForScale(d.W.Cols(), num, denom)
+		maxUpdateAbsZ, err := absZForScale(fanIn, num, denom)
 		if err != nil {
-			return fmt.Errorf("layer %d: %w", i, err)
+			return fmt.Errorf("layer %d: MaxUpdateAbsZ: %w", i, err)
 		}
-		maxAbsNoises[i] = maxAbsNoise
+		maxUpdateAbsZs[i] = maxUpdateAbsZ
 	}
 	for i, layer := range s {
-		if d, ok := layer.(*Dense); ok {
-			d.MaxAbsNoise = maxAbsNoises[i]
+		switch l := layer.(type) {
+		case *Dense:
+			l.MaxUpdateAbsZ = maxUpdateAbsZs[i]
+		case *ProductDense:
+			l.MaxUpdateAbsZ = maxUpdateAbsZs[i]
 		}
 	}
 	return nil
 }
 
-func (s Sequence) SetGroupSize(groupSize int) error {
-	if groupSize < 1 {
-		return fmt.Errorf("GroupSizeが不正: GroupSize = %d: 1以上であるべき", groupSize)
+// 途中の層でエラーになったときに一部の層だけ変わるのを防ぐため、全層の値を計算してから代入する。
+func (s Sequence) SetMarginAbsZScale(num, denom int) error {
+	marginAbsZs := make([]int, len(s))
+	for i, layer := range s {
+		var fanIn int
+		switch l := layer.(type) {
+		case *Dense:
+			fanIn = l.W.Cols()
+		case *ProductDense:
+			fanIn = l.Branches[0].W.Cols()
+		default:
+			continue
+		}
+		marginAbsZ, err := absZForScale(fanIn, num, denom)
+		if err != nil {
+			return fmt.Errorf("layer %d: MarginAbsZ: %w", i, err)
+		}
+		marginAbsZs[i] = marginAbsZ
 	}
-	for _, layer := range s {
-		if d, ok := layer.(*Dense); ok {
-			d.GroupSize = groupSize
+	for i, layer := range s {
+		switch l := layer.(type) {
+		case *Dense:
+			l.MarginAbsZ = marginAbsZs[i]
+		case *ProductDense:
+			l.MarginAbsZ = marginAbsZs[i]
 		}
 	}
 	return nil
@@ -607,4 +999,5 @@ func (s Sequence) SetGroupSize(groupSize int) error {
 
 func init() {
 	gob.Register(&Dense{})
+	gob.Register(&ProductDense{})
 }

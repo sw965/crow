@@ -12,33 +12,123 @@ import (
 	"github.com/sw965/omw/mathx/bitsx"
 )
 
-func TestSequenceSetGroupSize(t *testing.T) {
-	t.Run("正常_全層に設定", func(t *testing.T) {
+func TestSequenceSetMaxUpdateAbsZScale(t *testing.T) {
+	t.Run("正常_全層に入力数に応じた値を設定", func(t *testing.T) {
 		model, rng := newTestModel(t)
 		if err := model.AppendDenseLayer(16, rng); err != nil {
 			t.Fatalf("予期せぬエラー: %v", err)
 		}
-		if err := model.Backbone.SetGroupSize(2); err != nil {
+		if err := model.Backbone.SetMaxUpdateAbsZScale(1, 2); err != nil {
 			t.Fatalf("予期せぬエラー: %v", err)
 		}
-		for i, layer := range model.Backbone {
-			if d := layer.(*bep.Dense); d.GroupSize != 2 {
-				t.Errorf("layer %d: GroupSize の不一致: got = %d, want = 2", i, d.GroupSize)
+		// 入力数 64 → isqrt 8 × 1/2 = 4、入力数 32 → isqrt 5 × 1/2 = 2
+		for i, want := range []int{4, 2} {
+			if d := model.Backbone[i].(*bep.Dense); d.MaxUpdateAbsZ != want {
+				t.Errorf("layer %d: MaxUpdateAbsZ の不一致: got = %d, want = %d", i, d.MaxUpdateAbsZ, want)
 			}
 		}
 	})
 
-	t.Run("異常_0以下なら値を変えない", func(t *testing.T) {
-		model, _ := newTestModel(t)
-		d := model.Backbone[0].(*bep.Dense)
-		before := d.GroupSize
-		if err := model.Backbone.SetGroupSize(0); err == nil {
-			t.Fatal("エラーを期待したが、nilが返された")
-		}
-		if d.GroupSize != before {
-			t.Errorf("エラーなのに GroupSize が変わった: got = %d, want = %d", d.GroupSize, before)
+	t.Run("異常_倍率が不正なら値を変えない", func(t *testing.T) {
+		for _, scale := range [][2]int{{1, 0}, {-1, 1}, {100, 1}} {
+			model, _ := newTestModel(t)
+			d := model.Backbone[0].(*bep.Dense)
+			before := d.MaxUpdateAbsZ
+			if err := model.Backbone.SetMaxUpdateAbsZScale(scale[0], scale[1]); err == nil {
+				t.Fatalf("倍率 %d/%d: エラーを期待したが、nilが返された", scale[0], scale[1])
+			}
+			if d.MaxUpdateAbsZ != before {
+				t.Errorf("倍率 %d/%d: エラーなのに MaxUpdateAbsZ が変わった: got = %d, want = %d", scale[0], scale[1], d.MaxUpdateAbsZ, before)
+			}
 		}
 	})
+}
+
+func TestDenseUpdateSelection(t *testing.T) {
+	const xRows, fanIn, outs = 2, 70, 90
+	rng := rand.New(rand.NewPCG(91, 92))
+	d, err := bep.NewDense(outs, fanIn, rng)
+	if err != nil {
+		t.Fatalf("予期せぬエラー: %v", err)
+	}
+	// 入力数 70 → isqrt 8 × 1/4 = 2
+	if d.MaxUpdateAbsZ != 2 || d.MarginAbsZ != 2 {
+		t.Errorf("既定値の不一致: got = (MaxUpdateAbsZ %d, MarginAbsZ %d), want = (2, 2)", d.MaxUpdateAbsZ, d.MarginAbsZ)
+	}
+	setRandomBias(d, rng)
+	d.MaxUpdateAbsZ = 8
+	d.MarginAbsZ = 6
+
+	x, err := bitsx.NewRandMatrix(xRows, fanIn, rng)
+	if err != nil {
+		t.Fatalf("予期せぬエラー: %v", err)
+	}
+	tgt, err := bitsx.NewRandMatrix(xRows, outs, rng)
+	if err != nil {
+		t.Fatalf("予期せぬエラー: %v", err)
+	}
+	_, bw, err := d.Forward(x)
+	if err != nil {
+		t.Fatalf("予期せぬエラー: %v", err)
+	}
+
+	// 行ごとに記録し、どのニューロンが直されたかをバイアスのデルタから読む
+	selected, skipped, pushed, kept := 0, 0, 0, 0
+	for r := range xRows {
+		xr, err := bitsx.NewZerosMatrix(1, fanIn)
+		if err != nil {
+			t.Fatalf("予期せぬエラー: %v", err)
+		}
+		tr, err := bitsx.NewZerosMatrix(1, outs)
+		if err != nil {
+			t.Fatalf("予期せぬエラー: %v", err)
+		}
+		copyBitsRow(t, xr, x, r)
+		copyBitsRow(t, tr, tgt, r)
+		_, bwr, err := d.Forward(xr)
+		if err != nil {
+			t.Fatalf("予期せぬエラー: %v", err)
+		}
+		rec, err := d.NewBatchRecord(1, 1)
+		if err != nil {
+			t.Fatalf("予期せぬエラー: %v", err)
+		}
+		if _, err := bwr(tr, rec, 0); err != nil {
+			t.Fatalf("予期せぬエラー: %v", err)
+		}
+		deltas, err := d.BatchDeltas(rec)
+		if err != nil {
+			t.Fatalf("予期せぬエラー: %v", err)
+		}
+		for j := range outs {
+			z := naiveZ(t, d, xr, 0, j)
+			tBit := mustBit(t, tr, 0, j)
+			// 食い違いは |z| <= MaxUpdateAbsZ、正解は |z| < MarginAbsZ のとき、どちらも目標の向きへ押す
+			var want int16
+			switch mismatch := signBitOf(z) != tBit; {
+			case mismatch && absOf(z) <= d.MaxUpdateAbsZ:
+				want = int16(2*int(tBit) - 1)
+				selected++
+			case mismatch:
+				skipped++
+			case absOf(z) < d.MarginAbsZ:
+				want = int16(2*int(tBit) - 1)
+				pushed++
+			default:
+				kept++
+			}
+			if got := deltas[1][j]; got != want {
+				t.Fatalf("r = %d, j = %d (z = %d, t = %d): バイアスのデルタの不一致: got = %d, want = %d", r, j, z, tBit, got, want)
+			}
+		}
+	}
+	if selected == 0 || skipped == 0 || pushed == 0 || kept == 0 {
+		t.Fatalf("しきい値の両側にニューロンがなく、テストになっていない: selected = %d, skipped = %d, pushed = %d, kept = %d",
+			selected, skipped, pushed, kept)
+	}
+	if _, err := bw(tgt, otherRecord{}, 0); err == nil {
+		t.Error("backward がエラーにならない")
+	}
 }
 
 // assertDenseConsistent は、W = sign(H) かつ WT = W の転置であることを確認する。
@@ -160,88 +250,31 @@ func TestDenseUpdate(t *testing.T) {
 	})
 }
 
-func TestDenseForwardNoise(t *testing.T) {
-	const (
-		rows  = 4
-		xCols = 100
-		wRows = 300
-	)
-	newDense := func(t *testing.T, maxAbsNoise int) (*bep.Dense, *bitsx.Matrix) {
-		t.Helper()
-		rng := rand.New(rand.NewPCG(11, 12))
-		d, err := bep.NewDense(wRows, xCols, rng)
-		if err != nil {
-			t.Fatalf("予期せぬエラー: %v", err)
-		}
-		d.MaxAbsNoise = maxAbsNoise
-		x, err := bitsx.NewRandMatrix(rows, xCols, rng)
-		if err != nil {
-			t.Fatalf("予期せぬエラー: %v", err)
-		}
-		return d, x
+func TestDenseForwardMatchesPredict(t *testing.T) {
+	rng := rand.New(rand.NewPCG(11, 12))
+	d, err := bep.NewDense(300, 100, rng)
+	if err != nil {
+		t.Fatalf("予期せぬエラー: %v", err)
 	}
-
-	t.Run("正常_MaxAbsNoiseが0ならPredictと一致し乱数を消費しない", func(t *testing.T) {
-		d, x := newDense(t, 0)
-		rng := rand.New(rand.NewPCG(1, 2))
-		y, _, err := d.Forward(x, rng)
-		if err != nil {
-			t.Fatalf("予期せぬエラー: %v", err)
-		}
-		want, err := d.Predict(x)
-		if err != nil {
-			t.Fatalf("予期せぬエラー: %v", err)
-		}
-		if !y.Equal(want) {
-			t.Error("MaxAbsNoiseが0の Forward が Predict と一致しない")
-		}
-		// biaslab の差分テストは、ノイズ無効時に乱数を消費しないことを前提にしている
-		if rng.Uint64() != rand.New(rand.NewPCG(1, 2)).Uint64() {
-			t.Error("MaxAbsNoiseが0なのに乱数を消費した")
-		}
-	})
-
-	t.Run("正常_MaxAbsNoiseを超える位置のニューロンは反転しない", func(t *testing.T) {
-		const maxAbsNoise = 10
-		d, x := newDense(t, maxAbsNoise)
-		u, err := x.Dot(d.W)
-		if err != nil {
-			t.Fatalf("予期せぬエラー: %v", err)
-		}
-		rng := rand.New(rand.NewPCG(3, 4))
-		flipped := 0
-		for range 20 {
-			y, _, err := d.Forward(x, rng)
-			if err != nil {
-				t.Fatalf("予期せぬエラー: %v", err)
-			}
-			for r := range rows {
-				for c := range wRows {
-					z := 2*u[r*wRows+c] - xCols
-					bit, err := y.Bit(r, c)
-					if err != nil {
-						t.Fatalf("予期せぬエラー: %v", err)
-					}
-					noiseless := uint64(0)
-					if z >= 0 {
-						noiseless = 1
-					}
-					if bit != noiseless {
-						if z > maxAbsNoise || z < -maxAbsNoise {
-							t.Fatalf("|z| = %d が MaxAbsNoise %d を超えているのに反転した (r = %d, c = %d)", z, maxAbsNoise, r, c)
-						}
-						flipped++
-					}
-				}
-			}
-		}
-		if flipped == 0 {
-			t.Error("ノイズで反転したニューロンが1つも無い")
-		}
-	})
+	setRandomBias(d, rng)
+	x, err := bitsx.NewRandMatrix(4, 100, rng)
+	if err != nil {
+		t.Fatalf("予期せぬエラー: %v", err)
+	}
+	y, _, err := d.Forward(x)
+	if err != nil {
+		t.Fatalf("予期せぬエラー: %v", err)
+	}
+	want, err := d.Predict(x)
+	if err != nil {
+		t.Fatalf("予期せぬエラー: %v", err)
+	}
+	if !y.Equal(want) {
+		t.Error("Forward の出力が Predict と一致しない")
+	}
 }
 
-func TestSetNoiseScale(t *testing.T) {
+func TestSetMarginAbsZScale(t *testing.T) {
 	newSeq := func(t *testing.T) (bep.Sequence, *bep.Dense, *bep.Dense) {
 		t.Helper()
 		rng := rand.New(rand.NewPCG(21, 22))
@@ -256,52 +289,65 @@ func TestSetNoiseScale(t *testing.T) {
 		return bep.Sequence{first, second}, first, second
 	}
 
-	t.Run("正常_Denseの倍率3/4", func(t *testing.T) {
+	t.Run("正常_Denseの倍率1/2", func(t *testing.T) {
 		_, first, _ := newSeq(t)
-		if err := first.SetNoiseScale(3, 4); err != nil {
+		if err := first.SetMarginAbsZScale(1, 2); err != nil {
 			t.Fatalf("予期せぬエラー: %v", err)
 		}
-		if first.MaxAbsNoise != 36 {
-			t.Errorf("MaxAbsNoise の不一致: got = %d, want = 36", first.MaxAbsNoise)
+		// isqrt(784) = 28 × 1/2
+		if first.MarginAbsZ != 14 {
+			t.Errorf("MarginAbsZ の不一致: got = %d, want = 14", first.MarginAbsZ)
+		}
+	})
+
+	t.Run("正常_倍率0でマージンを無効にできる", func(t *testing.T) {
+		_, first, _ := newSeq(t)
+		if err := first.SetMarginAbsZScale(0, 1); err != nil {
+			t.Fatalf("予期せぬエラー: %v", err)
+		}
+		if first.MarginAbsZ != 0 {
+			t.Errorf("MarginAbsZ の不一致: got = %d, want = 0", first.MarginAbsZ)
+		}
+		if err := first.Validate(); err != nil {
+			t.Errorf("予期せぬエラー: %v", err)
 		}
 	})
 
 	t.Run("異常_Denseの倍率が不正なら値を変えない", func(t *testing.T) {
 		_, first, _ := newSeq(t)
-		before := first.MaxAbsNoise
-		if err := first.SetNoiseScale(1, 0); err == nil {
+		before := first.MarginAbsZ
+		if err := first.SetMarginAbsZScale(1, 0); err == nil {
 			t.Fatal("エラーを期待したが、nilが返された")
 		}
-		if first.MaxAbsNoise != before {
-			t.Errorf("エラーなのに MaxAbsNoise が変わった: got = %d, want = %d", first.MaxAbsNoise, before)
+		if first.MarginAbsZ != before {
+			t.Errorf("エラーなのに MarginAbsZ が変わった: got = %d, want = %d", first.MarginAbsZ, before)
 		}
 	})
 
 	t.Run("正常_Sequenceで全層に設定", func(t *testing.T) {
 		seq, first, second := newSeq(t)
-		if err := seq.SetNoiseScale(1, 1); err != nil {
+		if err := seq.SetMarginAbsZScale(1, 1); err != nil {
 			t.Fatalf("予期せぬエラー: %v", err)
 		}
-		// isqrt(784) = 28、isqrt(64) = 8 に √3 ≈ 1.732 を掛けて切り捨て
-		if first.MaxAbsNoise != 48 || second.MaxAbsNoise != 13 {
-			t.Errorf("MaxAbsNoise の不一致: got = (%d, %d), want = (48, 13)", first.MaxAbsNoise, second.MaxAbsNoise)
+		if first.MarginAbsZ != 28 || second.MarginAbsZ != 8 {
+			t.Errorf("MarginAbsZ の不一致: got = (%d, %d), want = (28, 8)", first.MarginAbsZ, second.MarginAbsZ)
 		}
 	})
 
 	t.Run("異常_Sequenceで一部の層が範囲外なら全層を変えない", func(t *testing.T) {
 		seq, first, second := newSeq(t)
-		before1, before2 := first.MaxAbsNoise, second.MaxAbsNoise
-		// 784入力の層は 484 で収まるが、64入力の層は 138 で入力数を超える
-		err := seq.SetNoiseScale(10, 1)
+		before1, before2 := first.MarginAbsZ, second.MarginAbsZ
+		// 784入力の層は 1120 で |z| の最大値 1568 に収まるが、64入力の層は 320 で最大値 128 を超える
+		err := seq.SetMarginAbsZScale(40, 1)
 		if err == nil {
 			t.Fatal("エラーを期待したが、nilが返された")
 		}
-		if !strings.Contains(err.Error(), "layer 1") {
-			t.Errorf("エラーメッセージに層番号が無い: %s", err.Error())
+		if !strings.Contains(err.Error(), "layer 1") || !strings.Contains(err.Error(), "MarginAbsZ") {
+			t.Errorf("エラーメッセージに層番号か MarginAbsZ が無い: %s", err.Error())
 		}
-		if first.MaxAbsNoise != before1 || second.MaxAbsNoise != before2 {
+		if first.MarginAbsZ != before1 || second.MarginAbsZ != before2 {
 			t.Errorf("エラーなのに値が変わった: got = (%d, %d), want = (%d, %d)",
-				first.MaxAbsNoise, second.MaxAbsNoise, before1, before2)
+				first.MarginAbsZ, second.MarginAbsZ, before1, before2)
 		}
 	})
 }
@@ -371,13 +417,14 @@ func TestDenseBias(t *testing.T) {
 		if err != nil {
 			t.Fatalf("予期せぬエラー: %v", err)
 		}
-		d.MaxAbsNoise = 0
+		// このテストは食い違ったニューロンだけを直すことを見るので、マージンは無効にする
+		d.MarginAbsZ = 0
 		// 入力を1行にして、ニューロンごとの寄与が行をまたいで打ち消し合わないようにする
 		x, err := bitsx.NewRandMatrix(1, 37, rng)
 		if err != nil {
 			t.Fatalf("予期せぬエラー: %v", err)
 		}
-		y, bw, err := d.Forward(x, rng)
+		y, bw, err := d.Forward(x)
 		if err != nil {
 			t.Fatalf("予期せぬエラー: %v", err)
 		}
@@ -514,7 +561,6 @@ func TestDenseBatchDeltas(t *testing.T) {
 		if err != nil {
 			t.Fatalf("予期せぬエラー: %v", err)
 		}
-		d.MaxAbsNoise = 0
 		return d, rng
 	}
 	// 1サンプル分の Forward と、目標をランダムに作る
@@ -524,7 +570,7 @@ func TestDenseBatchDeltas(t *testing.T) {
 		if err != nil {
 			t.Fatalf("予期せぬエラー: %v", err)
 		}
-		_, bw, err := d.Forward(x, rng)
+		_, bw, err := d.Forward(x)
 		if err != nil {
 			t.Fatalf("予期せぬエラー: %v", err)
 		}
@@ -602,7 +648,7 @@ func TestDenseBatchDeltas(t *testing.T) {
 			}
 			copyBitsRow(t, xr, x, r)
 			copyBitsRow(t, tr, tgt, r)
-			_, bwr, err := d.Forward(xr, rng)
+			_, bwr, err := d.Forward(xr)
 			if err != nil {
 				t.Fatalf("予期せぬエラー: %v", err)
 			}
